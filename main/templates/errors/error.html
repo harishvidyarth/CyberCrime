@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{{ title }}</title>
+
+<style>
+body{
+    font-family: Arial, sans-serif;
+    background:#f4f6f9;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+}
+
+.container{
+    text-align:center;
+    background:white;
+    padding:40px;
+    border-radius:10px;
+    box-shadow:0 5px 15px rgba(0,0,0,0.1);
+    max-width:500px;
+}
+
+.error-code{
+    font-size:80px;
+    font-weight:bold;
+    color:#e74c3c;
+}
+
+.message{
+    font-size:18px;
+    margin:20px 0;
+}
+
+a{
+    display:inline-block;
+    margin-top:15px;
+    padding:10px 20px;
+    background:#2c3e50;
+    color:white;
+    text-decoration:none;
+    border-radius:5px;
+}
+
+a:hover{
+    background:#34495e;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+    <div class="error-code">{{ code }}</div>
+
+    <h2>{{ title }}</h2>
+
+    <p class="message">{{ message }}</p>
+
+    <a href="{{ url_for('index') }}">Return to Home</a>
+</div>
+
+</body>
+<script>
+setTimeout(function(){
+    window.location.href="/";
+},10000)
+</script>
+</html>

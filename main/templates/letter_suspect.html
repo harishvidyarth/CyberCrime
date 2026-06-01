@@ -1,0 +1,100 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Suspect Account Letter</title>
+  <style>
+    @page { size: A4; margin: 24mm; }
+    body { font-family: 'Times New Roman', serif; color: #111; margin:0; }
+    .container { max-width: 880px; margin: 0 auto; padding: 12px 6px; }
+    .top-row { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; }
+    .officer-block { flex:1 1 auto; padding-right:12px; }
+    .officer-block p { margin:2px 0; }
+    .right-block { width:160px; text-align:right; flex:0 0 160px; }
+    .logo { width:110px; height:auto; display:block; margin:0 auto 6px; }
+    h1.title { text-align:center; font-size:16px; margin:6px 0 6px; font-weight:bold; }
+    .subject { margin: 6px 0; font-weight:600; }
+    .content { margin-top:8px; text-align:justify; line-height:1.35; font-size:13px; }
+    table.txn { width:100%; border-collapse:collapse; margin-top:10px; }
+    table.txn th, table.txn td { border:1px solid #000; padding:6px; font-size:12px; }
+    table.txn th { background:#2b6cb0; color:#fff; font-weight:700; }
+    .required { margin-top:10px; }
+    .signature { margin-top:30px; text-align:right; }
+    .small { font-size:12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="top-row">
+      <div class="officer-block">
+        <p><strong>{{ officer_name or '<Name>' }}</strong></p>
+        <p>{{ officer_designation or '<Rank>' }}</p>
+        <p>State Cyber Crime Investigation Centre,</p>
+        <p>Mobile: {{ officer_phone or '<Phone>' }}</p>
+        <p>E-mail: {{ officer_email or '<email id>' }}</p>
+      </div>
+      <div class="right-block">
+        <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="logo" class="logo">
+        <p class="small">Cyber Crime Wing HQ,<br>Ashok Nagar, Chennai-83<br>Tamil Nadu, India.</p>
+        <p><strong>Dated: {{ letter_date }}</strong></p>
+      </div>
+    </div>
+
+    <h1 class="title">TAMIL NADU POLICE DEPARTMENT<br><span style="font-size:12px;">(Notice U/s 94 &amp; 106 BNSS-2023)</span></h1>
+
+    <p>To,<br><strong>The Nodal Officer,</strong><br>&lt;Bank Name&gt;</p>
+
+    <p class="subject">Sub: Required Details &amp; Debit Freeze request reg.<br>Ref: {{ crime_no or '<Cr.No>' }}, NCRP ACK. No. {{ ncrp_ack_no or '<Acknowledgement no>' }}</p>
+
+    <div class="content">
+    <p style="font-family: 'Bookman Old Style', serif; font-size: 16px;">I am the investigating officer of the case mentioned in the subject. In this case, the victim has lost {{ layer_1_total or 'amount(s)' }}. Of the amount lost, partial amounts has been sent to the account mentioned below. Request you to provide the required details to proceed with the further investigation.</p>
+
+    <h3>( {{ layer_label }} ) Suspect Account Txn Details<br><span style="font-size:13px; font-weight:normal;">(Total Layer 1 Amount: {{ layer_1_total }})</span></h3>
+    <table class="txn">
+      <thead>
+        <tr>
+          <th style="width:6%">S. No.</th>
+          <th style="width:20%">Suspect Account Number</th>
+          <th style="width:14%">Transaction Date</th>
+          <th style="width:14%">Transaction Amount</th>
+          <th style="width:22%">Transaction Id / UTR Number</th>
+          <th style="width:14%">IFSC Code</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>{{ account_number or '' }}</td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="required">
+      <p><strong>Required details:</strong></p>
+      <ol>
+        <li>KYC</li>
+        <li>Transactions statement from Transaction Date - 6 months to till date.</li>
+        <li>AOF details of the account.</li>
+        <li>Email ID and Mobile Number linked to the account.</li>
+        <li>Closing balance of the account as on date with certificate.</li>
+        <li>Can the amount be refunded once the Court Order is submitted?</li>
+        <li>Is there any court order pending with the said account?</li>
+        <li>Debit freeze the said account and lien mark the disputed amount in the account</li>
+        <li>IP address details for all online transactions for the said period.</li>
+      </ol>
+    </div>
+
+    <p class="small">Note: Providing all the required details are mandatory. Do not provide only statement.</p>
+  </div>
+
+  <div class="signature">
+    <p>{{ officer_designation or '<Rank>' }},</p>
+    <p>State Cyber Crime Investigation Centre,</p>
+    <p>Cyber Crime Wing, Chennai.</p>
+  </div>
+</body>
+</html>

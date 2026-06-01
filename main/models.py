@@ -1,0 +1,158 @@
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime, timezone
+from flask_login import UserMixin
+import re
+
+db = SQLAlchemy()
+
+def validate_password(password):
+    """Enforce password complexity"""
+    if len(password) < 12:
+        raise ValueError("Password must be at least 12 characters")
+    if not re.search(r'[A-Z]', password):
+        raise ValueError("Password must contain uppercase letter")
+    if not re.search(r'[a-z]', password):
+        raise ValueError("Password must contain lowercase letter")
+    if not re.search(r'[0-9]', password):
+        raise ValueError("Password must contain number")
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        raise ValueError("Password must contain special character")
+    return True
+
+class Transaction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    layer = db.Column(db.Integer)
+    from_account = db.Column(db.String(100))
+    to_account = db.Column(db.String(100))
+    ack_no = db.Column(db.String(100))
+    bank_name = db.Column(db.String(100))
+    ifsc_code = db.Column(db.String(50))
+    txn_date = db.Column(db.String(100))
+    txn_id = db.Column(db.String(100))
+    amount = db.Column(db.Float)
+    disputed_amount = db.Column(db.Float)
+    action_taken = db.Column(db.String(255))
+    account_number = db.Column(db.String(50))  # ✅ Add this line
+    state = db.Column(db.String(50))  # Cache state from IFSC
+
+    # New fields for ATM withdrawal
+    atm_id = db.Column(db.String(100))
+    atm_withdraw_amount = db.Column(db.Float)
+    atm_withdraw_date = db.Column(db.String(100))
+    atm_location = db.Column(db.String(200))
+
+    # New fields for Cheque withdrawal
+    cheque_no = db.Column(db.String(100))
+    cheque_withdraw_amount = db.Column(db.Float)
+    cheque_withdraw_date = db.Column(db.String(100))
+    cheque_ifsc = db.Column(db.String(50))
+
+    put_on_hold_txn_id = db.Column(db.String(100))
+    put_on_hold_date = db.Column(db.String(100))
+    put_on_hold_amount = db.Column(db.Float)
+
+    # Court / refund details for put-on-hold transactions
+    court_order_date = db.Column(db.String(20))
+    refund_status = db.Column(db.String(50))
+    refund_amount = db.Column(db.Float)
+
+# Add to Transaction model in models.py or wherever your SQLAlchemy models are defined
+    kyc_name = db.Column(db.String(120))
+    kyc_aadhar = db.Column(db.String(20))
+    kyc_mobile = db.Column(db.String(20))
+    kyc_address = db.Column(db.String(200))
+    upload_id = db.Column(db.Integer, db.ForeignKey('uploaded_file.id'))
+
+    __table_args__ = (
+        db.Index('idx_transaction_ack_no', 'ack_no'),
+        db.Index('idx_transaction_put_on_hold', 'put_on_hold_txn_id'),
+    )
+
+class POHRefundDetails(db.Model):
+    """
+    Persists refund details for Put-On-Hold transactions separately
+    so they are not lost when the main Excel file is re-uploaded.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    __bind_key__ = 'poh_store'
+    ack_no = db.Column(db.String(100), index=True)
+    txn_id = db.Column(db.String(100), index=True) # Corresponds to put_on_hold_txn_id
+    court_order_date = db.Column(db.String(20))
+    refund_status = db.Column(db.String(50))
+    refund_amount = db.Column(db.Float)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint('ack_no', 'txn_id', name='uq_poh_refund_details'),
+    )
+
+class KYCDetails(db.Model):
+    """
+    Persists KYC details separately.
+    """
+    id = db.Column(db.Integer, primary_key=True)
+    __bind_key__ = 'kyc_store'
+    txn_id = db.Column(db.String(100), unique=True, index=True)
+    name = db.Column(db.String(120))
+    aadhar = db.Column(db.String(20))
+    mobile = db.Column(db.String(20))
+    address = db.Column(db.String(200))
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+# from werkzeug.security import generate_password_hash, check_password_hash
+
+class User(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(100), unique=True)
+    password_hash = db.Column(db.Text)
+    role = db.Column(db.String(50))
+    name = db.Column(db.String(100))
+    rank = db.Column(db.String(100))
+    email = db.Column(db.String(120))
+    # Optional override for displaying "No. of Files Uploaded" in admin view.
+    # If NULL, the UI will show the computed count from UploadedFile.
+    manual_upload_count = db.Column(db.Integer, nullable=True)
+    failed_login_attempts = db.Column(db.Integer, default=0)
+    account_locked_until = db.Column(db.DateTime, nullable=True)
+    must_change_password = db.Column(db.Boolean, default=False)
+
+    def set_password(self, password):
+        validate_password(password)
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+
+class UploadedFile(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255))
+    data = db.Column(db.LargeBinary)
+    uploader = db.Column(db.String(100))  # session['username']
+    mimetype = db.Column(db.String(100))
+    # upload_time = db.Column(db.DateTime, default=datetime.utcnow)
+    upload_time = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    transaction_count = db.Column(db.Integer, default=0)
+    # ✅ Add this line
+    transaction = db.relationship('Transaction', backref='upload', uselist=False)
+
+# models.py
+class Complaint(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    ack_no = db.Column(db.String(50), unique=True, nullable=False)
+    file_name = db.Column(db.String(200))
+    uploaded_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    assigned_to = db.Column(db.Integer, db.ForeignKey('user.id'))
+    upload_time = db.Column(db.DateTime)
+
+class UsageLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(100))
+    role = db.Column(db.String(50))
+    action = db.Column(db.String(100))
+    filename = db.Column(db.String(255))
+    ack_no = db.Column(db.String(100))
+    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+

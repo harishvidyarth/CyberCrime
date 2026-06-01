@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Victim Account Letter</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    .header { text-align: center; margin-bottom: 20px; }
+    .meta { margin-bottom: 18px; }
+    .meta b { display: inline-block; width: 220px; }
+    .content { margin-top: 20px; white-space: pre-line; }
+    .footer { margin-top: 40px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>Tamil Nadu Cyber Crime Police</h2>
+    <h3>Victim Account - Information Letter</h3>
+  </div>
+  <div class="meta">
+    <div><b>Letter Date:</b> {{ letter_date }}</div>
+    <div><b>Officer Name:</b> {{ officer_name }}</div>
+    <div><b>Officer Designation:</b> {{ officer_designation }}</div>
+    <div><b>Officer Phone:</b> {{ officer_phone }}</div>
+    <div><b>Officer Email:</b> {{ officer_email }}</div>
+    <div><b>Crime No:</b> {{ crime_no }}</div>
+    <div><b>NCRP Ack No:</b> {{ ncrp_ack_no }}</div>
+  </div>
+
+  <div class="content">
+    Dear Sir/Madam,
+
+    This is to notify that the account number {{ account_number }} has been identified as a victim account in complaint Acknowledgement No. {{ ack_no }}.
+
+    Kindly cooperate with the investigating authorities and provide necessary transaction and KYC details when requested.
+
+    We appreciate your prompt assistance in this matter.
+  </div>
+
+  <div class="footer">
+    <p>Sincerely,</p>
+    <p><b>{{ officer_name }}</b></p>
+    <p>{{ officer_designation }}</p>
+  </div>
+</body>
+</html>

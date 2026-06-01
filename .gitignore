@@ -1,0 +1,55 @@
+# =====================================================================
+#  FundTrail .gitignore  — protects secrets, case data (PII) and bloat
+#  Golden rule: source code goes to GitHub; data and secrets NEVER do.
+# =====================================================================
+
+# ----- Secrets -------------------------------------------------------
+.env
+*.env
+!.env.example
+
+# ----- Python --------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# ----- Databases (contain real case data — NEVER commit) -------------
+*.db
+*.sqlite
+*.sqlite3
+data/
+main/data/
+instance/
+main/instance/
+
+# ----- Uploaded case files & generated letters (victim PII) ----------
+uploads/
+main/uploads/
+generated_letters/
+main/generated_letters/
+
+# ----- Large reference datasets (use a shared drive or Git LFS) ------
+IFSC_CODES.json
+IFSC_CODES.pkl
+IFSC_CODES.xlsx
+main/IFSC_CODES.json
+main/IFSC_CODES.pkl
+main/IFSC_CODES.xlsx
+
+# ----- Build artifacts -----------------------------------------------
+build/
+dist/
+*.exe
+*.msi
+*.zip
+main/build_configs/build_log.txt
+main/build_configs/error.log
+
+# ----- OS / editor noise ---------------------------------------------
+.DS_Store
+.vscode/
+*.swp
+*~

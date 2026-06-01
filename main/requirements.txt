@@ -1,0 +1,15 @@
+Flask
+Flask-SQLAlchemy
+pandas
+Flask-Login
+Flask-Migrate
+PyMySQL
+cryptography
+openpyxl
+requests
+python-dotenv
+Flask-WTF
+Flask-Limiter
+xhtml2pdf
+reportlab
+ python-docx
