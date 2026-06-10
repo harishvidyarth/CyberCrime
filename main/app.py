@@ -3587,4 +3587,7 @@ if __name__ == '__main__':
 
     # Use environment variable to control debug mode
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    app.run(debug=debug_mode, host='127.0.0.1', port=5000)
+    # Port is configurable via the PORT env var so it can avoid conflicts — e.g.
+    # macOS AirPlay Receiver (Control Center) occupies 5000 by default. Default 5000.
+    port = int(os.environ.get('PORT', '5000'))
+    app.run(debug=debug_mode, host='127.0.0.1', port=port)

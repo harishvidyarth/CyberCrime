@@ -31,12 +31,13 @@ main/uploads/
 generated_letters/
 main/generated_letters/
 
-# ----- Large reference datasets (use a shared drive or Git LFS) ------
+# ----- Large reference datasets -------------------------------------
+# IFSC_CODES.pkl IS committed on purpose (~30 MB, required at runtime, and it's
+# public bank IFSC data — not sensitive) so teammates can clone and run right away.
+# The .json/.xlsx are just bulkier source copies, not needed to run, so they stay out.
 IFSC_CODES.json
-IFSC_CODES.pkl
 IFSC_CODES.xlsx
 main/IFSC_CODES.json
-main/IFSC_CODES.pkl
 main/IFSC_CODES.xlsx
 
 # ----- Build artifacts -----------------------------------------------

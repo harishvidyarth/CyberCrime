@@ -381,6 +381,15 @@
       transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
     }
 
+    /* Force the inline SVG icons to a fixed size (fixes Safari flex collapse to 0x0) */
+    .icon-btn svg {
+      width: 20px;
+      height: 20px;
+      flex: 0 0 auto;
+      display: block;
+      color: #1e3a5f;
+    }
+
     .icon-btn:hover {
       transform: translateY(-1px);
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
@@ -762,18 +771,18 @@
     <div class="user-info" style="display: flex; align-items: center; gap: 12px;">
       <input id="headerSearch" class="search-input" type="text" placeholder="Search account number" list="accountList">
       <datalist id="accountList"></datalist>
-      <button id="legendToggle" class="icon-btn" title="Show Legend" aria-label="Show Legend">📚</button>
+      <button id="legendToggle" class="icon-btn" title="Show Legend" aria-label="Show Legend"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2z"/><path d="M22 4h-6a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"/></svg></button>
       <button id="statewiseSummaryBtn" class="icon-btn state" title="Statewise Summary"
-        aria-label="Statewise Summary">📶</button>
+        aria-label="Statewise Summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="14"/><line x1="12" y1="20" x2="12" y2="8"/><line x1="18" y1="20" x2="18" y2="4"/></svg></button>
       <button id="expandAllBtn" class="icon-btn expand" title="Expand All Nodes"
-        aria-label="Expand All Nodes">🗂️</button>
-      <button id="putOnHoldBtn" class="icon-btn" title="Put on Hold" aria-label="Put on Hold">🔒</button>
-      <button id="atmWithdrawalBtn" class="icon-btn" title="ATM Withdrawal" aria-label="ATM Withdrawal">🏧</button>
+        aria-label="Expand All Nodes"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
+      <button id="putOnHoldBtn" class="icon-btn" title="Put on Hold" aria-label="Put on Hold"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>
+      <button id="atmWithdrawalBtn" class="icon-btn" title="ATM Withdrawal" aria-label="ATM Withdrawal"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><path d="M6 15h2"/></svg></button>
       <button id="layer1LettersBtn" class="icon-btn" title="Generate Layer 1 Letters (Per Bank)"
-        aria-label="Generate Layer 1 Letters (Per Bank)">🏦</button>
+        aria-label="Generate Layer 1 Letters (Per Bank)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="5 6 12 3 19 6"/><line x1="4" y1="10" x2="4" y2="21"/><line x1="20" y1="10" x2="20" y2="21"/><line x1="8" y1="14" x2="8" y2="17"/><line x1="12" y1="14" x2="12" y2="17"/><line x1="16" y1="14" x2="16" y2="17"/></svg></button>
       <div
         style="display: flex; flex-direction: column; align-items: flex-start; margin-left: 12px; font-size: 13px; line-height: 1.4;">
-        <a href="{{ url_for('index') }}" style="color: #60a5fa; text-decoration: none; font-weight: bold;">Dashboard</a>
+        <a href="{{ url_for('admin_dashboard') if session.get('role') == 'Admin' else url_for('index') }}" style="color: #60a5fa; text-decoration: none; font-weight: bold;">Dashboard</a>
         <div style="display: flex; align-items: center;">
           <span style="color: #cbd5e1; margin-right: 4px;">|</span>
           <a href="{{ url_for('logout') }}" style="color: #ef4444; text-decoration: none; font-weight: bold;">Logout</a>

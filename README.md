@@ -5,92 +5,91 @@ Officers upload bank-transaction Excel files; the app reconstructs how funds
 moved account-to-account, draws an interactive flow graph, flags suspect /
 repeater accounts, and auto-generates official letters to banks.
 
-> This is the **clean, upload-ready copy** of the project. It contains source
-> code only — no databases, no case files, no large datasets, no secrets.
-> See [`docs/FILES_TO_UPLOAD.md`](docs/FILES_TO_UPLOAD.md) for what was removed and why.
+> New to the project? Read [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md) first —
+> it explains the whole thing from the basics.
 
 ---
 
 ## 1. What you need first
 
-- **Python 3.10+**
-- **MySQL 8+** (the project target) — or skip it and use the built-in SQLite fallback for quick dev.
-- The IFSC reference dataset (`IFSC_CODES.pkl`) — too large for Git; copy it into `main/`
-  from the original project folder or your shared drive (see `docs/FILES_TO_UPLOAD.md`).
+- **Python 3.10+** and **git**
+- Nothing else — the IFSC dataset (`main/IFSC_CODES.pkl`) and everything needed to
+  run now **come with the repo**. The app uses **embedded SQLite**, so there is no
+  database server to install.
 
-## 2. Set up (macOS / Linux)
+## 2. Get it running — copy & paste (macOS / Linux)
 
 ```bash
-cd "new_files"
+# 1) Clone (you must be a collaborator on the repo + have your SSH key set up)
+git clone git@github.com:harishvidyarth/CyberCrime.git
+cd CyberCrime
 
-# 1) virtual environment
+# 2) Create & activate a virtual environment
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
 
-# 2) dependencies
+# 3) Install dependencies
+pip install --upgrade pip
 pip install -r main/requirements.txt
 
-# 3) configuration
-cp .env.example .env
-# then edit .env and set a real SECRET_KEY:
-python3 -c "import secrets; print(secrets.token_hex(32))"
-```
+# 4) Create your .env (a fresh secret key + local-dev settings) in one step
+python3 - <<'PY'
+import secrets
+open(".env", "w").write(
+    f"SECRET_KEY={secrets.token_hex(32)}\n"
+    "SESSION_COOKIE_INSECURE=true\n"   # allows login over local http
+    "FLASK_DEBUG=false\n"
+    "PORT=5050\n")                     # 5000 is taken by AirPlay on macOS
+print(".env created")
+PY
 
-## 3. Choose your database
-
-**Option A — SQLite (zero setup, good for development).**
-Leave `DATABASE_URL` unset in `.env`. The app creates `data/fundtrail.db` automatically.
-
-**Option B — MySQL (project target).**
-```bash
-mysql -u root -p < main/setup.sql          # creates DB + 'fundtrail' user
-# then in .env, set:
-# DATABASE_URL=mysql+pymysql://fundtrail:YOUR_PASSWORD@localhost:3306/fundtrail
-```
-
-## 4. Create the first users and run
-
-```bash
+# 5) Create the first users, then run
 cd main
-python scripts/create_user.py     # creates admin / officer / viewer
-python app.py                     # starts http://127.0.0.1:5000
+python scripts/create_user.py        # creates admin / officer / viewer
+python app.py                        # -> http://127.0.0.1:5050
 ```
 
-Open <http://127.0.0.1:5000> and log in.
+Then open **<http://127.0.0.1:5050>** and log in — default **role = Admin**,
+username `admin`, password `admin123` (change it after first login).
 
-> **Local-login gotcha:** the app sets `SESSION_COOKIE_SECURE = True`, which tells
-> some browsers to send the session cookie only over HTTPS. If login "succeeds but
-> bounces back" on `http://127.0.0.1`, that's why. The fix (planned) is to make this
-> flag depend on an environment variable so it is `False` in local dev and `True` in
-> production. See `docs/PROJECT_BRIEFING.md`.
+> **Port note:** on macOS, port **5000 is used by AirPlay Receiver**, so we default
+> to **5050** via the `PORT` variable in `.env`. Set it to any free port.
 
-## 5. Project layout
+## 3. Database — SQLite (no setup)
+
+FundTrail uses **embedded SQLite**: a single file (`data/fundtrail.db`), created
+automatically on first run. No server, no configuration — ideal for the offline,
+per-machine deployment. (It can also run on MySQL via `DATABASE_URL` if ever hosted
+centrally — see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) and "Hosting securely".)
+
+## 4. Project layout
 
 ```
-new_files/
-├── .env.example          # copy to .env, fill in secrets
-├── .gitignore            # keeps data/secrets out of Git
+CyberCrime/
+├── .env.example          # template; your real .env is git-ignored
 ├── README.md             # this file
-├── docs/                 # briefing, security tracker, upload guide
+├── docs/                 # HOW_IT_WORKS, architecture, security, deployment…
 └── main/
-    ├── app.py            # the running application (monolith — refactor planned)
-    ├── app/              # half-finished modular version (target architecture)
-    ├── models.py         # database models
-    ├── templates/        # HTML
-    ├── static/           # CSS / JS / images (D3 graph lives here)
-    ├── migrations/       # Alembic DB migrations
-    ├── scripts/          # admin & security-verification scripts
-    └── setup.sql         # MySQL database + user creation
+    ├── app.py            # the running application (being refactored into app/)
+    ├── app/              # modular version (target architecture)
+    ├── models.py         # database tables (Transaction, User, Complaint…)
+    ├── ifsc_utils.py     # local IFSC -> bank/branch/state lookup
+    ├── IFSC_CODES.pkl    # the 176k-entry IFSC dataset (ships with the repo)
+    ├── templates/        # HTML pages
+    ├── static/           # CSS / JS / images (D3 fund-flow graph)
+    ├── migrations/       # Alembic database migrations
+    └── scripts/          # admin + security-verification scripts
 ```
 
-## 6. Roles
+## 5. Roles
 
 | Role | Can do |
 |------|--------|
-| **Admin** | Manage users, view all cases, system analytics, logs |
+| **Admin** | Manage officers, view all cases, analytics, audit logs |
 | **Investigative Officer** | Upload data, trace funds, put accounts on hold, generate letters |
 | **Viewer** | Read-only view of fund flows and reports |
 
 ---
-See [`docs/PROJECT_BRIEFING.md`](docs/PROJECT_BRIEFING.md) for the full architecture,
-known issues, security status, the 60-day plan, and questions for your mentor.
+More: [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md) (workflow & mental model) ·
+[`docs/PROJECT_BRIEFING.md`](docs/PROJECT_BRIEFING.md) (architecture, security, plan) ·
+[`docs/SECURITY_FINDINGS.md`](docs/SECURITY_FINDINGS.md).
