@@ -234,7 +234,7 @@ def check_case_access(ack_no):
         abort(403)
 
     # Admin and Viewer can access all cases
-    if current_user.role in ['Admin', 'Viewer']:
+    if current_user.role in ['Admin']:
         return
 
     ack_no = str(ack_no).strip()
@@ -615,8 +615,7 @@ def initialize_secure_users():
     
     users_to_create = [
         ('admin', 'Admin'),
-        ('officer', 'Investigative Officer'),
-        ('viewer', 'Viewer')
+        ('officer', 'Investigative Officer')
     ]
     
     created_credentials = []
@@ -657,7 +656,7 @@ with app.app_context():
 
 
 
-VIEW_ONLY_ROLES = {'Viewer'}
+VIEW_ONLY_ROLES = set()  # Viewer (read-only) role removed — only Admin & Investigative Officer
 
 @app.route('/')
 def home():
@@ -1889,7 +1888,7 @@ def graph_data(ack_no):
 @login_required
 def available_ack_nos():
     """List all available ACK numbers accessible to the current user"""
-    if current_user.role in ['Admin', 'Viewer']:
+    if current_user.role in ['Admin']:
         # Admins and Viewers see all cases
         ack_nos = db.session.query(Transaction.ack_no).distinct().all()
     else:
@@ -3316,7 +3315,7 @@ def view_complaint(complaint_id):
     complaint = Complaint.query.get_or_404(complaint_id)
 
     # Authorization check: only admin, viewer, assigned officer, or creator can view
-    if (current_user.role not in ['Admin', 'Viewer'] and 
+    if (current_user.role not in ['Admin'] and 
         complaint.assigned_to != current_user.id and 
         complaint.uploaded_by != current_user.id):
         abort(403, description="You don't have permission to view this complaint")
@@ -3416,7 +3415,6 @@ with app.app_context():
 
         admin_password = generate_secure_password()
         officer_password = generate_secure_password()
-        viewer_password = generate_secure_password()
 
         admin = User(username='admin', role='Admin')
         admin.set_password(admin_password)
@@ -3426,19 +3424,13 @@ with app.app_context():
         officer.set_password(officer_password)
         officer.must_change_password = True
 
-        viewer = User(username='viewer', role='Viewer')
-        viewer.set_password(viewer_password)
-        viewer.must_change_password = True
-        
         db.session.add(admin)
         db.session.add(officer)
-        db.session.add(viewer)
         db.session.commit()
         
         logger.info("Users initialized with secure random passwords.")
         print(f"[SETUP] Initial admin password: {admin_password}")
         print(f"[SETUP] Initial officer password: {officer_password}")
-        print(f"[SETUP] Initial viewer password: {viewer_password}")
         print("[SETUP] Change these passwords immediately!")
 
 
@@ -3477,91 +3469,211 @@ def download_fundtrail_pdf():
         buffer = io.BytesIO()
         c = canvas.Canvas(buffer, pagesize=A4)
         width, height = A4
-        
-        # --- Header ---
-        c.setFont("Helvetica-Bold", 16)
-        c.drawCentredString(width/2, height - 50, "Put - On Hold Transaction")
-        c.setFont("Helvetica", 12)
-        c.drawCentredString(width/2, height - 70, f"Acknowledgement No: {ack_no}")
-        
-        # --- Drawing Logic ---
-        y = height - 120
-        box_width = 300  # Narrower to match image style
-        box_height_base = 170 
-        x = (width - box_width) / 2
-        vertical_spacing = 50
-        
-        for i, node in enumerate(nodes):
-            # Check for page overflow
-            if y < box_height_base + 50:
-                c.showPage()
-                y = height - 50
 
-            # For PDF, number layers sequentially after the victim:
-            # victim box (i == 0) has no layer label;
-            # first downstream account -> Layer 1, then 2, 3, ...
+        # ---------- neutral palette ----------
+        NAVY   = colors.HexColor('#0a2e63')
+        GOLD   = colors.HexColor('#f5b301')
+        INK    = colors.HexColor('#0f172a')
+        LABELC = colors.HexColor('#475569')
+        MUTED  = colors.HexColor('#64748b')
+        LINEC  = colors.HexColor('#e2e8f0')
+        SHADOW = colors.HexColor('#e6ebf2')
+        CARDBG = colors.HexColor('#f8fafc')
+        HEADSUB = colors.HexColor('#c7d6f0')
+
+        # ---------- MEANING colours (each colour carries meaning) ----------
+        # Victim = orange, intermediate layers = cream, last / on-hold = red.
+        V_BG = colors.HexColor('#F59E0B'); V_AC = colors.HexColor('#d97706'); V_TI = colors.HexColor('#7c2d12')
+        M_BG = colors.HexColor('#fcfaf9'); M_AC = colors.HexColor('#94a3b8'); M_TI = colors.HexColor('#334155')
+        H_BG = colors.HexColor('#F86262'); H_AC = colors.HexColor('#b91c1c'); H_TI = colors.HexColor('#7f1d1d')
+
+        MARGIN = 50
+        HEAD_H = 80
+        BOX_W = 360
+        x = (width - BOX_W) / 2.0
+        PAD = 16
+        LINE_H = 15
+        LABEL_W = 104
+
+        def _to_f(v):
+            try:
+                return float(v)
+            except Exception:
+                return None
+
+        def fmt_money(v):
+            n = _to_f(v)
+            if n is None:
+                return str(v)
+            neg = n < 0; n = abs(n)
+            ip, dec = ("%.2f" % n).split('.')
+            if len(ip) > 3:
+                ip = re.sub(r'(\d)(?=(\d\d)+$)', r'\1,', ip[:-3]) + ',' + ip[-3:]
+            return ('-' if neg else '') + 'Rs. ' + ip + '.' + dec
+
+        def wrap(text, font, size, maxw):
+            out = []
+            for raw in str(text).split('\n'):
+                cur = ''
+                for w in raw.split(' '):
+                    t = (cur + ' ' + w).strip()
+                    if not cur or c.stringWidth(t, font, size) <= maxw:
+                        cur = t
+                    else:
+                        out.append(cur); cur = w
+                out.append(cur)
+            return out or ['']
+
+        def draw_band():
+            # deep-navy letterhead band with a gold underline
+            c.setFillColor(NAVY); c.rect(0, height - HEAD_H, width, HEAD_H, fill=1, stroke=0)
+            c.setFillColor(GOLD); c.rect(0, height - HEAD_H, width, 3, fill=1, stroke=0)
+            c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 19)
+            c.drawString(MARGIN, height - 42, "Fund Trail Analysis")
+            c.setFillColor(HEADSUB); c.setFont("Helvetica", 9.5)
+            c.drawString(MARGIN, height - 58, "Put-On-Hold Money Trail   |   Tamil Nadu Cyber Crime Wing")
+            c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 9.5)
+            c.drawRightString(width - MARGIN, height - 40, "Ack No: %s" % ack_no)
+            c.setFillColor(HEADSUB); c.setFont("Helvetica", 8.5)
+            c.drawRightString(width - MARGIN, height - 56, "Generated " + datetime.now().strftime("%d %b %Y, %H:%M"))
+
+        def draw_footer():
+            c.setStrokeColor(LINEC); c.setLineWidth(0.8)
+            c.line(MARGIN, 42, width - MARGIN, 42)
+            c.setFillColor(MUTED); c.setFont("Helvetica", 8)
+            c.drawString(MARGIN, 30, "CONFIDENTIAL  -  For authorised investigation use only")
+            c.drawRightString(width - MARGIN, 30, "Page %d" % c.getPageNumber())
+
+        def draw_summary(y_top):
+            # summary-of-findings stat row (forensic reports lead with the key numbers)
+            accounts = len(nodes)
+            disputed = max([_to_f(n.get('disputed_amount')) or 0 for n in nodes] or [0])
+            hold = _to_f(nodes[-1].get('hold_amount')) or 0
+            cards = [("On-Hold / Frozen", fmt_money(hold), H_AC),
+                     ("Disputed Amount", fmt_money(disputed), V_AC),
+                     ("Accounts Traced", str(accounts), NAVY)]
+            gap = 12; ch = 52
+            cw = (width - 2 * MARGIN - 2 * gap) / 3.0
+            cx = MARGIN
+            for label, value, accent in cards:
+                c.setFillColor(SHADOW); c.roundRect(cx + 1.5, y_top - ch - 1.5, cw, ch, 9, fill=1, stroke=0)
+                c.setFillColor(CARDBG); c.setStrokeColor(LINEC); c.setLineWidth(1)
+                c.roundRect(cx, y_top - ch, cw, ch, 9, fill=1, stroke=1)
+                c.setFillColor(accent); c.roundRect(cx, y_top - ch, 4, ch, 2, fill=1, stroke=0)
+                fs = 14.0
+                while fs > 8 and c.stringWidth(value, "Helvetica-Bold", fs) > cw - 24:
+                    fs -= 0.5
+                c.setFillColor(INK); c.setFont("Helvetica-Bold", fs)
+                c.drawString(cx + 14, y_top - 26, value)
+                c.setFillColor(MUTED); c.setFont("Helvetica", 7.5)
+                c.drawString(cx + 14, y_top - 42, label.upper())
+                cx += cw + gap
+            return y_top - ch
+
+        def draw_legend(y):
+            items = [(V_BG, "Victim"), (M_BG, "Intermediate"), (H_BG, "On-Hold / Frozen")]
+            lx = MARGIN
+            for col, lab in items:
+                c.setFillColor(col); c.setStrokeColor(LINEC); c.setLineWidth(0.8)
+                c.roundRect(lx, y - 8, 11, 11, 2.5, fill=1, stroke=1)
+                c.setFillColor(LABELC); c.setFont("Helvetica", 8.5)
+                c.drawString(lx + 16, y - 6, lab)
+                lx += 16 + c.stringWidth(lab, "Helvetica", 8.5) + 22
+
+        def begin_page(first):
+            draw_band(); draw_footer()
+            yy = height - HEAD_H - 26
+            if first:
+                yy = draw_summary(yy)
+                draw_legend(yy - 22)
+                yy = yy - 46
+            return yy
+
+        y = begin_page(True)
+
+        for i, node in enumerate(nodes):
             if i == 0:
-                fill_color = colors.HexColor("#A7F3D0")
-                header_text = "Victim Account"
+                bg, accent, tcolor, badge = V_BG, V_AC, V_TI, "VICTIM ACCOUNT"
+            elif i == len(nodes) - 1:
+                bg, accent, tcolor, badge = H_BG, H_AC, H_TI, "ON HOLD"
             else:
-                display_layer = i
-                if i == len(nodes) - 1:
-                    fill_color = colors.HexColor("#F86262")
-                else:
-                    fill_color = colors.HexColor("#fcfaf9")
-                header_text = f"Layer: {display_layer}"
-            
-            # Draw Box
-            c.setFillColor(fill_color)
-            c.setStrokeColor(colors.HexColor("#1e293b"))
-            c.setLineWidth(1)
-            c.roundRect(x, y - box_height_base, box_width, box_height_base, 10, fill=1, stroke=1)
-            
-            # Draw Text
-            c.setFillColor(colors.black)
-            text_y = y - 30
-            
-            # Header
-            c.setFont("Helvetica-Bold", 12)
-            c.drawCentredString(width/2, text_y, header_text)
-            text_y -= 25
-            
-            # Details
-            c.setFont("Helvetica", 10)
-            lines = []
-            
-            # Account No
-            lines.append(f"Account No: {node.get('account_number', 'N/A')}")
-            
-            # Bank (wrap if long?)
-            bank_name = node.get('bank', 'Unknown Bank')
-            lines.append(f"Bank: {bank_name}")
-            
-            # Only add these details if NOT the victim account (green box)
+                bg, accent, tcolor, badge = M_BG, M_AC, M_TI, "LAYER %d" % i
+
+            rows = [("Account No", node.get('account_number', 'N/A')),
+                    ("Bank", node.get('bank', 'Unknown Bank'))]
             if i != 0:
-                lines.append(f"Branch: {node.get('branch', 'Unknown')}")
-                lines.append(f"IFSC: {node.get('ifsc', 'N/A')}")
-                lines.append(f"Txn ID: {node.get('txn_id', 'N/A')}")
-                lines.append(f"Transacted Amt: {node.get('amount', '0.0')}")
-                lines.append(f"Disputed Amt: {node.get('disputed_amount', '0.0')}")
-            
+                rows += [("Branch", node.get('branch', 'Unknown')),
+                         ("IFSC", node.get('ifsc', 'N/A')),
+                         ("Txn ID", node.get('txn_id', 'N/A')),
+                         ("Transacted", fmt_money(node.get('amount', '0'))),
+                         ("Disputed", fmt_money(node.get('disputed_amount', '0')))]
             if i == len(nodes) - 1 and node.get('hold_amount'):
-                lines.append(f"Put-On hold Amount: {node.get('hold_amount')}")
-            
-            for line in lines:
-                c.drawString(x + 10, text_y, line)
-                text_y -= 15
-                
-            # Draw Connecting Line (Arrow)
+                rows += [("On-Hold Amt", fmt_money(node.get('hold_amount')))]
+
+            value_maxw = BOX_W - PAD * 2 - LABEL_W
+            disp = []
+            for label, value in rows:
+                wl = wrap(value, "Helvetica", 10, value_maxw)
+                disp.append((label, wl[0]))
+                for extra in wl[1:]:
+                    disp.append((None, extra))
+
+            box_h = PAD + 20 + 14 + len(disp) * LINE_H + PAD
+
+            if y - box_h < 58:
+                c.showPage(); y = begin_page(False)
+
+            top = y
+            # soft drop shadow
+            c.setFillColor(SHADOW)
+            c.roundRect(x + 2.5, top - box_h - 3.5, BOX_W, box_h, 14, fill=1, stroke=0)
+            # card body
+            c.setFillColor(bg); c.setStrokeColor(LINEC); c.setLineWidth(1.2)
+            c.roundRect(x, top - box_h, BOX_W, box_h, 14, fill=1, stroke=1)
+            # left accent rail
+            c.setFillColor(accent)
+            c.roundRect(x, top - box_h, 6, box_h, 3, fill=1, stroke=0)
+
+            # header row: pill badge + node index
+            by = top - PAD - 10
+            pw = c.stringWidth(badge, "Helvetica-Bold", 8.5) + 18
+            c.setFillColor(accent); c.roundRect(x + PAD + 4, by - 3, pw, 17, 8.5, fill=1, stroke=0)
+            c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 8.5)
+            c.drawString(x + PAD + 13, by + 1.5, badge)
+            c.setFillColor(tcolor); c.setFont("Helvetica-Bold", 10)
+            c.drawRightString(x + BOX_W - PAD, by + 1.5, "#%d" % i)
+            # divider
+            c.setStrokeColor(accent); c.setLineWidth(0.8)
+            c.line(x + PAD, by - 12, x + BOX_W - PAD, by - 12)
+
+            ry = by - 28
+            for label, value in disp:
+                if label is not None:
+                    c.setFillColor(LABELC); c.setFont("Helvetica", 9)
+                    c.drawString(x + PAD + 6, ry, label.upper())
+                c.setFillColor(INK); c.setFont("Helvetica", 10)
+                c.drawString(x + PAD + 6 + LABEL_W, ry, value)
+                ry -= LINE_H
+
+            # connector to next layer, labelled with the amount that moved (fund-flow)
             if i < len(nodes) - 1:
-                line_start_y = y - box_height_base
-                line_end_y = y - box_height_base - vertical_spacing
-                c.setStrokeColor(colors.gray)
-                c.setLineWidth(1)
-                c.line(width/2, line_start_y, width/2, line_end_y)
-                
-            y -= (box_height_base + vertical_spacing) # Move down for next box
-            
+                ax = width / 2.0
+                c.setStrokeColor(MUTED); c.setLineWidth(1.4)
+                c.line(ax, top - box_h, ax, top - box_h - 30)
+                amt = fmt_money(nodes[i + 1].get('amount', '0'))
+                if amt and amt not in ('Rs. 0.00', '0'):
+                    pw = c.stringWidth(amt, "Helvetica-Bold", 8) + 16
+                    c.setFillColor(colors.white); c.setStrokeColor(LINEC); c.setLineWidth(0.8)
+                    c.roundRect(ax - pw / 2.0, top - box_h - 22, pw, 14, 7, fill=1, stroke=1)
+                    c.setFillColor(LABELC); c.setFont("Helvetica-Bold", 8)
+                    c.drawCentredString(ax, top - box_h - 18, amt)
+                ah = top - box_h - 30
+                c.setStrokeColor(MUTED)
+                c.line(ax, ah, ax - 4, ah + 6); c.line(ax, ah, ax + 4, ah + 6)
+                y = top - box_h - 42
+            else:
+                y = top - box_h - 20
+
         c.save()
         buffer.seek(0)
         

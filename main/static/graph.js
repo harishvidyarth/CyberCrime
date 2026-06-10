@@ -96,7 +96,12 @@ let isFirstDraw = true;
 let expandAllActive = false;
 svg = d3.select('#treeSvg');
 g = svg.append('g').attr('transform', 'translate(80,80)');
-svg.call(d3.zoom().scaleExtent([0.5, 3]).on('zoom', e => g.attr('transform', e.transform)));
+// Wider zoom-out range so very wide cases (many sibling accounts) fit on screen.
+// Stored on window so the on-screen +/- / fit / pad controls can drive it.
+window.zoomBehavior = d3.zoom().scaleExtent([0.04, 4]).on('zoom', e => g.attr('transform', e.transform));
+svg.call(window.zoomBehavior);
+window.graphSvg = svg;
+window.graphG = g;
 
 async function openHoldPopup() {
   if (!holdModalOverlay) return;
@@ -755,6 +760,28 @@ function toggleCollapse(d) {
  */
 function toggleExpandAllNodes() {
   if (!currentRoot) return false;
+
+  // Guard: expanding EVERY node on a huge case draws thousands of boxes at once
+  // and freezes the browser. Count first; if too many, warn instead of hanging.
+  function countAll(node) {
+    if (!node) return 0;
+    let total = 1;
+    if (!node.burst) {
+      const kids = node.children || node._children || [];
+      for (const k of kids) total += countAll(k);
+    }
+    return total;
+  }
+  const EXPAND_LIMIT = 400;
+  if (!expandAllActive) {
+    const total = countAll(currentRoot);
+    if (total > EXPAND_LIMIT) {
+      alert('This case has ' + total + ' accounts — expanding all at once would freeze the browser.\n\n' +
+            'Instead: click a node to open just that branch, or use the search box / Statewise Summary to navigate.');
+      return false;
+    }
+  }
+
   expandAllActive = !expandAllActive;
 
   const applyState = (node, expand) => {

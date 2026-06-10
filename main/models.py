@@ -119,7 +119,11 @@ class User(db.Model, UserMixin):
 
     def set_password(self, password):
         validate_password(password)
-        self.password_hash = generate_password_hash(password)
+        # Use scrypt where the platform supports it (strongest); otherwise fall back to
+        # pbkdf2:sha256, which works on every Python (e.g. 3.9 / OpenSSL built without scrypt).
+        import hashlib
+        method = "scrypt" if hasattr(hashlib, "scrypt") else "pbkdf2:sha256"
+        self.password_hash = generate_password_hash(password, method=method)
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)

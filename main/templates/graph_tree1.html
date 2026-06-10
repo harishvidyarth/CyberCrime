@@ -2006,6 +2006,71 @@
   <!-- Toast for icon names -->
   <div id="iconToast" role="status" aria-live="polite"></div>
 
+  <!-- Graph zoom / pan controls — drive the existing d3.zoom (graph.js) -->
+  <style>
+    #zoomControls{position:fixed;right:20px;bottom:22px;z-index:50;display:flex;flex-direction:column;gap:10px;align-items:center;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+    #zoomControls .zc-group{display:flex;flex-direction:column;background:#fff;border:1px solid #e2e8f0;border-radius:12px;
+      box-shadow:0 10px 24px rgba(8,28,71,.18);overflow:hidden;}
+    #zoomControls .zc-btn{width:40px;height:40px;border:none;background:#fff;color:#0a2e63;font-size:20px;font-weight:700;line-height:1;
+      cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .12s;padding:0;}
+    #zoomControls .zc-btn:hover{background:#eef4ff;}
+    #zoomControls .zc-group .zc-btn+.zc-btn{border-top:1px solid #eef2f7;}
+    #zoomControls .zc-pad{display:grid;grid-template-columns:repeat(3,38px);grid-template-rows:repeat(3,38px);gap:4px;}
+    #zoomControls .zc-pad .zc-btn{width:38px;height:38px;border:1px solid #e2e8f0;border-radius:10px;font-size:13px;
+      box-shadow:0 4px 10px rgba(8,28,71,.1);}
+    #zoomControls .zc-pad .sp{visibility:hidden;}
+    #zoomControls svg{width:18px;height:18px;display:block;flex:0 0 auto;}
+  </style>
+  <div id="zoomControls" aria-label="Graph zoom and pan controls">
+    <div class="zc-group">
+      <button id="zoomIn" class="zc-btn" title="Zoom in" aria-label="Zoom in">+</button>
+      <button id="zoomFit" class="zc-btn" title="Fit graph to screen" aria-label="Fit to screen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#0a2e63" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 9 4 4 9 4"/><polyline points="20 9 20 4 15 4"/><polyline points="4 15 4 20 9 20"/><polyline points="20 15 20 20 15 20"/></svg>
+      </button>
+      <button id="zoomOut" class="zc-btn" title="Zoom out" aria-label="Zoom out">&minus;</button>
+    </div>
+    <div class="zc-pad">
+      <span class="sp"></span>
+      <button id="panUp" class="zc-btn" title="Pan up" aria-label="Pan up">&#9650;</button>
+      <span class="sp"></span>
+      <button id="panLeft" class="zc-btn" title="Pan left" aria-label="Pan left">&#9664;</button>
+      <button id="panReset" class="zc-btn" title="Re-center / fit" aria-label="Re-center">&#9679;</button>
+      <button id="panRight" class="zc-btn" title="Pan right" aria-label="Pan right">&#9654;</button>
+      <span class="sp"></span>
+      <button id="panDown" class="zc-btn" title="Pan down" aria-label="Pan down">&#9660;</button>
+      <span class="sp"></span>
+    </div>
+  </div>
+  <script nonce="{{ csp_nonce }}">
+    (function () {
+      function svgSel() { return window.graphSvg || d3.select('#treeSvg'); }
+      function zb() { return window.zoomBehavior; }
+      function bind(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener('click', fn); }
+      function zoomBy(f) { if (zb()) svgSel().transition().duration(180).call(zb().scaleBy, f); }
+      function panBy(dx, dy) { if (zb()) svgSel().transition().duration(150).call(zb().translateBy, dx, dy); }
+      function fitToScreen() {
+        var svg = svgSel(); var g = window.graphG || svg.select('g');
+        if (!g || g.empty()) return;
+        var node = g.node(); if (!node) return;
+        var b; try { b = node.getBBox(); } catch (e) { return; }
+        if (!b.width || !b.height) return;
+        var fw = svg.node().clientWidth || 1200, fh = svg.node().clientHeight || 700;
+        var scale = Math.max(0.04, Math.min(0.9 / Math.max(b.width / fw, b.height / fh), 4));
+        var tx = fw / 2 - scale * (b.x + b.width / 2);
+        var ty = fh / 2 - scale * (b.y + b.height / 2);
+        if (zb()) svg.transition().duration(450).call(zb().transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+      }
+      bind('zoomIn', function () { zoomBy(1.3); });
+      bind('zoomOut', function () { zoomBy(1 / 1.3); });
+      bind('zoomFit', fitToScreen);
+      bind('panReset', fitToScreen);
+      bind('panUp', function () { panBy(0, 140); });
+      bind('panDown', function () { panBy(0, -140); });
+      bind('panLeft', function () { panBy(140, 0); });
+      bind('panRight', function () { panBy(-140, 0); });
+    })();
+  </script>
 </body>
 
 </html>

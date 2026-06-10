@@ -17,11 +17,5 @@ with app.app_context():
         db.session.add(officer)
         print("Officer user created.")
 
-    if not User.query.filter_by(username='viewer').first():
-        viewer = User(username='viewer', role='Viewer')
-        viewer.set_password('Viewer@123456')
-        db.session.add(viewer)
-        print("Viewer user created.")
-
     db.session.commit()
     print("User initialization complete.")
