@@ -21,7 +21,7 @@ repeater accounts, and auto-generates official letters to banks.
 ## 2. Set up (macOS / Linux)
 
 ```bash
-cd "new files"
+cd "new_files"
 
 # 1) virtual environment
 python3 -m venv .venv
@@ -67,7 +67,7 @@ Open <http://127.0.0.1:5000> and log in.
 ## 5. Project layout
 
 ```
-new files/
+new_files/
 ├── .env.example          # copy to .env, fill in secrets
 ├── .gitignore            # keeps data/secrets out of Git
 ├── README.md             # this file

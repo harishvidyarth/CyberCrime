@@ -41,9 +41,9 @@ The current `.git` history (9 commits ahead of `origin`) already has committed
 `.db` files and victim Excel uploads. A normal `.gitignore` does **not** remove
 what is already in history. Two safe paths:
 
-- **Recommended — start a clean repo from `new files/`** (fresh history, zero PII):
+- **Recommended — start a clean repo from `new_files/`** (fresh history, zero PII):
   ```bash
-  cd "new files"
+  cd "new_files"
   git init
   git add .
   git commit -m "Clean FundTrail source (no data, no secrets)"

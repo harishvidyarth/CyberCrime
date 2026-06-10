@@ -1,0 +1,18 @@
+# Keep the image small and secrets out of it
+.git
+.venv
+__pycache__/
+*.pyc
+*.db
+*.sqlite*
+.env
+uploads/
+main/uploads/
+generated_letters/
+main/generated_letters/
+dist/
+build/
+*.exe
+*.msi
+*.zip
+old_files/

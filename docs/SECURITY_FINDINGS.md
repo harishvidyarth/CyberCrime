@@ -2,7 +2,7 @@
 
 **Authoritative source:** *Security Vulnerability Retest Report v2.0* (Sandeep V,
 Tamil Nadu Cyber Crime Wing). Initial pentest **3 Feb 2026**, retest **19 Feb 2026**,
-ref `PENTEST-FUNDTRAIL-2026-001`. Original PDFs in `old files/reports/`.
+ref `PENTEST-FUNDTRAIL-2026-001`. Original PDFs in `old_files/reports/`.
 
 ## Headline
 - Initial assessment: **14 findings** — 4 Critical, 4 High, 3 Medium, 3 Low.

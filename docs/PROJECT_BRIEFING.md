@@ -49,7 +49,7 @@ the rest, confirm by uploading a file and counting rows.
 ### 2.3 Real victim data is in Git (security/privacy incident)
 The repo tracks `.db` files and real victim Excel uploads (e.g.
 `victim_dinesh_kumar_..._complaint_excel.xlsx`). For a police tool this is serious.
-→ **Plan:** see `docs/FILES_TO_UPLOAD.md`. Start a clean repo from `new files/`.
+→ **Plan:** see `docs/FILES_TO_UPLOAD.md`. Start a clean repo from `new_files/`.
 
 ### 2.4 Hardcoded fallback secret key
 `app.py` falls back to `"fallback-fundtrail-secret-key-12345!@#"` if `SECRET_KEY`
