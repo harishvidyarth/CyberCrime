@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}FundTrail{% endblock %} — FundTrail</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=2.0">
+  <script nonce="{{ csp_nonce }}">
+    /* Apply the saved theme/nav state before first paint (no flash). */
+    (function () {
+      try {
+        var t = localStorage.getItem('ft-theme');
+        if (t) document.documentElement.setAttribute('data-theme', t);
+        if (localStorage.getItem('ft-nav') === '1')
+          document.addEventListener('DOMContentLoaded', function () {
+            document.body.classList.add('nav-collapsed');
+          });
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to main content</a>
+
+{% set ep = request.endpoint %}
+{% set is_admin_user = session.get('role') == 'Admin' %}
+<aside class="sidebar" aria-label="Primary navigation">
+  <div class="brand">
+    <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="Tamil Nadu Police logo">
+    <span><b>FundTrail</b><small>v2.0 — TN Cyber Crime</small></span>
+  </div>
+  <nav>
+    <div class="nav-section">Main</div>
+    {% if is_admin_user %}
+    <a class="nav-item {{ 'active' if ep == 'admin_dashboard' }}" href="{{ url_for('admin_dashboard') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+      <span class="nav-label">Dashboard</span>
+    </a>
+    <div class="nav-section">Cases</div>
+    <a class="nav-item {{ 'active' if ep == 'view_all_complaints' }}" href="{{ url_for('view_all_complaints') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      <span class="nav-label">All Cases</span>
+    </a>
+    <a class="nav-item {{ 'active' if ep == 'manage_files' }}" href="{{ url_for('manage_files') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+      <span class="nav-label">Uploaded Files</span>
+    </a>
+    <a class="nav-item {{ 'active' if ep == 'repeat_accounts' }}" href="{{ url_for('repeat_accounts') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span class="nav-label">Repeat Accounts</span>
+    </a>
+    <div class="nav-section">Insight</div>
+    <a class="nav-item {{ 'active' if ep == 'view_analytics' }}" href="{{ url_for('view_analytics') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="20" x2="6" y2="14"/><line x1="12" y1="20" x2="12" y2="8"/><line x1="18" y1="20" x2="18" y2="4"/></svg>
+      <span class="nav-label">Analytics</span>
+    </a>
+    <a class="nav-item {{ 'active' if ep == 'refund_dashboard' }}" href="{{ url_for('refund_dashboard') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      <span class="nav-label">Refund Recovery</span>
+    </a>
+    <a class="nav-item {{ 'active' if ep == 'admin_metrics' }}" href="{{ url_for('admin_metrics') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      <span class="nav-label">Metrics</span>
+    </a>
+    <a class="nav-item {{ 'active' if ep == 'audit_logs' }}" href="{{ url_for('audit_logs') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span class="nav-label">Audit Logs</span>
+    </a>
+    <div class="nav-section">Team</div>
+    <a class="nav-item {{ 'active' if ep == 'view_officers' }}" href="{{ url_for('view_officers') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>
+      <span class="nav-label">Officers</span>
+    </a>
+    <a class="nav-item {{ 'active' if ep == 'add_officer' }}" href="{{ url_for('add_officer') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+      <span class="nav-label">Add Officer</span>
+    </a>
+    {% else %}
+    <a class="nav-item {{ 'active' if ep == 'index' }}" href="{{ url_for('index') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+      <span class="nav-label">Dashboard</span>
+    </a>
+    <a class="nav-item {{ 'active' if ep == 'complaints' }}" href="{{ url_for('complaints') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      <span class="nav-label">My Cases</span>
+    </a>
+    <div class="nav-section">Insight</div>
+    <a class="nav-item {{ 'active' if ep == 'my_analytics' }}" href="{{ url_for('my_analytics') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="20" x2="6" y2="14"/><line x1="12" y1="20" x2="12" y2="8"/><line x1="18" y1="20" x2="18" y2="4"/></svg>
+      <span class="nav-label">My Analytics</span>
+    </a>
+    <a class="nav-item {{ 'active' if ep == 'refund_dashboard' }}" href="{{ url_for('refund_dashboard') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      <span class="nav-label">Refund Recovery</span>
+    </a>
+    {% endif %}
+    <div class="nav-section">Account</div>
+    <a class="nav-item {{ 'active' if ep == 'setup_2fa' }}" href="{{ url_for('setup_2fa') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span class="nav-label">Two-Factor Auth</span>
+    </a>
+    <a class="nav-item {{ 'active' if ep == 'change_password' }}" href="{{ url_for('change_password') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <span class="nav-label">Change Password</span>
+    </a>
+    <a class="nav-item {{ 'active' if ep == 'help_page' }}" href="{{ url_for('help_page') }}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span class="nav-label">Help</span>
+    </a>
+  </nav>
+  <div class="sidebar-foot">
+    <div class="uname">{{ session.get('username', 'User') }}</div>
+    <span class="role-badge">{{ session.get('role', '') }}</span>
+    <form class="logout-form" method="POST" action="{{ url_for('logout') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <button type="submit" aria-label="Log out">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:15px;height:15px"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Logout
+      </button>
+    </form>
+  </div>
+</aside>
+
+<header class="topbar">
+  <button class="icon-btn hamburger" id="navHamburger" aria-label="Toggle navigation menu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </button>
+  <button class="icon-btn" id="navCollapse" aria-label="Collapse sidebar" title="Collapse sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+  </button>
+  <span class="page-title">{% block page_title %}{{ self.title() }}{% endblock %}</span>
+  <form class="global-search" action="{{ url_for('global_search') }}" method="get" role="search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="search" name="q" value="{{ request.args.get('q', '') }}" placeholder="Search ACK, account, txn…"
+           aria-label="Global search" minlength="3" maxlength="80">
+  </form>
+  <button class="icon-btn" id="themeToggle" aria-label="Toggle dark mode" title="Toggle dark mode">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+  </button>
+  {% if session.get('prev_login') %}
+  <span class="last-login-badge" title="Previous sign-in to your account">Last login: {{ session['prev_login'] }}</span>
+  {% endif %}
+  <span class="avatar" aria-hidden="true">{{ (session.get('username', 'U'))[0]|upper }}</span>
+</header>
+
+{% include "_toasts.html" %}
+
+<main class="main" id="main-content">
+  {% block breadcrumbs %}{% endblock %}
+  {% block content %}{% endblock %}
+</main>
+
+<!-- Feature B11: idle-session warning modal -->
+<div class="modal-backdrop" id="idleModal" role="dialog" aria-modal="true" aria-labelledby="idleTitle">
+  <div class="modal">
+    <div class="modal-header"><h2 id="idleTitle" class="card-title">Still there?</h2></div>
+    <div class="modal-body">
+      You've been inactive for a while. For the security of case data you will be
+      logged out automatically in about 2 minutes.
+    </div>
+    <div class="modal-footer">
+      <a class="btn btn-secondary" href="{{ url_for('logout') }}">Log out now</a>
+      <button class="btn btn-primary" id="idleStay" data-modal-close>Stay signed in</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='app.js') }}?v=2.0" defer></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

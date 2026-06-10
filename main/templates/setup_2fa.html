@@ -1,0 +1,67 @@
+{% extends "_layout.html" %}
+{% block title %}Two-Factor Auth{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('role_home') }}">Dashboard</a><span class="sep">›</span>
+  <span class="current">Two-Factor Authentication</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Two-Factor Authentication</h1>
+    <div class="sub">Protect your account with an authenticator app (TOTP) — a stolen password alone won't be enough.</div>
+  </div>
+</header>
+
+{% if enabled %}
+<section class="ds-card" style="max-width:520px">
+  <div class="card-header">
+    <h2 class="card-title">2FA is enabled <span class="badge badge-closed">active</span></h2>
+  </div>
+  <p class="text-secondary mb-4">Every sign-in asks for a code from your authenticator app.
+    To turn it off, confirm your password below.</p>
+  <form method="POST" action="{{ url_for('disable_2fa') }}"
+        onsubmit="return confirm('Disable two-factor authentication for your account?');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+    <div class="form-group">
+      <label class="form-label" for="pwConfirm">Current password</label>
+      <input class="form-input" type="password" id="pwConfirm" name="password" autocomplete="current-password" required>
+    </div>
+    <button class="btn btn-danger" type="submit">Disable 2FA</button>
+  </form>
+</section>
+{% else %}
+<div class="grid-2">
+  <section class="ds-card">
+    <div class="card-header"><h2 class="card-title">Step 1 — Add to your authenticator app</h2></div>
+    <p class="text-secondary">In Google Authenticator, Microsoft Authenticator, Aegis or similar,
+      choose <b>Enter a setup key</b> and add:</p>
+    <div class="form-group mt-4">
+      <label class="form-label" for="secretBox">Account: FundTrail ({{ session.get('username') }}) — key (Base32, time-based):</label>
+      <input class="form-input mono" id="secretBox" value="{{ secret }}" readonly
+             style="text-align:center;letter-spacing:.15em" aria-label="TOTP secret key">
+    </div>
+    <p class="form-hint">Or paste this otpauth URI into an app that accepts links:</p>
+    <p class="mono text-xs" style="word-break:break-all">{{ otpauth_uri }}</p>
+  </section>
+
+  <section class="ds-card">
+    <div class="card-header"><h2 class="card-title">Step 2 — Confirm a code</h2></div>
+    <p class="text-secondary mb-4">Enter the 6-digit code your app shows now. 2FA activates only after a successful confirmation.</p>
+    <form method="POST" action="{{ url_for('setup_2fa') }}" data-busy-button="Verifying…">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div class="form-group">
+        <label class="form-label" for="setupCode">Authentication code</label>
+        <input class="form-input mono" type="text" id="setupCode" name="code" inputmode="numeric"
+               pattern="[0-9 ]{6,7}" maxlength="7" placeholder="123 456" autocomplete="one-time-code" required
+               style="text-align:center;font-size:var(--text-xl);letter-spacing:.3em">
+      </div>
+      <button class="btn btn-primary" type="submit">Enable 2FA</button>
+    </form>
+  </section>
+</div>
+{% endif %}
+{% endblock %}

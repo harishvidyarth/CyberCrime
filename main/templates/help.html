@@ -1,0 +1,73 @@
+{% extends "_layout.html" %}
+{% block title %}Help{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('role_home') }}">Dashboard</a><span class="sep">›</span>
+  <span class="current">Help</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>How FundTrail Works</h1>
+    <div class="sub">The investigation workflow, end to end — for new officers</div>
+  </div>
+</header>
+
+<div class="grid-2">
+  <section class="ds-card">
+    <div class="card-header"><h2 class="card-title">1 · Upload the bank file</h2></div>
+    <p>When a complaint arrives, you receive an Excel file of bank transactions (the
+      NCRP "complete trail" export). Drag it onto the upload box on your
+      <a href="{{ url_for('index') if session.get('role') != 'Admin' else url_for('admin_dashboard') }}">Dashboard</a>.
+      FundTrail reads every layer of transfers and registers the case under its
+      acknowledgement (ACK) number. You can drop several files at once.</p>
+  </section>
+
+  <section class="ds-card">
+    <div class="card-header"><h2 class="card-title">2 · Trace the money</h2></div>
+    <p>Open the case to see the <b>fund-flow graph</b>: the victim's account on the left,
+      and every onward hop the stolen money took, layer by layer. Click any account to
+      see its transactions, KYC details, ATM/cheque withdrawals, and the state its
+      bank branch is in.</p>
+  </section>
+
+  <section class="ds-card">
+    <div class="card-header"><h2 class="card-title">3 · Hold &amp; recover</h2></div>
+    <p>Mark suspect transactions <b>put on hold</b> as banks confirm freezes. Record
+      court order dates and refund amounts as money is recovered. The
+      <a href="{{ url_for('refund_dashboard') }}">Refund Recovery</a> page totals it all up —
+      that recovery percentage is the unit's headline number.</p>
+  </section>
+
+  <section class="ds-card">
+    <div class="card-header"><h2 class="card-title">4 · Generate letters</h2></div>
+    <p>From the graph you can generate official notices to each bank (.docx or PDF) —
+      suspect-account letters and victim-account letters with the case details filled
+      in. Use the <b>Letters (ZIP)</b> button on any case to download them all at once.</p>
+  </section>
+
+  <section class="ds-card">
+    <div class="card-header"><h2 class="card-title">5 · Keep the case diary</h2></div>
+    <p>Every case has a <b>Timeline</b>: add dated investigation notes ("hold confirmed
+      by Axis nodal officer"), and see the automatic record of uploads, holds and
+      letters. Move the case from <span class="badge badge-open">Open</span> through
+      <span class="badge badge-progress">Under Investigation</span> to
+      <span class="badge badge-closed">Closed</span> as it progresses.</p>
+  </section>
+
+  <section class="ds-card">
+    <div class="card-header"><h2 class="card-title">Good to know</h2></div>
+    <ul style="margin:0;padding-left:1.2em;line-height:1.9">
+      <li><b>Search</b> (top bar) finds any ACK, account, transaction ID or bank in your cases.</li>
+      <li><b>Repeat accounts</b> (admin) flags beneficiary accounts seen across multiple cases.</li>
+      <li>You only see cases you uploaded or were assigned. Admins see everything.</li>
+      <li>Sessions auto-lock after 30 minutes of inactivity — shared computers stay safe.</li>
+      <li>Enable <a href="{{ url_for('setup_2fa') }}">two-factor authentication</a> for your account.</li>
+      <li>Dark mode: the moon icon in the top bar.</li>
+    </ul>
+  </section>
+</div>
+{% endblock %}

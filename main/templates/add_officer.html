@@ -1,92 +1,53 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "_layout.html" %}
+{% block title %}Add Officer{% endblock %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Add Verification Officer - FundTrail</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=1.2">
-    <style>
-        /* v3 UI — offline-safe. Form fields, action and CSRF unchanged. */
-        :root{
-            --navy-900:#06182f; --navy-800:#0a2e63; --navy-700:#103a82;
-            --brand-600:#1e40af; --brand-500:#2451d6; --gold:#f5b301;
-            --ink-900:#0f172a; --ink-600:#475569; --ink-400:#94a3b8;
-            --line:#e6eaf2; --bg:#f2f4f9; --white:#fff;
-            --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-        }
-        *{box-sizing:border-box}
-        body{margin:0;font-family:var(--font);background:var(--bg);color:var(--ink-900);text-align:center;-webkit-font-smoothing:antialiased}
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('admin_dashboard') }}">Dashboard</a><span class="sep">›</span>
+  <a href="{{ url_for('view_officers') }}">Officers</a><span class="sep">›</span>
+  <span class="current">Add Officer</span>
+</nav>
+{% endblock %}
 
-        .floating-back{position:fixed;top:16px;right:22px;z-index:1000;display:inline-flex;align-items:center;gap:8px;
-            text-decoration:none;background:linear-gradient(180deg,var(--brand-500),var(--brand-600));color:#fff;
-            font-weight:650;font-size:14px;padding:10px 18px;border-radius:999px;
-            box-shadow:0 12px 26px -8px rgba(8,28,71,.6);transition:filter .15s,transform .06s}
-        .floating-back:hover{filter:brightness(1.08)} .floating-back:active{transform:translateY(1px)}
+{% block content %}
+{% set f = form or {} %}
+<header class="page-header">
+  <div>
+    <h1>Add Investigative Officer</h1>
+    <div class="sub">The officer receives a temporary password and must set their own on first login.</div>
+  </div>
+</header>
 
-        .header{position:relative;padding:26px 20px 24px;color:#eaf1ff;margin-bottom:24px;
-            background:radial-gradient(900px 300px at 80% -40%,var(--navy-700),transparent 60%),
-                       linear-gradient(160deg,var(--navy-800),var(--navy-900));box-shadow:0 10px 30px -16px rgba(8,28,71,.55)}
-        .header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;
-            background:linear-gradient(90deg,transparent,var(--gold),transparent)}
-        .header img{width:70px;display:block;margin:0 auto 10px;background:rgba(255,255,255,.95);border-radius:12px;padding:6px}
-        .header h1{font-size:23px;margin:0;font-weight:740;letter-spacing:-.3px;color:#fff}
-        .header h2{font-size:13px;font-weight:600;color:#9db6e6;margin:8px 0 0;text-transform:uppercase;letter-spacing:1.4px}
-        .header h2 strong{font-weight:600}
+<section class="ds-card" style="max-width:480px">
+  {% if error %}
+  <div class="alert danger" role="alert">{{ error }}</div>
+  {% endif %}
 
-        .form-container{max-width:430px;margin:26px auto;background:var(--white);padding:32px 30px;border-radius:16px;
-            border:1px solid var(--line);box-shadow:0 18px 40px -22px rgba(8,28,71,.4);text-align:left}
-        .form-container h3{margin:0 0 22px;color:var(--navy-800);font-size:18px;font-weight:700;text-align:center}
-        .form-container input{width:100%;padding:12px 13px;margin-bottom:14px;border-radius:10px;border:1px solid var(--line);
-            font-size:14.5px;font-family:inherit;transition:border-color .15s,box-shadow .15s}
-        .form-container input::placeholder{color:var(--ink-400)}
-        .form-container input:focus{outline:none;border-color:var(--brand-500);box-shadow:0 0 0 4px rgba(36,81,214,.14)}
-        .form-container button{width:100%;margin-top:6px;padding:13px;font-size:15px;font-weight:650;color:#fff;font-family:inherit;
-            background:linear-gradient(180deg,var(--brand-500),var(--brand-600));border:none;border-radius:10px;cursor:pointer;
-            box-shadow:0 10px 20px -10px rgba(30,64,175,.55);transition:filter .15s,transform .06s}
-        .form-container button:hover{filter:brightness(1.06)} .form-container button:active{transform:translateY(1px)}
-
-        .alert{margin:0 0 16px;padding:11px 15px;border-radius:10px;font-weight:600;font-size:13.5px;border:1px solid transparent;text-align:left}
-        .alert-success{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
-        .alert-danger{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
-        .alert-warning{background:#fffbeb;color:#b45309;border-color:#fde68a}
-        .pw-hint{font-size:12px;color:var(--ink-400);margin:-8px 0 14px;line-height:1.45}
-    </style>
-</head>
-
-<body>
-
-    {% include "_toasts.html" %}
-
-    <a href="{{ url_for('admin_dashboard') }}" class="floating-back" title="Back to Dashboard">&larr; Dashboard</a>
-
-    <div class="header">
-        <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="TN Police Logo">
-        <h1>Tamil Nadu Cyber Crime Police</h1>
-        <h2><strong>Add Investigative Officer</strong></h2>
+  <form action="{{ url_for('submit_officer') }}" method="POST" data-busy-button="Adding…">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+    <div class="form-group">
+      <label class="form-label" for="of-name">Name</label>
+      <input class="form-input" type="text" id="of-name" name="name" placeholder="Full name" value="{{ f.get('name', '') }}" required>
     </div>
-
-    {% set f = form or {} %}
-
-    <div class="form-container">
-        <h3>Enter Officer Details</h3>
-
-        {% if error %}
-        <div class="alert alert-danger">{{ error }}</div>
-        {% endif %}
-
-        <form action="{{ url_for('submit_officer') }}" method="POST">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-            <input type="text" name="name" placeholder="Name" value="{{ f.get('name', '') }}" required>
-            <input type="text" name="rank" placeholder="Rank" value="{{ f.get('rank', '') }}" required>
-            <input type="email" name="email" placeholder="Email" value="{{ f.get('email', '') }}" required>
-            <input type="text" name="username" placeholder="Username" value="{{ f.get('username', '') }}" required>
-            <input type="password" name="password" placeholder="Temporary password" required>
-            <p class="pw-hint">Temporary password — the officer sets their own on first login.
-               Must be at least 12 characters with an uppercase &amp; lowercase letter, a number, and a special character (!@#$%…).</p>
-            <button type="submit">Add Officer</button>
-        </form>
+    <div class="form-group">
+      <label class="form-label" for="of-rank">Rank</label>
+      <input class="form-input" type="text" id="of-rank" name="rank" placeholder="e.g. Inspector" value="{{ f.get('rank', '') }}" required>
     </div>
-
-</body>
-</html>
+    <div class="form-group">
+      <label class="form-label" for="of-email">Email</label>
+      <input class="form-input" type="email" id="of-email" name="email" placeholder="name@tnpolice.gov.in" value="{{ f.get('email', '') }}" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="of-username">Username</label>
+      <input class="form-input" type="text" id="of-username" name="username" placeholder="Login username" value="{{ f.get('username', '') }}" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="of-password">Temporary password</label>
+      <input class="form-input" type="password" id="of-password" name="password" placeholder="Temporary password" required>
+      <p class="form-hint">Temporary password — the officer sets their own on first login.
+        Must be at least 12 characters with an uppercase &amp; lowercase letter, a number, and a special character (!@#$%…).</p>
+    </div>
+    <button class="btn btn-primary btn-block" type="submit">Add Officer</button>
+  </form>
+</section>
+{% endblock %}

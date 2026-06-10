@@ -5,7 +5,7 @@ a = Analysis(
     ['app.py'],
     pathex=[],
     binaries=[],
-    datas=[('templates', 'templates'), ('static', 'static'), ('app', 'app'), ('Template for letter generation_suspect accounts.docx', '.'), ('Template for letter generation_victim account.docx', '.')],
+    datas=[('templates', 'templates'), ('static', 'static'), ('Template for letter generation_suspect accounts.docx', '.'), ('Template for letter generation_victim account.docx', '.')],
     hiddenimports=['encodings.utf_8', 'reportlab.graphics.barcode.code128', 'reportlab.graphics.barcode.code93', 'reportlab.graphics.barcode.code39', 'reportlab.graphics.barcode.usps', 'reportlab.graphics.barcode.usps4s', 'reportlab.graphics.barcode.ecc200datamatrix', 'reportlab.graphics.barcode.qr'],
     hookspath=[],
     hooksconfig={},

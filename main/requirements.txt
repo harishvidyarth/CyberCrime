@@ -1,6 +1,8 @@
-# Pinned to the known-working versions (tested on the Python 3.9 venv) so that
+# Pinned to known-working versions (tested on Python 3.11) so that
 # `pip install -r requirements.txt` is reproducible and never pulls a breaking new
 # release. Bump versions deliberately, then re-run tests/smoke_test.py.
+# NOTE: requires Python 3.10+ (the CVE-fixed releases of requests/urllib3/pillow
+# dropped 3.9, which is EOL since Oct 2025).
 Flask==3.1.3
 Flask-SQLAlchemy==3.1.1
 pandas==2.3.3
@@ -9,10 +11,14 @@ Flask-Migrate==4.1.0
 PyMySQL==1.2.0
 cryptography==48.0.0
 openpyxl==3.1.5
-requests==2.32.5
-python-dotenv==1.2.1
+requests==2.33.0          # >=2.33 fixes GHSA-gc5v-m9x4-r6x2
+python-dotenv==1.2.2      # >=1.2.2 fixes GHSA-mf9w-mj56-hr94
+urllib3==2.7.0            # transitive (requests); pinned for PYSEC-2026-141/142
+pillow==12.2.0            # transitive (xhtml2pdf/reportlab); pinned for 6 CVEs
 Flask-WTF==1.2.2
 Flask-Limiter==3.11.0
+Flask-Compress==1.18      # gzip responses (Feature D20)
+pyotp==2.9.0              # TOTP two-factor auth (Feature B9)
 
 # Two PDF tools, kept on purpose (Phase 6, item 24): xhtml2pdf renders the HTML letter
 # templates; reportlab draws the data-visual reports (fund-trail, analytics). Migrating

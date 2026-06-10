@@ -1,47 +1,79 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Complaint Viewer</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body class="dashboard-page">
-  <header class="dashboard-header">
-    <div class="logo-area">
-      <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="TN Logo" class="logo-small">
-      <h2>Complaint Viewer</h2>
-    </div>
-    <div class="user-info">
-      <a href="{{ url_for('index') }}">Dashboard</a> |
-      <a href="{{ url_for('logout') }}">Logout</a>
-    </div>
-  </header>
+{% extends "_layout.html" %}
+{% block title %}My Cases{% endblock %}
 
-  <main class="dashboard-main">
-    <h3>List of Complaints</h3>
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('role_home') }}">Dashboard</a><span class="sep">›</span>
+  <span class="current">My Cases</span>
+</nav>
+{% endblock %}
 
-    <table>
-      <thead>
-        <tr>
-          <th>Ack No</th>
-          <th>Victim</th>
-          <th>Complaint Date</th>
-          <th>Status</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for c in complaints %}
-        <tr>
-          <td>{{ c.ack_no }}</td>
-          <td>{{ c.victim_name }}</td>
-          <td>{{ c.date }}</td>
-          <td>{{ c.status }}</td>
-          <td><a href="{{ url_for('graph_tree', ack_no=c.ack_no) }}">View Graph</a></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </main>
-</body>
-</html>
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>My Cases</h1>
+    <div class="sub">{{ cases|length }} case{{ 's' if cases|length != 1 }} you uploaded or were assigned</div>
+  </div>
+  <input class="form-input" style="max-width:280px" type="search" placeholder="Filter cases…"
+         data-filter-table="myCasesTable" aria-label="Filter cases table">
+</header>
+
+<div class="table-wrap">
+  <table class="ds-table" id="myCasesTable">
+    <thead>
+      <tr>
+        <th class="sortable">Ack No</th>
+        <th>Status</th>
+        <th class="sortable">File</th>
+        <th class="sortable">Assigned To</th>
+        <th class="sortable">Upload Time</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in cases %}
+      <tr>
+        <td class="mono font-semibold">{{ c.ack_no }}</td>
+        <td>
+          {# Officer can move their own case through the workflow (Feature A1) #}
+          <form method="POST" action="{{ url_for('update_case_status') }}" class="flex items-center gap-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="ack_no" value="{{ c.ack_no }}">
+            <select class="form-select" name="status" style="width:auto;height:32px" aria-label="Case status">
+              {% for s in statuses %}
+              <option value="{{ s }}" {% if s == c.status %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-secondary btn-sm" type="submit">Set</button>
+          </form>
+        </td>
+        <td class="truncate">{{ c.file_name }}</td>
+        <td>{{ c.assigned_to }}</td>
+        <td>{{ c.upload_time.strftime("%d/%m/%Y %H:%M") if c.upload_time else '—' }}</td>
+        <td>
+          <div class="flex gap-2">
+            {% if c.has_data %}
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('graph_tree1', ack_no=c.ack_no) }}">View Graph</a>
+            {% else %}
+            <span class="badge badge-neutral">No data</span>
+            {% endif %}
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('case_timeline', ack_no=c.ack_no) }}">Timeline</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('download_letters_zip', ack_no=c.ack_no) }}"
+               title="Download all generated letters as ZIP">Letters</a>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not cases %}
+      <tr><td colspan="6">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <div class="es-title">No cases yet</div>
+          <a class="btn btn-primary btn-sm mt-2" href="{{ url_for('index') }}">Upload your first file</a>
+        </div>
+      </td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

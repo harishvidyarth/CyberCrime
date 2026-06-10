@@ -1,0 +1,80 @@
+{% extends "_layout.html" %}
+{% block title %}Case {{ ack_no }}{% endblock %}
+{% block page_title %}Case Timeline{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('role_home') }}">Dashboard</a><span class="sep">›</span>
+  <a href="{{ url_for('complaints') }}">Cases</a><span class="sep">›</span>
+  <span class="current">{{ ack_no }}</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="mono">Case {{ ack_no }}</h1>
+    <div class="sub">
+      {% if complaint %}
+        {% set st = complaint.status or 'Open' %}
+        <span class="badge {{ 'badge-closed' if st == 'Closed' else 'badge-progress' if st == 'Under Investigation' else 'badge-open' }}">{{ st }}</span>
+        {% if complaint.file_name %} · {{ complaint.file_name }}{% endif %}
+        {% if complaint.upload_time %} · registered {{ complaint.upload_time.strftime('%d %b %Y') }}{% endif %}
+      {% else %}
+        No complaint record (legacy data)
+      {% endif %}
+    </div>
+  </div>
+  <div class="flex gap-2">
+    <a class="btn btn-secondary" href="{{ url_for('graph_tree1', ack_no=ack_no) }}">Fund-Flow Graph</a>
+    <a class="btn btn-secondary" href="{{ url_for('download_letters_zip', ack_no=ack_no) }}">Letters (ZIP)</a>
+  </div>
+</header>
+
+<div class="grid-2">
+  <!-- Notes (Feature A4) -->
+  <section class="ds-card" aria-labelledby="notesTitle">
+    <div class="card-header"><h2 class="card-title" id="notesTitle">Investigation Notes</h2></div>
+    <form method="POST" action="{{ url_for('add_case_note', ack_no=ack_no) }}" data-busy-button="Saving…">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-group">
+        <label class="form-label" for="noteText">Add a note</label>
+        <textarea class="form-textarea" id="noteText" name="note" maxlength="2000" required
+                  placeholder="e.g. Spoke to Axis Bank nodal officer; hold confirmed for txn ending 4421…"></textarea>
+      </div>
+      <button class="btn btn-primary" type="submit">Add Note</button>
+    </form>
+    <hr style="border:none;border-top:1px solid var(--color-border);margin:var(--space-6) 0">
+    {% if notes %}
+    <ul class="timeline">
+      {% for n in notes %}
+      <li>
+        <div>{{ n.note }}</div>
+        <div class="tl-time">{{ n.author }} · {{ n.created_at.strftime('%d %b %Y, %H:%M') if n.created_at else '' }} UTC</div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state"><div class="es-title">No notes yet</div>Start the case diary with your first note above.</div>
+    {% endif %}
+  </section>
+
+  <!-- Recorded actions -->
+  <section class="ds-card" aria-labelledby="eventsTitle">
+    <div class="card-header"><h2 class="card-title" id="eventsTitle">Recorded Actions</h2></div>
+    {% if events %}
+    <ul class="timeline">
+      {% for e in events %}
+      <li>
+        <div class="font-semibold">{{ e.action.replace('_', ' ')|title }}</div>
+        <div class="text-secondary">{{ e.username }}{% if e.filename %} — {{ e.filename }}{% endif %}</div>
+        <div class="tl-time">{{ e.timestamp.strftime('%d %b %Y, %H:%M') if e.timestamp else '' }} UTC</div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="empty-state"><div class="es-title">No recorded actions</div>Uploads, holds and letters for this case will appear here.</div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

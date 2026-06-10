@@ -2,14 +2,28 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timezone
 from flask_login import UserMixin
+import hashlib
 import re
 
 db = SQLAlchemy()
 
+# Password policy constants (single source of truth for the whole app).
+PASSWORD_MIN_LENGTH = 12
+PASSWORD_HISTORY_LIMIT = 5   # block reuse of the last N passwords
+
+# Valid case workflow states (Feature: Case Status Workflow).
+CASE_STATUSES = ('Open', 'Under Investigation', 'Closed')
+
+
+def utc_now():
+    """Timezone-aware UTC now — replaces the deprecated datetime.utcnow()."""
+    return datetime.now(timezone.utc)
+
+
 def validate_password(password):
     """Enforce password complexity"""
-    if len(password) < 12:
-        raise ValueError("Password must be at least 12 characters")
+    if len(password) < PASSWORD_MIN_LENGTH:
+        raise ValueError(f"Password must be at least {PASSWORD_MIN_LENGTH} characters")
     if not re.search(r'[A-Z]', password):
         raise ValueError("Password must contain uppercase letter")
     if not re.search(r'[a-z]', password):
@@ -19,6 +33,7 @@ def validate_password(password):
     if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
         raise ValueError("Password must contain special character")
     return True
+
 
 class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -33,16 +48,16 @@ class Transaction(db.Model):
     amount = db.Column(db.Float)
     disputed_amount = db.Column(db.Float)
     action_taken = db.Column(db.String(255))
-    account_number = db.Column(db.String(50))  # ✅ Add this line
+    account_number = db.Column(db.String(50))
     state = db.Column(db.String(50))  # Cache state from IFSC
 
-    # New fields for ATM withdrawal
+    # ATM withdrawal details
     atm_id = db.Column(db.String(100))
     atm_withdraw_amount = db.Column(db.Float)
     atm_withdraw_date = db.Column(db.String(100))
     atm_location = db.Column(db.String(200))
 
-    # New fields for Cheque withdrawal
+    # Cheque withdrawal details
     cheque_no = db.Column(db.String(100))
     cheque_withdraw_amount = db.Column(db.Float)
     cheque_withdraw_date = db.Column(db.String(100))
@@ -57,7 +72,7 @@ class Transaction(db.Model):
     refund_status = db.Column(db.String(50))
     refund_amount = db.Column(db.Float)
 
-# Add to Transaction model in models.py or wherever your SQLAlchemy models are defined
+    # KYC details captured against the transaction
     kyc_name = db.Column(db.String(120))
     kyc_aadhar = db.Column(db.String(20))
     kyc_mobile = db.Column(db.String(20))
@@ -67,7 +82,10 @@ class Transaction(db.Model):
     __table_args__ = (
         db.Index('idx_transaction_ack_no', 'ack_no'),
         db.Index('idx_transaction_put_on_hold', 'put_on_hold_txn_id'),
+        # Cross-case mule-account detection groups by to_account (Feature A3).
+        db.Index('idx_transaction_to_account', 'to_account'),
     )
+
 
 class POHRefundDetails(db.Model):
     """
@@ -75,32 +93,39 @@ class POHRefundDetails(db.Model):
     so they are not lost when the main Excel file is re-uploaded.
     """
     id = db.Column(db.Integer, primary_key=True)
-    __bind_key__ = 'poh_store'
     ack_no = db.Column(db.String(100), index=True)
-    txn_id = db.Column(db.String(100), index=True) # Corresponds to put_on_hold_txn_id
+    txn_id = db.Column(db.String(100), index=True)  # Corresponds to put_on_hold_txn_id
     court_order_date = db.Column(db.String(20))
     refund_status = db.Column(db.String(50))
     refund_amount = db.Column(db.Float)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
 
     __table_args__ = (
         db.UniqueConstraint('ack_no', 'txn_id', name='uq_poh_refund_details'),
     )
+
 
 class KYCDetails(db.Model):
     """
     Persists KYC details separately.
     """
     id = db.Column(db.Integer, primary_key=True)
-    __bind_key__ = 'kyc_store'
     txn_id = db.Column(db.String(100), unique=True, index=True)
     name = db.Column(db.String(120))
     aadhar = db.Column(db.String(20))
     mobile = db.Column(db.String(20))
     address = db.Column(db.String(200))
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
 
-# from werkzeug.security import generate_password_hash, check_password_hash
+
+class PasswordHistory(db.Model):
+    """Stores previous password hashes so recent passwords cannot be reused
+    (Feature B12: password expiry & reuse prevention)."""
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), index=True)
+    password_hash = db.Column(db.Text)
+    changed_at = db.Column(db.DateTime, default=utc_now)
+
 
 class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
@@ -116,14 +141,42 @@ class User(db.Model, UserMixin):
     failed_login_attempts = db.Column(db.Integer, default=0)
     account_locked_until = db.Column(db.DateTime, nullable=True)
     must_change_password = db.Column(db.Boolean, default=False)
+    # Feature B13: show "last login" so users can spot unauthorised access.
+    last_login_at = db.Column(db.DateTime, nullable=True)
+    # Feature B12: password age tracking (NULL = never tracked; expiry not enforced).
+    password_changed_at = db.Column(db.DateTime, nullable=True)
+    # Feature B9: TOTP two-factor secret (NULL = 2FA not enabled for this user).
+    totp_secret = db.Column(db.String(64), nullable=True)
 
     def set_password(self, password):
         validate_password(password)
+        self._reject_recent_password(password)
         # Use scrypt where the platform supports it (strongest); otherwise fall back to
         # pbkdf2:sha256, which works on every Python (e.g. 3.9 / OpenSSL built without scrypt).
-        import hashlib
         method = "scrypt" if hasattr(hashlib, "scrypt") else "pbkdf2:sha256"
+        # Archive the outgoing hash so reuse of recent passwords can be blocked.
+        if self.password_hash and self.id is not None:
+            db.session.add(PasswordHistory(user_id=self.id, password_hash=self.password_hash))
         self.password_hash = generate_password_hash(password, method=method)
+        self.password_changed_at = utc_now()
+
+    def _reject_recent_password(self, password):
+        """Raise ValueError if `password` matches the current or a recent password."""
+        candidates = [self.password_hash] if self.password_hash else []
+        if self.id is not None:
+            recent = (PasswordHistory.query.filter_by(user_id=self.id)
+                      .order_by(PasswordHistory.changed_at.desc())
+                      .limit(PASSWORD_HISTORY_LIMIT).all())
+            candidates.extend(h.password_hash for h in recent)
+        for old_hash in candidates:
+            try:
+                matched = check_password_hash(old_hash, password)
+            except Exception:
+                matched = False
+            if matched:
+                raise ValueError(
+                    f"New password must not match any of your last {PASSWORD_HISTORY_LIMIT} passwords"
+                )
 
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
@@ -135,13 +188,11 @@ class UploadedFile(db.Model):
     data = db.Column(db.LargeBinary)
     uploader = db.Column(db.String(100))  # session['username']
     mimetype = db.Column(db.String(100))
-    # upload_time = db.Column(db.DateTime, default=datetime.utcnow)
-    upload_time = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    upload_time = db.Column(db.DateTime, default=utc_now)
     transaction_count = db.Column(db.Integer, default=0)
-    # ✅ Add this line
     transaction = db.relationship('Transaction', backref='upload', uselist=False)
 
-# models.py
+
 class Complaint(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ack_no = db.Column(db.String(50), unique=True, nullable=False)
@@ -149,6 +200,18 @@ class Complaint(db.Model):
     uploaded_by = db.Column(db.Integer, db.ForeignKey('user.id'))
     assigned_to = db.Column(db.Integer, db.ForeignKey('user.id'))
     upload_time = db.Column(db.DateTime)
+    # Feature A1: case workflow state — one of CASE_STATUSES.
+    status = db.Column(db.String(30), default='Open')
+
+
+class CaseNote(db.Model):
+    """Officer-written investigation notes per case (Feature A4: notes & timeline)."""
+    id = db.Column(db.Integer, primary_key=True)
+    ack_no = db.Column(db.String(100), index=True, nullable=False)
+    author = db.Column(db.String(100))   # username
+    note = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=utc_now)
+
 
 class UsageLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -157,6 +220,4 @@ class UsageLog(db.Model):
     action = db.Column(db.String(100))
     filename = db.Column(db.String(255))
     ack_no = db.Column(db.String(100))
-    timestamp = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-
-
+    timestamp = db.Column(db.DateTime, default=utc_now)

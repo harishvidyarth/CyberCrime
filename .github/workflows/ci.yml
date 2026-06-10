@@ -1,0 +1,52 @@
+# Feature E23: CI — run both FundTrail test suites and a dependency CVE audit on
+# every push/PR, so regressions (like the secret-key fallback that once crept
+# back in) are caught automatically.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: main/requirements.txt
+      - name: Install dependencies
+        run: pip install -r main/requirements.txt
+      - name: Smoke tests
+        working-directory: main
+        run: python tests/smoke_test.py
+      - name: Access-control tests
+        working-directory: main
+        run: python tests/test_access_control.py
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Dependency CVE audit
+        run: |
+          pip install pip-audit
+          pip-audit -r main/requirements.txt --no-deps
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Ruff
+        run: |
+          pip install ruff
+          ruff check main/ dev_seed.py

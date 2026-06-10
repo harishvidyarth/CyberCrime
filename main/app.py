@@ -9,9 +9,7 @@ import time
 import string
 
 load_dotenv()
-import hmac
-from urllib.parse import urlparse, urljoin
-from flask_sqlalchemy import SQLAlchemy
+from urllib.parse import urlparse
 from collections import defaultdict
 import os
 import io
@@ -22,7 +20,8 @@ if os.name == 'nt':
     import msvcrt
 else:
     import fcntl
-from models import db, User, Transaction, UploadedFile, Complaint, UsageLog, POHRefundDetails, KYCDetails
+from models import (db, User, Transaction, UploadedFile, Complaint, UsageLog,
+                    POHRefundDetails, KYCDetails, CaseNote, CASE_STATUSES)
 import pandas as pd  # pyright: ignore[reportMissingImports]
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask_login import login_required, LoginManager, login_user, logout_user, current_user  # pyright: ignore[reportMissingImports]
@@ -38,6 +37,12 @@ if os.environ.get('DATABASE_URL', '').startswith('mysql'):
     pymysql.install_as_MySQLdb()
 import concurrent.futures
 import re
+# Feature B9: TOTP two-factor auth. Optional — the app runs fine without pyotp,
+# 2FA setup is simply unavailable until it is installed.
+try:
+    import pyotp
+except ImportError:  # pragma: no cover
+    pyotp = None
 from decimal import Decimal, InvalidOperation
 import requests
 import sys
@@ -45,16 +50,14 @@ import logging
 from logging.handlers import RotatingFileHandler
 from xhtml2pdf import pisa
 from docx import Document
-from docx.shared import Pt, Inches, RGBColor
+from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
 # ReportLab imports for PDF generation
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
-from reportlab.lib.units import inch
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -71,9 +74,53 @@ log_file_path = os.path.join(log_dir, 'app.log')
 
 handler = RotatingFileHandler(log_file_path, maxBytes=10000000, backupCount=5)
 handler.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+
+class RequestIdFilter(logging.Filter):
+    """Feature F28: stamp every log record with the current request's ID so one
+    request's entries can be traced end-to-end. '-' outside a request context."""
+    def filter(self, record):
+        try:
+            from flask import g as _g, has_request_context
+            record.request_id = getattr(_g, 'request_id', '-') if has_request_context() else '-'
+        except Exception:
+            record.request_id = '-'
+        return True
+
+
+class JsonLogFormatter(logging.Formatter):
+    """Feature F28: machine-parseable one-JSON-object-per-line log format.
+    Enabled with LOG_FORMAT=json in .env; default stays human-readable."""
+    def format(self, record):
+        payload = {
+            'ts': self.formatTime(record),
+            'level': record.levelname,
+            'logger': record.name,
+            'request_id': getattr(record, 'request_id', '-'),
+            'message': record.getMessage(),
+        }
+        if record.exc_info:
+            payload['exc'] = self.formatException(record.exc_info)
+        return json.dumps(payload)
+
+
+if os.environ.get('LOG_FORMAT', '').lower() == 'json':
+    formatter = JsonLogFormatter()
+else:
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - [%(request_id)s] %(message)s')
+handler.addFilter(RequestIdFilter())
 handler.setFormatter(formatter)
 logger.addHandler(handler)
+
+# Feature F29: dedicated alert log for 500s — a small, high-signal file an admin
+# (or a watcher script / mail hook) can monitor instead of grepping app.log.
+alert_handler = RotatingFileHandler(os.path.join(log_dir, 'alerts.log'),
+                                    maxBytes=1000000, backupCount=2)
+alert_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+alert_logger = logging.getLogger('fundtrail.alerts')
+alert_logger.addHandler(alert_handler)
+alert_logger.setLevel(logging.ERROR)
 
 def resource_path(relative_path):
     if hasattr(sys, "_MEIPASS"):
@@ -118,8 +165,9 @@ limiter = Limiter(
 
 @app.before_request
 def generate_csp_nonce():
-    """Generate a random nonce for CSP"""
+    """Per-request setup: CSP nonce + request ID (Feature F28)."""
     g.csp_nonce = secrets.token_hex(16)
+    g.request_id = secrets.token_hex(8)
 
 @app.context_processor
 def inject_csp_nonce():
@@ -131,12 +179,11 @@ def set_security_headers(response):
     """Add security headers to all responses"""
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
+    # '0' disables the legacy XSS auditor (deprecated; it introduced its own XSS
+    # vectors). CSP below is the real control.
+    response.headers['X-XSS-Protection'] = '0'
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    
-    # Remove Server header to prevent information disclosure
-    response.headers.pop('Server', None)
-    
+
     # Use the nonce generated in before_request
     nonce = getattr(g, 'csp_nonce', '')
     
@@ -158,17 +205,29 @@ def set_security_headers(response):
     
     # Remove Server header to prevent version disclosure (FT-09)
     response.headers.pop('Server', None)
-    
-    # Prevent caching of sensitive pages (FT-012)
-    if 'static' not in request.path.lower():
+
+    if request.path.startswith('/static'):
+        # Static assets are immutable between deploys — let browsers cache them
+        # for a day instead of re-downloading the ~2MB vendored JS every page.
+        response.headers.setdefault('Cache-Control', 'public, max-age=86400')
+    else:
+        # Prevent caching of sensitive pages (FT-012)
         if 'Cache-Control' not in response.headers:
             response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, private, max-age=0'
         response.headers['Pragma'] = 'no-cache'
         response.headers['Expires'] = '0'
-    
+
     return response
 
 csrf = CSRFProtect(app)
+
+# Feature D20: transparently gzip HTML/JSON/JS responses. Optional dependency —
+# the app runs uncompressed if flask_compress is missing.
+try:
+    from flask_compress import Compress
+    Compress(app)
+except ImportError:  # pragma: no cover
+    pass
 
 
 migrate = Migrate(app, db)
@@ -248,26 +307,24 @@ def check_case_access(ack_no):
     if not current_user.is_authenticated:
         abort(403)
 
-    # Admin and Viewer can access all cases
-    if current_user.role in ['Admin']:
+    # Admin can access all cases.
+    if current_user.role == 'Admin':
         return
 
+    # Per-officer isolation: an Investigative Officer may access a case only if they
+    # uploaded it or an admin assigned it to them. Every upload now creates a
+    # Complaint row (see upload_excel + backfill_complaints), so "no complaint" or
+    # "someone else's complaint" means "not your case" -> deny. The old permissive
+    # fallbacks ("unassigned -> anyone", "no complaint but txns exist -> anyone")
+    # were removed because they let any officer open any case.
     ack_no = str(ack_no).strip()
     complaint = Complaint.query.filter_by(ack_no=ack_no).first()
 
-    if complaint:
-        # If case is explicitly assigned or uploaded by this officer, allow
-        if complaint.assigned_to == current_user.id or complaint.uploaded_by == current_user.id:
-            return
-        # If complaint exists but is unassigned, allow read-only access to officers
-        if complaint.assigned_to is None:
-            return
-    else:
-        # If there is no complaint yet but transactions exist for this ACK,
-        # allow officers to view the graph (read-only analytics)
-        has_txn = Transaction.query.filter_by(ack_no=ack_no).first()
-        if has_txn:
-            return
+    if complaint and (
+        complaint.uploaded_by == current_user.id
+        or complaint.assigned_to == current_user.id
+    ):
+        return
 
     logger.warning(f"Unauthorized access attempt to resource {ack_no} by {current_user.username}")
     abort(403)
@@ -279,6 +336,13 @@ def check_case_access(ack_no):
 
 ALLOWED_IFSC_DOMAIN = 'ifsc.razorpay.com'
 MAX_WORKERS = 10
+
+# Login brute-force policy (Fix: magic numbers -> named constants).
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+# Feature B12: force a password change after N days (0 disables expiry). Users with
+# no recorded password age (pre-feature accounts) are not retroactively forced.
+PASSWORD_MAX_AGE_DAYS = int(os.environ.get('PASSWORD_MAX_AGE_DAYS', '90'))
 IFSC_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ifsc_state_cache.json')
 ifsc_api_cache = {}
 
@@ -426,19 +490,18 @@ if not secure_base:
     secure_base = os.path.join(os.path.dirname(app.root_path), 'data')
 _ensure_secure_dir(secure_base)
 primary_db_path = os.path.join(secure_base, 'fundtrail.db')
+# Legacy per-feature SQLite files. POH/KYC data now lives in the main DB; these paths
+# are kept ONLY so migrate_split_dbs_into_main() can import any pre-existing rows out
+# of them. We no longer create them (don't resurrect empty split DBs).
 poh_db_path = os.path.join(secure_base, 'poh_refund_details.db')
 kyc_db_path = os.path.join(secure_base, 'kyc_details.db')
 _ensure_secure_file(primary_db_path)
-_ensure_secure_file(poh_db_path)
-_ensure_secure_file(kyc_db_path)
 db_url = os.environ.get('DATABASE_URL')
 if not db_url:
     db_url = f"sqlite:///{primary_db_path}"
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-app.config['SQLALCHEMY_BINDS'] = {
-    'poh_store': f'sqlite:///{poh_db_path}',
-    'kyc_store': f'sqlite:///{kyc_db_path}'
-}
+# Single database: POHRefundDetails and KYCDetails are plain tables in the main DB now
+# (no SQLALCHEMY_BINDS, so no cross-DB syncing and one consistent source of truth).
 
 # Secure session cookie configuration.
 # FT-010: the Secure flag MUST be True in production (HTTPS). But over plain http
@@ -448,6 +511,11 @@ app.config['SQLALCHEMY_BINDS'] = {
 #   -> set SESSION_COOKIE_INSECURE=true in .env ONLY on a local dev machine.
 _cookie_insecure = os.environ.get('SESSION_COOKIE_INSECURE', 'false').lower() == 'true'
 app.config['SESSION_COOKIE_SECURE'] = not _cookie_insecure  # True unless explicitly opted out
+if _cookie_insecure:
+    logger.warning(
+        "SESSION_COOKIE_INSECURE=true -> session cookies are NOT marked Secure. "
+        "This is for LOCAL HTTP DEV ONLY; never run a real deployment this way (use HTTPS)."
+    )
 
 app.config['SESSION_COOKIE_HTTPONLY'] = True # No JavaScript access
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax' # CSRF protection
@@ -473,9 +541,19 @@ def ensure_usage_log_table():
 
 def log_usage(action, filename=None, ack_no=None):
     try:
+        # Prefer the authenticated identity (DB-backed) over the session copy, which
+        # is blank for any route that never sets session['username'/'role'].
+        uname = session.get('username')
+        urole = session.get('role')
+        try:
+            if current_user.is_authenticated:
+                uname = current_user.username
+                urole = current_user.role
+        except Exception:
+            pass
         entry = UsageLog(
-            username=session.get('username'),
-            role=session.get('role'),
+            username=uname,
+            role=urole,
             action=action,
             filename=filename,
             ack_no=ack_no
@@ -502,6 +580,29 @@ def validate_amount(amount):
         return amt > 0 and amt < Decimal('999999999.99')
     except (InvalidOperation, ValueError):
         return False
+
+def validate_aadhar(value):
+    """Aadhaar = 12 digits (spaces/dashes ignored). Blank allowed (optional field)."""
+    if not value:
+        return True
+    return bool(re.fullmatch(r'\d{12}', re.sub(r'[\s-]', '', str(value))))
+
+def validate_mobile(value):
+    """Indian mobile = 10 digits starting 6-9, optional +91/0 prefix. Blank allowed."""
+    if not value:
+        return True
+    return bool(re.fullmatch(r'(?:\+91|0)?[6-9]\d{9}', re.sub(r'[\s-]', '', str(value))))
+
+def validate_court_order_date(value):
+    """Blank, an HTML date value (yyyy-mm-dd), or dd-mm-yyyy / dd/mm/yyyy."""
+    if not value:
+        return True
+    s = str(value).strip()
+    return bool(re.fullmatch(r'\d{4}-\d{2}-\d{2}', s) or re.fullmatch(r'\d{2}[-/]\d{2}[-/]\d{4}', s))
+
+# Mirrors the fixed <select> options in static/graph.js (blank = clear the field).
+ALLOWED_REFUND_STATUSES = {'', 'Refunded', 'Partially Refunded', 'Not Refunded'}
+
 def ordinal(n):
     try:
         n = int(n)
@@ -512,6 +613,38 @@ def ordinal(n):
     else:
         suf = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
     return f"{n}{suf}"
+
+def _ensure_columns(table_name, required_columns):
+    """Add any missing columns to an EXISTING table, on both MySQL and SQLite.
+
+    db.create_all() creates new *tables* but never alters existing ones, so when a
+    new column is introduced an already-created DB (esp. the SQLite dev DB) silently
+    lacks it -> runtime 'no such column' errors. This backfills the columns. Column
+    names come only from our own hard-coded dicts (never user input)."""
+    try:
+        driver = db.engine.url.drivername or ''
+    except Exception:
+        driver = ''
+    try:
+        inspector = inspect(db.engine)
+        if not inspector.has_table(table_name):
+            return
+        existing = {c['name'] for c in inspector.get_columns(table_name)}
+        missing = {c: d for c, d in required_columns.items() if c not in existing}
+        if not missing:
+            return
+        # Quote identifiers: backticks for MySQL, double-quotes elsewhere (SQLite).
+        q = '`' if driver.startswith('mysql') else '"'
+        with db.engine.begin() as conn:
+            for col, ddl in missing.items():
+                try:
+                    conn.execute(text(f'ALTER TABLE {q}{table_name}{q} ADD COLUMN {q}{col}{q} {ddl}'))
+                    logger.info(f"Added missing column {table_name}.{col}")
+                except Exception as exc:
+                    logger.warning(f"Skipping column {table_name}.{col}: {exc}")
+    except Exception as exc:
+        logger.warning(f"_ensure_columns({table_name}) failed: {exc}")
+
 
 def ensure_transaction_columns():
     """Add any newly introduced columns to the transaction table if missing."""
@@ -550,26 +683,7 @@ def ensure_transaction_columns():
         'upload_id': 'INT'
     }
 
-    # Only run MySQL-specific ALTERs when using a MySQL driver
-    try:
-        driver = db.engine.url.drivername
-    except Exception:
-        driver = ''
-    if driver.startswith('mysql'):
-        inspector = inspect(db.engine)
-        if inspector.has_table('transaction'):
-            with db.engine.connect() as conn:
-                for col, ddl in required_columns.items():
-                    result = conn.execute(
-                        text("SHOW COLUMNS FROM `transaction` LIKE :column_name"),
-                        {"column_name": col}
-                    )
-                    if not result.fetchone():
-                        try:
-                            conn.execute(text(f'ALTER TABLE `transaction` ADD COLUMN `{col}` {ddl}'))
-                            logger.info(f"Added missing column: {col}")
-                        except Exception as exc:
-                            logger.warning(f"Skipping column {col}; encountered error: {exc}")
+    _ensure_columns('transaction', required_columns)
 
 def ensure_user_columns():
     """Add newly introduced columns to the user table if they are missing."""
@@ -578,31 +692,17 @@ def ensure_user_columns():
         'rank': 'VARCHAR(100)',
         'email': 'VARCHAR(120)',
         'manual_upload_count': 'INT NULL',
-        'must_change_password': 'BOOLEAN DEFAULT 0'
+        'must_change_password': 'BOOLEAN DEFAULT 0',
+        'last_login_at': 'DATETIME NULL',
+        'password_changed_at': 'DATETIME NULL',
+        'totp_secret': 'VARCHAR(64) NULL'
     }
 
-    # Only run MySQL-specific ALTERs when using a MySQL driver
-    try:
-        driver = db.engine.url.drivername
-    except Exception:
-        driver = ''
-    if driver.startswith('mysql'):
-        inspector = inspect(db.engine)
-        if inspector.has_table('user'):
-            with db.engine.connect() as conn:
-                for col, ddl in required_columns.items():
-                    result = conn.execute(
-                        text("SHOW COLUMNS FROM `user` LIKE :column_name"),
-                        {"column_name": col}
-                    )
-                    if not result.fetchone():
-                        try:
-                            if col not in required_columns:
-                                raise ValueError(f"Invalid column name: {col}")
-                            conn.execute(text(f'ALTER TABLE `user` ADD COLUMN `{col}` {ddl}'))
-                            logger.info(f"Added missing user column: {col}")
-                        except Exception as exc:
-                            logger.warning(f"Skipping user column {col}; encountered error: {exc}")
+    _ensure_columns('user', required_columns)
+
+def ensure_complaint_columns():
+    """Add newly introduced columns to the complaint table if missing."""
+    _ensure_columns('complaint', {"status": "VARCHAR(30) DEFAULT 'Open'"})
 
 def generate_secure_password(length=16):
     """Generate a secure random password."""
@@ -636,13 +736,6 @@ def initialize_secure_users():
             password = generate_secure_password()
             user = User(username=username, role=role)
             user.set_password(password)
-            # Ensure the user model has this attribute or handle it if it's dynamic
-            # We added the column to ensure_user_columns, so it should be fine in DB
-            # But the ORM model (models.py) might not have it mapped yet.
-            # However, we can set it on the instance if it's in the DB schema? 
-            # No, SQLAlchemy needs the field in the model class.
-            # We'll assume models.py needs update or we use raw SQL if model not updated?
-            # Ideally update models.py too. But for now let's set it.
             user.must_change_password = True
             db.session.add(user)
             created_credentials.append((username, password))
@@ -660,9 +753,88 @@ def initialize_secure_users():
         print("Please copy these credentials immediately. They will not be shown again.")
         print("You will be required to change the password on first login.\n")
 
+def migrate_split_dbs_into_main():
+    """One-time, idempotent consolidation: import POH/KYC rows from the old per-feature
+    SQLite files (poh_refund_details.db / kyc_details.db) into the main DB now that those
+    models live there. Each old file is renamed to *.migrated after a successful import
+    so it is never re-read. No-op on a fresh install or once already migrated."""
+    import sqlite3
+    jobs = [
+        (poh_db_path, 'poh_refund_details', POHRefundDetails, ('ack_no', 'txn_id')),
+        (kyc_db_path, 'kyc_details', KYCDetails, ('txn_id',)),
+    ]
+    for old_path, table, model, key_cols in jobs:
+        if not old_path or not os.path.exists(old_path):
+            continue
+        valid_cols = {c.name for c in model.__table__.columns}
+        try:
+            conn = sqlite3.connect(old_path)
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(f"SELECT * FROM {table}").fetchall()
+            except sqlite3.OperationalError:
+                rows = []          # table missing in the old file
+            finally:
+                conn.close()
+
+            imported = 0
+            for r in rows:
+                d = {k: r[k] for k in r.keys() if k in valid_cols and k != 'id'}
+                key = {k: d.get(k) for k in key_cols}
+                if model.query.filter_by(**key).first():
+                    continue       # idempotent: already present in the main DB
+                db.session.add(model(**d))
+                imported += 1
+            db.session.commit()
+            os.rename(old_path, old_path + '.migrated')
+            if imported:
+                logger.info(f"Consolidated {imported} row(s) from {os.path.basename(old_path)} into main DB.")
+        except Exception as exc:
+            db.session.rollback()
+            logger.error(f"DB consolidation for {old_path} failed: {exc}")
+
+
+def backfill_complaints():
+    """One-time/idempotent: ensure every uploaded case has a Complaint row tied to
+    its uploader, so per-officer isolation also works for data uploaded before this
+    feature existed. Maps UploadedFile.uploader (username) -> User.id; if the
+    uploader is unknown the case is left admin-only (uploaded_by/assigned_to=None)."""
+    try:
+        existing = {row[0] for row in db.session.query(Complaint.ack_no).all()}
+        umap = {u.username: u.id for u in User.query.with_entities(User.id, User.username).all()}
+        rows = (
+            db.session.query(
+                Transaction.ack_no, UploadedFile.uploader,
+                UploadedFile.filename, UploadedFile.upload_time
+            )
+            .join(UploadedFile, Transaction.upload_id == UploadedFile.id)
+            .filter(Transaction.ack_no.isnot(None))
+            .distinct()
+            .all()
+        )
+        created, seen = 0, set()
+        for ack, uploader, fname, utime in rows:
+            ack_s = str(ack).strip()
+            if not ack_s or ack_s in existing or ack_s in seen:
+                continue
+            seen.add(ack_s)
+            uid = umap.get(uploader)
+            db.session.add(Complaint(
+                ack_no=ack_s, file_name=fname,
+                uploaded_by=uid, assigned_to=uid, upload_time=utime,
+            ))
+            created += 1
+        if created:
+            db.session.commit()
+            logger.info(f"Backfilled {created} complaint row(s) for pre-existing uploads.")
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"backfill_complaints failed: {e}")
+
 with app.app_context():
     ensure_transaction_columns()
     ensure_user_columns()
+    ensure_complaint_columns()
     ensure_usage_log_table()
 
 
@@ -736,92 +908,168 @@ def change_password():
 
 @app.route('/login', methods=['GET', 'POST'])
 # Brute-force throttle: only count actual POST login attempts, NOT page views/refreshes.
-# (The old "5 per minute" counted every GET of the page too, so just reloading the login
-#  screen a few times — or normal testing — tripped "Too Many Requests".)
-# The per-account lockout (5 failed tries -> 15 min, below) is the primary defence; this
-# per-IP cap is a secondary guard.
+# The per-account lockout (MAX_LOGIN_ATTEMPTS fails -> LOCKOUT_MINUTES, below) is the
+# primary defence; this per-IP cap is a secondary guard.
 @limiter.limit("10 per minute", exempt_when=lambda: request.method != 'POST')
 def login():
+    """Authenticate a user.
+
+    Every failure mode (unknown user, wrong password, locked account) shows the SAME
+    generic message so usernames and lockout state cannot be enumerated. The lockout
+    itself is still enforced. On success the session is rotated (fixation hygiene),
+    last-login is recorded, password expiry is checked, and 2FA users are sent to the
+    TOTP verification step before the session is established.
+    """
     error = None
     if request.method == 'POST':
-        # Use .get() to avoid KeyError when viewer fields are disabled
         role = request.form.get('role', '').strip()
-
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
 
-        # Standard login flow for all roles
-        # Always perform password check to prevent timing attack
         user = User.query.filter_by(username=username, role=role).first()
 
-        
-        if user:
-            # Check if account is locked (ensure timezone awareness for comparison)
-            if user.account_locked_until:
-														   
-                lock_time = user.account_locked_until.replace(tzinfo=timezone.utc) if user.account_locked_until.tzinfo is None else user.account_locked_until
-                now_time = datetime.now(timezone.utc)
-                if lock_time > now_time:
-                    remaining = int((lock_time - now_time).total_seconds() / 60)
-                    flash(f'Account locked. Try again in {remaining} minutes.')
-                    return redirect(url_for('login'))
+        locked = False
+        if user and user.account_locked_until:
+            lock_time = (user.account_locked_until.replace(tzinfo=timezone.utc)
+                         if user.account_locked_until.tzinfo is None else user.account_locked_until)
+            locked = lock_time > datetime.now(timezone.utc)
 
         password_valid = False
         if user:
             password_valid = user.check_password(password)
         else:
-
-            # Perform dummy hash operation to maintain consistent timing
-            # We use a dummy hash that matches the algorithm used in check_password
+            # Dummy hash op to keep response timing consistent when the user doesn't exist.
             dummy_hash = generate_password_hash('dummy_password')
             check_password_hash(dummy_hash, password)
-            password_valid = False
 
-        # Constant-time comparison logic (logically, though Python's bool comparison isn't strictly constant-time, the heavy lifting is the hash)
-        if user and password_valid:
-            # Reset failed attempts on successful login
+        if user and password_valid and not locked:
             user.failed_login_attempts = 0
             user.account_locked_until = None
+            prev_login = user.last_login_at
+            user.last_login_at = datetime.now(timezone.utc)
+            # Feature B12: password expiry — force a change when the password is too old.
+            if PASSWORD_MAX_AGE_DAYS and user.password_changed_at:
+                changed = (user.password_changed_at.replace(tzinfo=timezone.utc)
+                           if user.password_changed_at.tzinfo is None else user.password_changed_at)
+                if datetime.now(timezone.utc) - changed > timedelta(days=PASSWORD_MAX_AGE_DAYS):
+                    user.must_change_password = True
             db.session.commit()
 
-            # Establish Flask-Login session
-            login_user(user)
+            # Session-fixation hygiene: never carry pre-auth session state past login.
+            session.clear()
 
-            session['username'] = username
-            session['role'] = role
-            log_usage('login')
-            
-            # Enforce password change if required
-            if getattr(user, 'must_change_password', False):
-                return redirect(url_for('change_password'))
-            
-            next_page = request.args.get('next')
-            
-            # Validate redirect URL
-            if next_page and is_safe_url(next_page):
-                return redirect(next_page)
-            else:
-                return redirect('/admin_dashboard') if role == 'Admin' else redirect('/index')
-        else:
-            if user:
-                # Increment failed attempts
-                user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
-                
-                if user.failed_login_attempts >= 5:
-                    user.account_locked_until = datetime.now(timezone.utc) + timedelta(minutes=15)
-                    flash('Account locked for 15 minutes due to multiple failed attempts.')
-                else:
-                    flash(f'Invalid credentials. {5 - user.failed_login_attempts} attempts remaining.')
-                
-                db.session.commit()
-            
-            # Add small random delay (100-300ms) to mask any remaining timing differences
-            time.sleep(0.1 + (hash(username) % 200) / 1000.0)
-            error = "Invalid credentials or role"
+            # Feature B9: users with 2FA enabled must enter a TOTP code first.
+            if user.totp_secret and pyotp is not None:
+                session['pending_2fa_user_id'] = user.id
+                session['pending_2fa_role'] = role
+                session['pending_2fa_prev'] = prev_login.isoformat() if prev_login else ''
+                return redirect(url_for('verify_2fa'))
+
+            return _establish_session(user, role, prev_login)
+
+        # Count the failure (unless already locked) and lock when over the limit.
+        if user and not locked:
+            user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+            if user.failed_login_attempts >= MAX_LOGIN_ATTEMPTS:
+                user.account_locked_until = datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_MINUTES)
+            db.session.commit()
+
+        # Small random-ish delay to mask residual timing differences.
+        time.sleep(0.1 + (hash(username) % 200) / 1000.0)
+        # One generic message for ALL failure modes (anti-enumeration).
+        error = "Invalid credentials or role"
     return render_template('login.html', error=error)
 
-@app.route('/logout')
+
+def _establish_session(user, role, prev_login):
+    """Finish a successful authentication: Flask-Login session + role routing."""
+    login_user(user)
+    session['username'] = user.username
+    session['role'] = role
+    # Feature B13: surface the PREVIOUS login time so users can spot misuse.
+    if prev_login:
+        session['prev_login'] = prev_login.strftime('%d %b %Y, %H:%M UTC')
+    log_usage('login')
+
+    if getattr(user, 'must_change_password', False):
+        return redirect(url_for('change_password'))
+
+    next_page = request.args.get('next')
+    if next_page and is_safe_url(next_page):
+        return redirect(next_page)
+    return redirect(url_for('admin_dashboard') if role == 'Admin' else url_for('index'))
+
+
+@app.route('/verify_2fa', methods=['GET', 'POST'])
+@limiter.limit("10 per minute", exempt_when=lambda: request.method != 'POST')
+def verify_2fa():
+    """Feature B9: second login step for users with TOTP enabled."""
+    uid = session.get('pending_2fa_user_id')
+    if not uid or pyotp is None:
+        return redirect(url_for('login'))
+    user = User.query.get(uid)
+    if not user or not user.totp_secret:
+        session.pop('pending_2fa_user_id', None)
+        return redirect(url_for('login'))
+
+    error = None
+    if request.method == 'POST':
+        code = request.form.get('code', '').strip().replace(' ', '')
+        if pyotp.TOTP(user.totp_secret).verify(code, valid_window=1):
+            role = session.pop('pending_2fa_role', user.role)
+            prev_raw = session.pop('pending_2fa_prev', '')
+            session.pop('pending_2fa_user_id', None)
+            prev_login = datetime.fromisoformat(prev_raw) if prev_raw else None
+            return _establish_session(user, role, prev_login)
+        error = "Invalid authentication code."
+    return render_template('verify_2fa.html', error=error)
+
+
+@app.route('/setup_2fa', methods=['GET', 'POST'])
+@login_required
+def setup_2fa():
+    """Feature B9: enable TOTP 2FA for the logged-in user (authenticator app)."""
+    if pyotp is None:
+        flash("Two-factor support is not installed on this machine (pip install pyotp).", "warning")
+        return redirect(url_for('role_home'))
+
+    if request.method == 'POST':
+        secret = session.get('totp_setup_secret')
+        code = request.form.get('code', '').strip().replace(' ', '')
+        if secret and pyotp.TOTP(secret).verify(code, valid_window=1):
+            current_user.totp_secret = secret
+            db.session.commit()
+            session.pop('totp_setup_secret', None)
+            log_usage('enable_2fa')
+            flash("Two-factor authentication enabled.", "success")
+            return redirect(url_for('role_home'))
+        flash("Code did not match — scan/enter the secret again and retry.", "danger")
+
+    secret = session.get('totp_setup_secret') or pyotp.random_base32()
+    session['totp_setup_secret'] = secret
+    otpauth_uri = pyotp.TOTP(secret).provisioning_uri(
+        name=current_user.username, issuer_name='FundTrail')
+    return render_template('setup_2fa.html', secret=secret, otpauth_uri=otpauth_uri,
+                           enabled=bool(current_user.totp_secret))
+
+
+@app.route('/disable_2fa', methods=['POST'])
+@login_required
+def disable_2fa():
+    """Feature B9: turn TOTP off for the logged-in user (requires current password)."""
+    if not current_user.check_password(request.form.get('password', '')):
+        flash("Password incorrect — 2FA unchanged.", "danger")
+        return redirect(url_for('setup_2fa'))
+    current_user.totp_secret = None
+    db.session.commit()
+    log_usage('disable_2fa')
+    flash("Two-factor authentication disabled.", "success")
+    return redirect(url_for('role_home'))
+
+@app.route('/logout', methods=['GET', 'POST'])
 def logout():
+    """Log out. POST (CSRF-protected) is preferred; GET remains supported only for
+    the legacy link inside the graph page, which must stay untouched."""
     log_usage('logout')
     logout_user()
     session.clear()
@@ -829,28 +1077,60 @@ def logout():
 
 @app.route('/admin_dashboard')
 def admin_dashboard():
-    if is_admin():
-        return render_template('admin_dashboard.html', username=session['username'])
-    else:
+    """Admin home. Redirects (not 403) for non-admins — preserved historical
+    behaviour that navigation and the smoke tests rely on."""
+    if not is_admin():
         return redirect(url_for('login'))
+    total_cases = Complaint.query.count()
+    active_cases = Complaint.query.filter(or_(Complaint.status.is_(None),
+                                              Complaint.status != 'Closed')).count()
+    stats = {
+        'total_cases': total_cases,
+        'active_cases': active_cases,
+        'total_txns': db.session.query(func.count(Transaction.id)).scalar() or 0,
+        'held_amount': db.session.query(func.sum(Transaction.put_on_hold_amount)).scalar() or 0.0,
+    }
+    recent_cases = Complaint.query.order_by(Complaint.upload_time.desc()).limit(10).all()
+    id_to_username = {u.id: u.username for u in User.query.with_entities(User.id, User.username).all()}
+    recent_activity = UsageLog.query.order_by(UsageLog.timestamp.desc()).limit(5).all()
+    return render_template('admin_dashboard.html', username=current_user.username,
+                           stats=stats, recent_cases=recent_cases,
+                           id_to_username=id_to_username,
+                           recent_activity=recent_activity)
 
 
 @app.route('/index')
 def index():
+    """Officer dashboard: KPI stat cards, recent cases, activity feed, upload."""
     if 'username' not in session:
         return redirect('/login')
     # Strict role separation: the admin has their own dashboard. If an admin reaches
     # the officer dashboard, bounce them back to the admin dashboard.
     if session.get('role') == 'Admin':
         return redirect(url_for('admin_dashboard'))
-    return render_template('index.html')
 
-ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
-MAX_FILE_SIZE = 50 * 1024 * 1024 # 50MB
-MAX_ROWS = 100000  # Increased limit to support larger files
+    me = session.get('username')
+    my_cases = (Complaint.query.filter(
+        or_(Complaint.uploaded_by == current_user.id,
+            Complaint.assigned_to == current_user.id))
+        .order_by(Complaint.upload_time.desc()).all())
+    my_file_ids = [f.id for f in UploadedFile.query
+                   .with_entities(UploadedFile.id).filter_by(uploader=me)]
+    base = Transaction.query.filter(Transaction.upload_id.in_(my_file_ids or [-1]))
+    stats = {
+        'total_cases': len(my_cases),
+        'active_cases': sum(1 for c in my_cases if (c.status or 'Open') != 'Closed'),
+        'total_txns': base.count(),
+        'held_amount': (db.session.query(func.sum(Transaction.put_on_hold_amount))
+                        .filter(Transaction.upload_id.in_(my_file_ids or [-1])).scalar() or 0.0),
+    }
+    recent_cases = my_cases[:10]
+    recent_activity = (UsageLog.query.filter_by(username=me)
+                       .order_by(UsageLog.timestamp.desc()).limit(5).all())
+    return render_template('index.html', stats=stats, recent_cases=recent_cases,
+                           recent_activity=recent_activity)
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+MAX_ROWS = 100000  # Hard row cap per imported Excel file
 
 @contextlib.contextmanager
 def file_lock(filepath):
@@ -880,54 +1160,13 @@ def file_lock(filepath):
         except OSError:
             pass
 
-@app.route('/upload', methods=['POST'])
-@login_required
-@limiter.limit("10 per hour")
-def upload_file():
-    # Allow Viewer to upload files
-    # if session.get('role') in VIEW_ONLY_ROLES:
-    #     return jsonify({'error': 'View-only users cannot upload files.'}), 403
-
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-
-    # Validate file extension
-    if not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type. Only .xlsx and .xls allowed'}), 400
-
-    try:
-        # Check file size
-        file.seek(0, os.SEEK_END)
-        file_size = file.tell()
-        file.seek(0)
-        if file_size > MAX_FILE_SIZE:
-            return jsonify({'error': 'File too large. Maximum 10MB'}), 400
-
-        # Generate secure filename
-        ext = file.filename.rsplit('.', 1)[1].lower()
-        filename = f"{secrets.token_hex(16)}.{ext}"
-
-        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        return jsonify({'message': 'File uploaded successfully', 'filename': filename}), 200
-    except Exception as e:
-        logger.error(f"Upload failed: {str(e)}", exc_info=True)
-        return jsonify({'error': 'Failed to process file. Please check format.'}), 500
-
 @app.route('/upload_excel', methods=['POST'])
 @login_required
 @limiter.limit("20 per hour")
 def upload_excel():
-    # Allow Viewer to upload complaints
-    # if session.get('role') in VIEW_ONLY_ROLES:
-    #     flash("View-only users cannot upload complaints.", "warning")
-    #     return redirect('/index')
-
-    file = request.files['excel_file']
-    if not file or not file.filename.endswith('.xlsx'):
+    """Import a bank-transaction Excel file and rebuild the case's fund trail."""
+    file = request.files.get('excel_file')
+    if file is None or not file.filename or not file.filename.endswith('.xlsx'):
         flash("Invalid file format. Please upload a .xlsx file.", "warning")
         return redirect('/index')
 
@@ -958,17 +1197,23 @@ def upload_excel():
             db.session.commit()
             logger.info(f"Existing file and record deleted: {filename}")
 
-    file.save(file_path)
+        file.save(file_path)
 
     try:
         # ✅ Step 2: Read Excel and extract acknowledgment numbers
         
         # Helper for sanitizing cell values to prevent CSV/Excel injection
         def sanitize_cell(value):
-            """Remove formula injection characters"""
+            """Neutralise spreadsheet formula injection (CWE-1236) WITHOUT corrupting
+            legitimate numbers: only quote-prefix a value that starts with a formula
+            trigger AND is not a plain number (so '-500' / '+91...' stay intact)."""
             if isinstance(value, str):
-                if value.startswith(('=', '+', '-', '@', '\t', '\r')):
-                    return "'" + value # Prefix with quote to neutralize
+                s = value.strip()
+                if s[:1] in ('=', '+', '-', '@', '\t', '\r'):
+                    try:
+                        float(s.replace(',', ''))
+                    except ValueError:
+                        return "'" + value
             return value
 
         try:
@@ -1412,6 +1657,36 @@ def upload_excel():
 
 
         db.session.commit()
+
+        # ── Per-officer isolation: register a Complaint per ACK so the uploader
+        #    (and any admin-assigned officer) can see/access this case. Without it,
+        #    check_case_access() and available_ack_nos() treat the case as nobody's.
+        #    Get-or-create; never clobber an admin's manual reassignment.
+        try:
+            for _ack in acknos_in_excel:
+                _ack_s = str(_ack).strip()
+                if not _ack_s:
+                    continue
+                _c = Complaint.query.filter_by(ack_no=_ack_s).first()
+                if not _c:
+                    db.session.add(Complaint(
+                        ack_no=_ack_s,
+                        file_name=filename,
+                        uploaded_by=current_user.id,
+                        assigned_to=current_user.id,
+                        upload_time=datetime.now(timezone.utc),
+                    ))
+                else:
+                    _c.file_name = filename
+                    if _c.uploaded_by is None:
+                        _c.uploaded_by = current_user.id
+                    if _c.assigned_to is None:
+                        _c.assigned_to = current_user.id
+            db.session.commit()
+        except Exception as _ce:
+            db.session.rollback()
+            logger.error(f"Failed to register complaint rows for upload {filename}: {_ce}")
+
         logger.info(f"[UPLOAD] Txn ID extraction summary: Found={txn_id_counts['found']}, Missing={txn_id_counts['missing']}")
         flash("✅ Excel uploaded and data saved successfully.", "success")
 
@@ -1509,14 +1784,39 @@ def graph_tree1(ack_no):
 @app.route('/complaints')
 @login_required
 def complaints():
-    if 'username' not in session:
-        return redirect('/login')
+    """'My Cases' — the real cases the current user may access (per-officer
+    isolation): admin sees every registered case; an officer sees only cases they
+    uploaded or that an admin assigned to them."""
+    try:
+        log_usage('view_complaints')
+    except Exception:
+        pass
 
-    dummy_complaints = [
-        {'ack_no': 'ACK123', 'victim_name': 'John Doe', 'date': '2024-12-10', 'status': 'Under Review'},
-        {'ack_no': 'ACK456', 'victim_name': 'Jane Smith', 'date': '2024-12-11', 'status': 'Resolved'},
-    ]
-    return render_template('complaint.html', complaints=dummy_complaints)
+    if current_user.role == 'Admin':
+        rows = Complaint.query.order_by(Complaint.upload_time.desc()).all()
+    else:
+        rows = Complaint.query.filter(
+            or_(Complaint.uploaded_by == current_user.id,
+                Complaint.assigned_to == current_user.id)
+        ).order_by(Complaint.upload_time.desc()).all()
+
+    # Only mark cases that actually have transaction data as viewable.
+    acks_with_txn = {
+        row[0] for row in db.session.query(Transaction.ack_no)
+        .filter(Transaction.ack_no.isnot(None)).distinct().all()
+    }
+    id_to_username = {u.id: u.username for u in User.query.with_entities(User.id, User.username).all()}
+
+    cases = [{
+        'ack_no': c.ack_no,
+        'file_name': c.file_name or '—',
+        'assigned_to': id_to_username.get(c.assigned_to) or 'Unassigned',
+        'upload_time': c.upload_time,
+        'has_data': c.ack_no in acks_with_txn,
+        'status': c.status or 'Open',
+    } for c in rows]
+
+    return render_template('complaint.html', cases=cases, statuses=CASE_STATUSES)
 
 @app.route('/graph_data/<ack_no>')
 @login_required
@@ -1824,22 +2124,30 @@ def graph_data(ack_no):
         from_to_map = defaultdict(lambda: defaultdict(list))
         incoming_map = defaultdict(list)
 
+        # Dedup on the FULL transaction identity, not just txn_id. The old check
+        # treated every blank txn_id as "already seen", so multiple distinct transfers
+        # between the same two accounts that lacked a UTR collapsed into one (a cause of
+        # the "missing transactions / partial data" symptom). Keep rows differing in
+        # amount/date/txn_id; drop only exact duplicates.
+        seen_edge_keys = set()
         for t in transactions:
             key = (t.from_account, t.to_account, t.amount, t.txn_date, t.txn_id)
-            if not any(txn['txn_id'] == t.txn_id for txn in from_to_map[t.from_account][t.to_account]):
-                from_to_map[t.from_account][t.to_account].append({
-                    'txn_id': t.txn_id,
-                    'amount': t.amount,
-                    'date': t.txn_date,
-                    'ack_no': t.ack_no
-                })
-                incoming_map[t.to_account].append({
-                    'from_account': t.from_account,
-                    'amount': t.amount,
-                    'date': t.txn_date,
-                    'ack_no': t.ack_no,
-                    'txn_id': t.txn_id,
-                })
+            if key in seen_edge_keys:
+                continue
+            seen_edge_keys.add(key)
+            from_to_map[t.from_account][t.to_account].append({
+                'txn_id': t.txn_id,
+                'amount': t.amount,
+                'date': t.txn_date,
+                'ack_no': t.ack_no
+            })
+            incoming_map[t.to_account].append({
+                'from_account': t.from_account,
+                'amount': t.amount,
+                'date': t.txn_date,
+                'ack_no': t.ack_no,
+                'txn_id': t.txn_id,
+            })
 
         from_layer_map = {t.from_account: t.layer for t in transactions if t.from_account}
 
@@ -1964,6 +2272,7 @@ def available_ack_nos():
 # Parsed ATM-sheet results cached by (upload_id, ack_no). The stored Excel blob is
 # immutable per upload, so re-parsing it on every click was pure waste (the slow part).
 _ATM_RESULT_CACHE = {}
+_ATM_CACHE_MAX = 64  # bound the cache so it can't grow without limit (was a slow leak)
 
 @app.route('/atm_data/<ack_no>')
 @login_required
@@ -2131,11 +2440,13 @@ def atm_data(ack_no):
         rows = df.fillna('').to_dict(orient='records')
         logger.info(f"[atm_data] Rows extracted: {len(rows)}")
         _result = {'atm': rows, 'columns': list(df.columns)}
+        if len(_ATM_RESULT_CACHE) >= _ATM_CACHE_MAX:   # bound the cache (simple evict-all)
+            _ATM_RESULT_CACHE.clear()
         _ATM_RESULT_CACHE[(up.id, ack_no)] = _result   # cache: blob is immutable per upload
         return jsonify(_result)
     except Exception as e:
         logger.error(f"[atm_data] Error: {e}", exc_info=True)
-        return jsonify({'atm': [], 'error': str(e)})
+        return jsonify({'atm': [], 'error': 'Failed to load ATM data'})
 
 @app.route('/statewise_summary/<ack_no>')
 @login_required
@@ -2304,8 +2615,14 @@ def put_on_hold_transactions(ack_no):
 @login_required
 def state_transactions(ack_no, state):
     check_case_access(ack_no)
-    page = int(request.args.get('page', 1))
-    per_page = int(request.args.get('per_page', 50))
+    def _safe_int(v, default, lo, hi):
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return default
+        return max(lo, min(n, hi))
+    page = _safe_int(request.args.get('page'), 1, 1, 10_000_000)
+    per_page = _safe_int(request.args.get('per_page'), 50, 1, 500)
     offset = (page - 1) * per_page
 
     # Use case-insensitive and trimmed comparison for state matching
@@ -2378,6 +2695,11 @@ def save_kyc():
     if not txn_id:
         return jsonify({"status": "error", "message": "Transaction ID missing"}), 400
 
+    # AuthZ (Bug #7 / IDOR): resolve the case for this txn_id and enforce per-officer
+    # access before writing KYC. Checked before the try so abort(403) propagates.
+    _txn_for_access = Transaction.query.filter_by(txn_id=txn_id).first()
+    check_case_access(_txn_for_access.ack_no if _txn_for_access else None)
+
     try:
         # Save to persistent KYC store
         kyc_entry = KYCDetails.query.filter_by(txn_id=txn_id).first()
@@ -2390,6 +2712,12 @@ def save_kyc():
         aadhar = sanitize_text(data.get('aadhar'), 20)
         mobile = sanitize_text(data.get('mobile'), 20)
         address = sanitize_text(data.get('address'), 200)
+
+        # Format checks (blank allowed; reject clearly-malformed identifiers)
+        if not validate_aadhar(aadhar):
+            return jsonify({"status": "error", "message": "Aadhaar must be 12 digits."}), 400
+        if not validate_mobile(mobile):
+            return jsonify({"status": "error", "message": "Mobile must be a valid 10-digit number."}), 400
 
         kyc_entry.name = name
         kyc_entry.aadhar = aadhar
@@ -2405,32 +2733,37 @@ def save_kyc():
             txn.kyc_address = address
 
         db.session.commit()
+        log_usage('save_kyc', ack_no=(txn.ack_no if txn else None))
         logger.info(f"KYC Save Request processed for txn_id: {txn_id}")
         return jsonify({"status": "success"})
     except Exception as e:
         logger.error(f"Error saving KYC: {e}")
         db.session.rollback()
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "message": "Internal error while saving. See server log."}), 500
 
 
 @app.route('/save_hold_refund', methods=['POST'])
 @login_required
 def save_hold_refund():
     """Save court order / refund details for a put-on-hold transaction."""
+    if session.get('role') in VIEW_ONLY_ROLES:
+        return jsonify({"status": "error", "message": "View-only users cannot edit refund details"}), 403
+
+    data = request.get_json(silent=True) or {}
+    ack_no = (data.get('ack_no') or '').strip()
+    hold_txn_id = (data.get('hold_txn_id') or '').strip()
+
+    if not ack_no or not hold_txn_id:
+        logger.error("Missing required identifiers in save_hold_refund")
+        return jsonify({"status": "error", "message": "Missing required identifiers"}), 400
+
+    # AuthZ (Bug #7 / IDOR): only let users edit refund details for a case they may
+    # access. Checked before the try so abort(403) isn't swallowed into a 500.
+    check_case_access(ack_no)
+
     try:
-        if session.get('role') in VIEW_ONLY_ROLES:
-            return jsonify({"status": "error", "message": "View-only users cannot edit refund details"}), 403
-
-        data = request.get_json() or {}
-        ack_no = (data.get('ack_no') or '').strip()
-        hold_txn_id = (data.get('hold_txn_id') or '').strip()
-
-        logger.info(f"save_hold_refund request: ack_no={ack_no}, hold_txn_id={hold_txn_id}, data={data}")
-
-        if not ack_no or not hold_txn_id:
-            logger.error("Missing required identifiers in save_hold_refund")
-            return jsonify({"status": "error", "message": "Missing required identifiers"}), 400
-
+        # (Trimmed log: do not dump the full payload — avoids logging sensitive data.)
+        logger.info(f"save_hold_refund: ack_no={ack_no}, hold_txn_id={hold_txn_id}")
         txn = Transaction.query.filter_by(
             ack_no=ack_no,
             put_on_hold_txn_id=hold_txn_id
@@ -2440,8 +2773,14 @@ def save_hold_refund():
             logger.error(f"Put-on-hold transaction not found for ack={ack_no}, id={hold_txn_id}")
             return jsonify({"status": "error", "message": "Put-on-hold transaction not found"}), 404
 
-        txn.court_order_date = (data.get('court_order_date') or '').strip() or None
-        txn.refund_status = (data.get('refund_status') or '').strip() or None
+        court_order_date = sanitize_text(data.get('court_order_date'), 20)
+        refund_status = sanitize_text(data.get('refund_status'), 50)
+        if not validate_court_order_date(court_order_date):
+            return jsonify({"status": "error", "message": "Invalid court order date."}), 400
+        if refund_status not in ALLOWED_REFUND_STATUSES:
+            return jsonify({"status": "error", "message": "Invalid refund status."}), 400
+        txn.court_order_date = court_order_date or None
+        txn.refund_status = refund_status or None
 
         refund_amount_raw = data.get('refund_amount')
         try:
@@ -2461,12 +2800,13 @@ def save_hold_refund():
         poh_details.refund_amount = txn.refund_amount
 
         db.session.commit()
+        log_usage('save_hold_refund', ack_no=ack_no)
         logger.info("Refund details saved successfully (persisted to POHRefundDetails)")
 
         return jsonify({"status": "success"})
     except Exception as e:
         logger.error(f"Error in save_hold_refund: {e}", exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "message": "Internal error while saving. See server log."}), 500
 
 
 def format_indian_currency(amount):
@@ -2501,6 +2841,7 @@ def get_layer_1_total(ack_no):
         return 0.0
 
 @app.route('/generate_letter', methods=['POST'])
+@login_required
 def generate_letter():
     """Generate a letter (HTML) from a template and provided details.
     Expects JSON with keys: ack_no, account_number, letter_type ('suspect'|'victim'),
@@ -2508,9 +2849,13 @@ def generate_letter():
     letter_date, crime_no, ncrp_ack_no
     Returns rendered HTML for client to open/print.
     """
+    # AuthZ (Bug #2 / IDOR): require login AND that the user may access this case.
+    # check_case_access() runs BEFORE the try so its abort(403) is not swallowed by
+    # the broad except below and turned into a 500.
+    data = request.get_json(silent=True) or {}
+    ack_no = data.get('ack_no')
+    check_case_access(ack_no)
     try:
-        data = request.get_json() or {}
-        ack_no = data.get('ack_no')
         account_number = data.get('account_number')
         letter_type = data.get('letter_type')
 
@@ -2544,17 +2889,21 @@ def generate_letter():
         return render_template(template_name, **context)
     except Exception as e:
         logger.error(f"Error generating letter: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal error while generating the document'}), 500
 
 
 @app.route('/generate_letter_pdf', methods=['POST'])
+@login_required
 def generate_letter_pdf():
     """Generate a letter (PDF) from a template and provided details.
     Saves the PDF in a folder named after the ACK no.
     """
+    # AuthZ (Bug #2 / IDOR): require login AND case access; checked before the try
+    # so abort(403) isn't swallowed by the broad except.
+    data = request.get_json(silent=True) or {}
+    ack_no = data.get('ack_no')
+    check_case_access(ack_no)
     try:
-        data = request.get_json() or {}
-        ack_no = data.get('ack_no')
         account_number = data.get('account_number')
         letter_type = data.get('letter_type')
 
@@ -2609,19 +2958,14 @@ def generate_letter_pdf():
         # Clean folder name to be safe
         folder_name = secure_filename(folder_name)
         
-        # Save in a 'generated_letters' directory to avoid cluttering root
-        base_dir = os.path.join(app.root_path, 'generated_letters')
-        target_dir = os.path.join(base_dir, folder_name)
-        os.makedirs(target_dir, exist_ok=True)
-        
+        # (Formerly built a generated_letters/<folder> path here — the PDF is
+        #  streamed back to the browser below, with no server-side persistence.)
+        # (No server-side persistence: the PDF is streamed back to the browser
+        #  below. It used to be written under generated_letters/ on every request.)
         filename = f"{letter_type}_Letter_{account_number}.pdf"
         safe_filename_val = secure_filename(filename)
-        file_path = os.path.join(target_dir, safe_filename_val)
-        
-        with open(file_path, 'wb') as f:
-            f.write(pdf_buffer.getvalue())
 
-        # Reset buffer position for download
+        # Reset buffer position for download (no disk write)
         pdf_buffer.seek(0)
         
         return send_file(
@@ -2633,18 +2977,21 @@ def generate_letter_pdf():
 
     except Exception as e:
         logger.error(f"Error generating PDF letter: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal error while generating the document'}), 500
 
 
 @app.route('/generate_letter_docx', methods=['POST'])
+@login_required
 def generate_letter_docx():
     """Generate a letter (DOCX) from a template and provided details.
     Saves the DOCX in a folder named after the ACK no.
     """
+    # AuthZ (Bug #2 / IDOR): require login AND case access; checked before the try
+    # so abort(403) isn't swallowed by the broad except.
+    data = request.get_json(silent=True) or {}
+    ack_no = data.get('ack_no')
+    check_case_access(ack_no)
     try:
-        data = request.get_json() or {}
-        ack_no = data.get('ack_no')
-        
         # Support both single and multiple accounts
         account_numbers = data.get('account_numbers', [])
         l1_txns = Transaction.query.filter_by(ack_no=ack_no, layer=1).all()
@@ -2683,7 +3030,6 @@ def generate_letter_docx():
                     amount = float(amount)
                 except (ValueError, TypeError):
                     return "0.00"
-                is_int = amount.is_integer()
                 s = "{:.2f}".format(amount)
                 parts = s.split('.')
                 integer_part = parts[0]
@@ -2772,7 +3118,7 @@ def generate_letter_docx():
                             key = t.to_account or t.account_number or t.from_account or "UNKNOWN"
                             grouped.setdefault(key, []).append(t)
 
-                        for key, tx_list in grouped.items():
+                        for _key, tx_list in grouped.items():
                             txns_groups.append({"transactions": tx_list,"folder": acc})
             # Helper to create and save a DOCX for a transactions list. Optionally place under a seed subfolder.
             def _save_doc_for_transactions(transactions, seed_folder=None):
@@ -2806,13 +3152,11 @@ def generate_letter_docx():
                     except Exception:
                         from_date_local = min(dates)
 
-                suspect_layer = "Unknown"
                 layer_label = "Unknown layer"
                 date_minus_6_str = from_date_local
 
                 for t in transactions:
                     if getattr(t, 'layer', None):
-                        suspect_layer = str(t.layer)
                         layer_label = f"{ordinal(t.layer)} layer"
                         break
                 try:
@@ -2968,11 +3312,6 @@ def generate_letter_docx():
                             row[4].text = str(t.txn_id or '')
                             row[5].text = str(t.ifsc_code or '')
 
-                folder_name_local = context['ncrp_ack_no'] or 'Unknown_ACK'
-                folder_name_local = secure_filename(folder_name_local)
-                base_dir_local = os.path.join(app.root_path, 'generated_letters')
-                ack_dir_local = os.path.join(base_dir_local, folder_name_local)
-
                 if is_poh or letter_type == 'suspect':
                     subfolder_local = 'suspect letter'
                 elif letter_type == 'victim':
@@ -2983,14 +3322,13 @@ def generate_letter_docx():
                 # If seed_folder provided, place files directly under a folder named after the seed
                 # i.e. generated_letters/<ACK>/<SEED_FOLDER>/<files>
                 if seed_folder:
-                    target_dir_local = os.path.join(ack_dir_local, secure_filename(seed_folder))
                     arc_subfolder = secure_filename(seed_folder)
                 else:
-                    target_dir_local = os.path.join(ack_dir_local, subfolder_local)
                     arc_subfolder = subfolder_local
 
-                os.makedirs(target_dir_local, exist_ok=True)
-
+                # (No server-side persistence: the .docx is rendered into memory and
+                #  added straight to the ZIP below — it used to accumulate forever
+                #  under generated_letters/.)
                 prefix_local = "Suspect_Account_Letter" if is_poh else letter_type + "_Letter"
                 if is_l1_grouped:
                     safe_bank = secure_filename(bank_name) or "Grouped"
@@ -2999,11 +3337,12 @@ def generate_letter_docx():
                     filename_local = f"{prefix_local}_{account_number_local}.docx"
 
                 safe_filename_val_local = secure_filename(filename_local)
-                file_path_local = os.path.join(target_dir_local, safe_filename_val_local)
-                doc.save(file_path_local)
 
+                # Render into memory and add directly to the ZIP (no temp file on disk).
+                _doc_buf = io.BytesIO()
+                doc.save(_doc_buf)
                 arcname_local = os.path.join(arc_subfolder, safe_filename_val_local)
-                zf.write(file_path_local, arcname=arcname_local)
+                zf.writestr(arcname_local, _doc_buf.getvalue())
             for item in txns_groups:
                 if isinstance(item, dict):
                     _save_doc_for_transactions(
@@ -3029,7 +3368,7 @@ def generate_letter_docx():
 
     except Exception as e:
         logger.error(f"Error generating DOCX letter: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal error while generating the document'}), 500
 
 
 @app.route('/view_all_complaints')
@@ -3080,14 +3419,71 @@ def view_all_complaints():
             seen_acks.add(ack_value)
         unique_complaints.append(c)
 
-    return render_template("view_all_complaints.html", complaint_data=unique_complaints)
+    # ── Per-officer isolation: annotate each row with its current assignee and
+    #    pass the officer list so admin can (re)assign straight from this page.
+    officers = User.query.filter_by(role='Investigative Officer').order_by(User.username).all()
+    _complaint_rows = Complaint.query.all()
+    assign_map = {c.ack_no: c.assigned_to for c in _complaint_rows}
+    status_map = {c.ack_no: (c.status or 'Open') for c in _complaint_rows}
+    id_to_username = {u.id: u.username for u in User.query.with_entities(User.id, User.username).all()}
+    for c in unique_complaints:
+        ack0 = c.ack_nos[0] if getattr(c, 'ack_nos', None) else None
+        c.assigned_to_id = assign_map.get(ack0)
+        c.assigned_to_name = id_to_username.get(c.assigned_to_id)
+        c.case_status = status_map.get(ack0, 'Open')
+
+    return render_template("view_all_complaints.html",
+                           complaint_data=unique_complaints, officers=officers,
+                           statuses=CASE_STATUSES)
+
+
+@app.route('/assign_case', methods=['POST'])
+@login_required
+@admin_required
+def assign_case():
+    """Admin assigns (or unassigns) a case to an Investigative Officer."""
+    ack_no = (request.form.get('ack_no') or '').strip()
+    officer_id_raw = (request.form.get('officer_id') or '').strip()
+
+    if not ack_no:
+        flash('Missing acknowledgement number.', 'danger')
+        return redirect(url_for('view_all_complaints'))
+
+    complaint = Complaint.query.filter_by(ack_no=ack_no).first()
+    if not complaint:
+        flash(f'No case found for ACK {ack_no}.', 'warning')
+        return redirect(url_for('view_all_complaints'))
+
+    # Empty / "0" means unassign.
+    if officer_id_raw in ('', '0'):
+        complaint.assigned_to = None
+        db.session.commit()
+        log_usage('assign_case', ack_no=ack_no)
+        flash(f'Case {ack_no} unassigned.', 'success')
+        return redirect(url_for('view_all_complaints'))
+
+    try:
+        officer_id = int(officer_id_raw)
+    except ValueError:
+        flash('Invalid officer selection.', 'danger')
+        return redirect(url_for('view_all_complaints'))
+
+    officer = User.query.filter_by(id=officer_id, role='Investigative Officer').first()
+    if not officer:
+        flash('Officer not found.', 'danger')
+        return redirect(url_for('view_all_complaints'))
+
+    complaint.assigned_to = officer.id
+    db.session.commit()
+    log_usage('assign_case', ack_no=ack_no, filename=officer.username)
+    flash(f'Case {ack_no} assigned to {officer.username}.', 'success')
+    return redirect(url_for('view_all_complaints'))
 
 
 @app.route('/view_officers')
+@login_required
+@admin_required
 def view_officers():
-    if not is_admin():
-        return redirect('/login')
-
     # Get all officers
     officers = User.query.filter_by(role='Investigative Officer').all()
 
@@ -3110,11 +3506,9 @@ def view_officers():
     return render_template('view_officers.html', officers=officer_data)
 
 @app.route('/update_officer', methods=['POST'])
+@login_required
+@admin_required
 def update_officer():
-    if not is_admin():
-        flash('Access Denied!')
-        return redirect(url_for('login'))
-
     username = (request.form.get('username') or '').strip()
     if not username:
         flash('Invalid request.')
@@ -3146,6 +3540,7 @@ def update_officer():
             return redirect(url_for('view_officers'))
 
     db.session.commit()
+    log_usage('update_officer', filename=username)
     flash(f'Officer {username} updated successfully.')
     return redirect(url_for('view_officers'))
 
@@ -3165,6 +3560,7 @@ def edit_officer(officer_id):
         try:
             officer.set_password(password)
             db.session.commit()
+            log_usage('edit_officer_password', filename=officer.username)
             return jsonify({'message': 'Password updated successfully'})
         except ValueError as e:
             return jsonify({'error': str(e)}), 400
@@ -3173,11 +3569,9 @@ def edit_officer(officer_id):
 
 
 @app.route('/delete_officer', methods=['POST'])
+@login_required
+@admin_required
 def delete_officer():
-    if not is_admin():
-        flash('Access Denied!')
-        return redirect(url_for('login'))
-
     username = request.form.get('username')
     if not username:
         flash('Invalid request.')
@@ -3194,6 +3588,7 @@ def delete_officer():
 
     db.session.delete(user)
     db.session.commit()    
+    log_usage('delete_officer', filename=username)
     flash(f'Officer {username} deleted successfully.')
     return redirect(url_for('view_officers'))
 
@@ -3257,7 +3652,7 @@ def delete_upload(file_id):
     except Exception as e:
         db.session.rollback()
         logger.error(f"delete_upload error for id={file_id}: {e}")
-        flash(f'Error deleting file: {e}', 'danger')
+        flash('Error deleting file — details are in the server log.', 'danger')
     return redirect(url_for('manage_files'))
 
 
@@ -3400,9 +3795,9 @@ def view_analytics():
         officer_stats=officer_stats,
     )
 @app.route('/download_logs')
+@login_required
+@admin_required
 def download_logs():
-    if 'username' not in session:
-        return redirect('/login')
     try:
         now = datetime.now(timezone.utc)
         start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -3474,7 +3869,7 @@ def download_logs():
         return send_file(buf, mimetype='application/pdf', as_attachment=True, download_name=fname)
     except Exception as e:
         logger.error(f"Failed to generate logs PDF: {e}")
-        return f"Failed to generate logs: {e}", 500
+        return "Failed to generate logs.", 500
 
 @app.route('/delete_complaint/<int:complaint_id>', methods=['DELETE'])
 @login_required
@@ -3485,11 +3880,13 @@ def delete_complaint(complaint_id):
     if current_user.role != 'Admin':
         abort(403, description="You don't have permission to delete this complaint")
 
-    # Additional audit logging
-    logger.info(f"User {current_user.username} deleted complaint {complaint_id}")
-
+    ack_no = complaint.ack_no
+    # Delete the case's transactions too (previously orphaned), matching delete_by_ack.
+    Transaction.query.filter_by(ack_no=ack_no).delete(synchronize_session='fetch')
     db.session.delete(complaint)
     db.session.commit()
+    logger.info(f"User {current_user.username} deleted complaint {complaint_id} (ack {ack_no})")
+    log_usage('delete_complaint', ack_no=ack_no)
     return jsonify({'success': True})
 
 @app.route('/delete_by_ack', methods=['POST'])
@@ -3531,13 +3928,14 @@ def delete_by_ack():
 def view_complaint(complaint_id):
     complaint = Complaint.query.get_or_404(complaint_id)
 
-    # Authorization check: only admin, viewer, assigned officer, or creator can view
-    if (current_user.role not in ['Admin'] and 
-        complaint.assigned_to != current_user.id and 
+    # Authorization check: only admin, assigned officer, or creator can view.
+    if (current_user.role != 'Admin' and
+        complaint.assigned_to != current_user.id and
         complaint.uploaded_by != current_user.id):
         abort(403, description="You don't have permission to view this complaint")
 
-    return render_template('complaint.html', complaint=complaint)
+    # Viewing a case = viewing its fund-trail graph.
+    return redirect(url_for('graph_tree1', ack_no=complaint.ack_no))
 
 @app.route('/admin/add_officer', methods=['GET'])
 @login_required
@@ -3652,6 +4050,11 @@ with app.app_context():
         print(f"[SETUP] Initial officer password: {officer_password}")
         print("[SETUP] Change these passwords immediately!")
 
+    # Consolidate the old split POH/KYC SQLite files into the main DB (one-time).
+    migrate_split_dbs_into_main()
+    # Ensure pre-existing uploads have Complaint rows for per-officer isolation.
+    backfill_complaints()
+
 
 # Configure custom error handlers
 @app.errorhandler(CSRFError)
@@ -3676,13 +4079,19 @@ def forbidden(error):
 @app.errorhandler(500)
 def internal_error(error):
     logger.error("Internal server error", exc_info=True)
+    # Feature F29: mirror into alerts.log so failures are noticed, not buried.
+    try:
+        alert_logger.error(f"500 on {request.method} {request.path} "
+                           f"(user={session.get('username', 'anon')}, rid={getattr(g, 'request_id', '-')})")
+    except Exception:
+        pass
     return render_template("errors/500.html"), 500
 
 
 @app.errorhandler(413)
 def request_too_large(error):
     # Triggered by MAX_CONTENT_LENGTH — keep it simple and clear.
-    return ("The request was too large. Excel uploads are limited to 10 MB.",
+    return ("The request was too large. Uploads are limited to 25 MB.",
             413, {'Content-Type': 'text/plain; charset=utf-8'})
 
 
@@ -3943,7 +4352,7 @@ def download_fundtrail_pdf():
 
     except Exception as e:
         logger.error(f"Error generating fundtrail PDF: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Internal error while generating the document'}), 500
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -4000,7 +4409,6 @@ def my_analytics():
         })
 
     # Layer-wise
-    from collections import defaultdict
     layer_map = defaultdict(lambda: {'txns': 0, 'amt': 0.0})
     for t in my_txns:
         if t.layer:
@@ -4055,12 +4463,331 @@ def my_analytics():
     )
 
 
+
+# ═════════════════════════════════════════════════════════════════
+#  Enterprise feature routes (Phase 2 upgrade)
+# ═════════════════════════════════════════════════════════════════
+
+APP_VERSION = '2.0.0'
+
+
+def _accessible_ack_nos():
+    """Set of ACK numbers the current user may see (None = unrestricted admin)."""
+    if is_admin():
+        return None
+    rows = (Complaint.query
+            .filter(or_(Complaint.uploaded_by == current_user.id,
+                        Complaint.assigned_to == current_user.id))
+            .with_entities(Complaint.ack_no).all())
+    return {r[0] for r in rows}
+
+
+@app.route('/healthz')
+def healthz():
+    """Feature F26: unauthenticated liveness/readiness probe for monitors."""
+    db_ok = True
+    try:
+        db.session.execute(text('SELECT 1'))
+    except Exception:
+        db_ok = False
+    status = 200 if db_ok else 503
+    return jsonify({'status': 'ok' if db_ok else 'degraded',
+                    'db': 'ok' if db_ok else 'error',
+                    'version': APP_VERSION}), status
+
+
+@app.route('/search')
+@login_required
+def global_search():
+    """Feature A2: find any ACK / account / transaction ID / bank across the
+    cases the current user is allowed to see."""
+    q = sanitize_text(request.args.get('q', ''), 80)
+    results = {'cases': [], 'transactions': []}
+    if len(q) >= 3:
+        allowed = _accessible_ack_nos()
+        like = f"%{q}%"
+        txn_q = (Transaction.query
+                 .filter(or_(Transaction.ack_no.ilike(like),
+                             Transaction.to_account.ilike(like),
+                             Transaction.from_account.ilike(like),
+                             Transaction.txn_id.ilike(like),
+                             Transaction.bank_name.ilike(like))))
+        if allowed is not None:
+            txn_q = txn_q.filter(Transaction.ack_no.in_(allowed))
+        txns = txn_q.limit(100).all()
+        results['transactions'] = txns
+        case_q = Complaint.query.filter(Complaint.ack_no.ilike(like))
+        if allowed is not None:
+            case_q = case_q.filter(Complaint.ack_no.in_(allowed))
+        results['cases'] = case_q.limit(50).all()
+        log_usage('global_search', filename=q)
+    return render_template('search_results.html', q=q, results=results)
+
+
+@app.route('/repeat_accounts')
+@login_required
+@admin_required
+def repeat_accounts():
+    """Feature A3: mule-account detection — beneficiary accounts that appear in
+    more than one distinct case."""
+    rows = (db.session.query(
+                Transaction.to_account,
+                func.count(func.distinct(Transaction.ack_no)).label('case_count'),
+                func.count(Transaction.id).label('txn_count'),
+                func.sum(Transaction.amount).label('total_amount'),
+                func.max(Transaction.bank_name).label('bank_name'))
+            .filter(Transaction.to_account.isnot(None), Transaction.to_account != '')
+            .group_by(Transaction.to_account)
+            .having(func.count(func.distinct(Transaction.ack_no)) > 1)
+            .order_by(desc('case_count'), desc('total_amount'))
+            .limit(200).all())
+    # Attach the case list per flagged account (bounded by the 200-row cap above).
+    accounts = []
+    for r in rows:
+        acks = [a[0] for a in (db.session.query(func.distinct(Transaction.ack_no))
+                               .filter(Transaction.to_account == r.to_account).all())]
+        accounts.append({'account': r.to_account, 'case_count': r.case_count,
+                         'txn_count': r.txn_count, 'total_amount': r.total_amount or 0,
+                         'bank': r.bank_name, 'ack_nos': acks})
+    return render_template('repeat_accounts.html', accounts=accounts)
+
+
+@app.route('/update_case_status', methods=['POST'])
+@login_required
+def update_case_status():
+    """Feature A1: move a case through its workflow (Open / Under Investigation /
+    Closed). Allowed for the admin and the case's own officer."""
+    ack_no = sanitize_text(request.form.get('ack_no', ''), 100)
+    status = request.form.get('status', '').strip()
+    if status not in CASE_STATUSES:
+        flash('Invalid case status.', 'danger')
+        return redirect(request.referrer or url_for('role_home'))
+    check_case_access(ack_no)
+    complaint = Complaint.query.filter_by(ack_no=ack_no).first()
+    if not complaint:
+        flash(f'No case found for ACK {ack_no}.', 'warning')
+        return redirect(request.referrer or url_for('role_home'))
+    complaint.status = status
+    db.session.commit()
+    log_usage('update_case_status', ack_no=ack_no, filename=status)
+    flash(f'Case {ack_no} marked "{status}".', 'success')
+    return redirect(request.referrer or url_for('role_home'))
+
+
+@app.route('/case_notes/<ack_no>', methods=['POST'])
+@login_required
+def add_case_note(ack_no):
+    """Feature A4: append a dated investigation note to a case."""
+    check_case_access(ack_no)
+    note = sanitize_text(request.form.get('note', ''), 2000)
+    if not note:
+        flash('Note cannot be empty.', 'warning')
+        return redirect(url_for('case_timeline', ack_no=ack_no))
+    db.session.add(CaseNote(ack_no=str(ack_no).strip(),
+                            author=current_user.username, note=note))
+    db.session.commit()
+    log_usage('add_case_note', ack_no=ack_no)
+    flash('Note added.', 'success')
+    return redirect(url_for('case_timeline', ack_no=ack_no))
+
+
+@app.route('/case_timeline/<ack_no>')
+@login_required
+def case_timeline(ack_no):
+    """Feature A4: chronological case diary — notes + recorded actions."""
+    check_case_access(ack_no)
+    ack = str(ack_no).strip()
+    complaint = Complaint.query.filter_by(ack_no=ack).first()
+    notes = CaseNote.query.filter_by(ack_no=ack).order_by(CaseNote.created_at.desc()).all()
+    events = (UsageLog.query.filter_by(ack_no=ack)
+              .order_by(UsageLog.timestamp.desc()).limit(200).all())
+    return render_template('case_timeline.html', ack_no=ack,
+                           complaint=complaint, notes=notes, events=events,
+                           statuses=CASE_STATUSES)
+
+
+@app.route('/download_letters_zip/<ack_no>')
+@login_required
+def download_letters_zip(ack_no):
+    """Feature A5: download every generated letter for a case as one ZIP."""
+    check_case_access(ack_no)
+    ack = secure_filename(str(ack_no).strip())
+    base_dir = os.path.join(app.root_path, 'generated_letters', ack)
+    if not os.path.isdir(base_dir):
+        flash('No generated letters found for this case yet.', 'warning')
+        return redirect(request.referrer or url_for('role_home'))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for root, _dirs, files in os.walk(base_dir):
+            for fname in files:
+                full = os.path.join(root, fname)
+                zf.write(full, os.path.relpath(full, base_dir))
+    buf.seek(0)
+    log_usage('download_letters_zip', ack_no=ack)
+    return send_file(buf, mimetype='application/zip', as_attachment=True,
+                     download_name=f'Letters_{ack}.zip')
+
+
+def _analytics_export_frames(uploader=None):
+    """Build the DataFrames for the Excel export (Feature A6). When `uploader`
+    is set, restrict to that officer's uploads (officer self-export)."""
+    txn_q = db.session.query(
+        Transaction.ack_no, Transaction.layer, Transaction.from_account,
+        Transaction.to_account, Transaction.bank_name, Transaction.ifsc_code,
+        Transaction.state, Transaction.amount, Transaction.disputed_amount,
+        Transaction.put_on_hold_amount, Transaction.refund_status,
+        Transaction.refund_amount, Transaction.txn_date)
+    if uploader:
+        ids = [f.id for f in UploadedFile.query
+               .with_entities(UploadedFile.id).filter_by(uploader=uploader)]
+        txn_q = txn_q.filter(Transaction.upload_id.in_(ids or [-1]))
+    txns = pd.DataFrame(txn_q.all())
+    summary = (txns.groupby('ack_no')
+               .agg(transactions=('ack_no', 'size'), total_amount=('amount', 'sum'),
+                    held=('put_on_hold_amount', 'sum'), refunded=('refund_amount', 'sum'))
+               .reset_index()) if not txns.empty else pd.DataFrame()
+    return summary, txns
+
+
+def _send_analytics_xlsx(uploader=None, label='analytics'):
+    summary, txns = _analytics_export_frames(uploader)
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine='openpyxl') as xw:
+        (summary if not summary.empty else pd.DataFrame({'info': ['no data']})
+         ).to_excel(xw, sheet_name='Case Summary', index=False)
+        (txns if not txns.empty else pd.DataFrame({'info': ['no data']})
+         ).to_excel(xw, sheet_name='Transactions', index=False)
+    buf.seek(0)
+    log_usage('export_analytics_xlsx', filename=label)
+    stamp = datetime.now().strftime('%Y%m%d_%H%M')
+    return send_file(buf, as_attachment=True,
+                     download_name=f'FundTrail_{label}_{stamp}.xlsx',
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@app.route('/export_analytics_xlsx')
+@login_required
+@admin_required
+def export_analytics_xlsx():
+    """Feature A6: admin-wide analytics export to Excel."""
+    return _send_analytics_xlsx(label='all_cases')
+
+
+@app.route('/export_my_analytics_xlsx')
+@login_required
+def export_my_analytics_xlsx():
+    """Feature A6: officer's own analytics export to Excel."""
+    return _send_analytics_xlsx(uploader=session.get('username'), label='my_cases')
+
+
+@app.route('/refund_dashboard')
+@login_required
+def refund_dashboard():
+    """Feature A7: per-case put-on-hold vs refunded amounts — the unit's
+    headline recovery metric in one view."""
+    allowed = _accessible_ack_nos()
+    q = (db.session.query(
+            Transaction.ack_no,
+            func.sum(Transaction.put_on_hold_amount).label('held'),
+            func.sum(Transaction.refund_amount).label('refunded'),
+            func.count(Transaction.id).label('txns'))
+         .filter(Transaction.ack_no.isnot(None))
+         .group_by(Transaction.ack_no))
+    if allowed is not None:
+        q = q.filter(Transaction.ack_no.in_(allowed))
+    rows = q.all()
+    cases = []
+    total_held = total_refunded = 0.0
+    status_map = {c.ack_no: c.status for c in Complaint.query.all()}
+    for r in rows:
+        held = r.held or 0.0
+        refunded = r.refunded or 0.0
+        total_held += held
+        total_refunded += refunded
+        cases.append({'ack_no': r.ack_no, 'held': held, 'refunded': refunded,
+                      'txns': r.txns, 'status': status_map.get(r.ack_no, 'Open'),
+                      'pct': (refunded / held * 100) if held else 0.0})
+    cases.sort(key=lambda c: -c['held'])
+    recovery_pct = (total_refunded / total_held * 100) if total_held else 0.0
+    return render_template('refund_dashboard.html', cases=cases,
+                           total_held=total_held, total_refunded=total_refunded,
+                           recovery_pct=recovery_pct)
+
+
+AUDIT_PAGE_SIZE = 50
+
+
+@app.route('/audit_logs')
+@login_required
+@admin_required
+def audit_logs():
+    """Feature B10: searchable, paginated viewer over the UsageLog audit trail."""
+    page = max(request.args.get('page', 1, type=int), 1)
+    f_user = sanitize_text(request.args.get('user', ''), 100)
+    f_action = sanitize_text(request.args.get('action', ''), 100)
+    f_ack = sanitize_text(request.args.get('ack', ''), 100)
+    q = UsageLog.query
+    if f_user:
+        q = q.filter(UsageLog.username.ilike(f"%{f_user}%"))
+    if f_action:
+        q = q.filter(UsageLog.action.ilike(f"%{f_action}%"))
+    if f_ack:
+        q = q.filter(UsageLog.ack_no.ilike(f"%{f_ack}%"))
+    total = q.count()
+    logs = (q.order_by(UsageLog.timestamp.desc())
+            .offset((page - 1) * AUDIT_PAGE_SIZE).limit(AUDIT_PAGE_SIZE).all())
+    pages = max((total + AUDIT_PAGE_SIZE - 1) // AUDIT_PAGE_SIZE, 1)
+    actions = [a[0] for a in db.session.query(func.distinct(UsageLog.action)).all() if a[0]]
+    return render_template('audit_logs.html', logs=logs, page=page, pages=pages,
+                           total=total, f_user=f_user, f_action=f_action,
+                           f_ack=f_ack, actions=sorted(actions))
+
+
+@app.route('/admin_metrics')
+@login_required
+@admin_required
+def admin_metrics():
+    """Feature F27: management metrics — uploads/week, case status mix,
+    officer activity, and the hold-vs-refund recovery rate."""
+    now = datetime.now(timezone.utc)
+    weeks = []
+    for i in range(11, -1, -1):
+        start = now - timedelta(weeks=i + 1)
+        end = now - timedelta(weeks=i)
+        count = UploadedFile.query.filter(UploadedFile.upload_time >= start,
+                                          UploadedFile.upload_time < end).count()
+        weeks.append({'label': end.strftime('%d %b'), 'count': count})
+
+    status_counts = dict(db.session.query(Complaint.status, func.count(Complaint.id))
+                         .group_by(Complaint.status).all())
+    held = db.session.query(func.sum(Transaction.put_on_hold_amount)).scalar() or 0.0
+    refunded = db.session.query(func.sum(Transaction.refund_amount)).scalar() or 0.0
+    officer_rows = (db.session.query(UploadedFile.uploader, func.count(UploadedFile.id))
+                    .group_by(UploadedFile.uploader).all())
+    return render_template('admin_metrics.html',
+                           weeks=weeks, status_counts=status_counts,
+                           total_cases=Complaint.query.count(),
+                           total_officers=User.query.filter_by(role='Investigative Officer').count(),
+                           held=held, refunded=refunded,
+                           recovery_pct=(refunded / held * 100) if held else 0.0,
+                           officer_rows=officer_rows,
+                           app_version=APP_VERSION)
+
+
+@app.route('/help')
+@login_required
+def help_page():
+    """Feature C18: built-in workflow guide for new officers."""
+    return render_template('help.html')
+
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
         ensure_transaction_columns()
         ensure_user_columns()
-        initialize_secure_users()
+        # (User seeding already happens once at import; the old initialize_secure_users()
+        #  call here was redundant and has been removed.)
 
     # Use environment variable to control debug mode
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'

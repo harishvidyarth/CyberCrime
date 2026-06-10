@@ -1,0 +1,90 @@
+{% extends "_layout.html" %}
+{% block title %}Audit Logs{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('admin_dashboard') }}">Dashboard</a><span class="sep">›</span>
+  <span class="current">Audit Logs</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Audit Logs</h1>
+    <div class="sub">{{ total }} entr{{ 'y' if total == 1 else 'ies' }} — who did what, and when</div>
+  </div>
+  <a class="btn btn-secondary" href="{{ url_for('download_logs') }}">Download full log</a>
+</header>
+
+<section class="ds-card mb-4">
+  <form method="get" class="flex gap-3 wrap items-center" role="search" aria-label="Filter audit logs">
+    <div>
+      <label class="form-label" for="f-user">User</label>
+      <input class="form-input" style="width:170px" type="text" id="f-user" name="user" value="{{ f_user }}" placeholder="username">
+    </div>
+    <div>
+      <label class="form-label" for="f-action">Action</label>
+      <select class="form-select" style="width:200px" id="f-action" name="action">
+        <option value="">All actions</option>
+        {% for a in actions %}
+        <option value="{{ a }}" {% if a == f_action %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="f-ack">ACK No</label>
+      <input class="form-input" style="width:190px" type="text" id="f-ack" name="ack" value="{{ f_ack }}" placeholder="acknowledgement no">
+    </div>
+    <div style="align-self:flex-end" class="flex gap-2">
+      <button class="btn btn-primary" type="submit">Filter</button>
+      <a class="btn btn-secondary" href="{{ url_for('audit_logs') }}">Clear</a>
+    </div>
+  </form>
+</section>
+
+{% if logs %}
+<div class="table-wrap">
+  <table class="ds-table">
+    <thead><tr><th>Time (UTC)</th><th>User</th><th>Role</th><th>Action</th><th>ACK No</th><th>File / Detail</th></tr></thead>
+    <tbody>
+      {% for log in logs %}
+      <tr>
+        <td class="mono">{{ log.timestamp.strftime('%d %b %Y %H:%M:%S') if log.timestamp else '—' }}</td>
+        <td>{{ log.username or '—' }}</td>
+        <td><span class="badge badge-neutral">{{ log.role or '—' }}</span></td>
+        <td class="font-semibold">{{ log.action }}</td>
+        <td class="mono">{{ log.ack_no or '—' }}</td>
+        <td class="truncate">{{ log.filename or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<nav class="pagination" aria-label="Audit log pages">
+  {% set args = {'user': f_user, 'action': f_action, 'ack': f_ack} %}
+  {% if page > 1 %}
+  <a class="page-pill" href="{{ url_for('audit_logs', page=page-1, **args) }}" aria-label="Previous page">‹ Prev</a>
+  {% endif %}
+  {% for p in range(1, pages + 1) %}
+    {% if p == page or p <= 2 or p > pages - 2 or (p >= page - 1 and p <= page + 1) %}
+    <a class="page-pill {{ 'active' if p == page }}" href="{{ url_for('audit_logs', page=p, **args) }}"
+       {% if p == page %}aria-current="page"{% endif %}>{{ p }}</a>
+    {% elif p == 3 or p == pages - 2 %}
+    <span class="text-muted">…</span>
+    {% endif %}
+  {% endfor %}
+  {% if page < pages %}
+  <a class="page-pill" href="{{ url_for('audit_logs', page=page+1, **args) }}" aria-label="Next page">Next ›</a>
+  {% endif %}
+</nav>
+{% else %}
+<div class="ds-card">
+  <div class="empty-state">
+    <div class="es-title">No log entries match</div>
+    Adjust the filters or clear them to see all activity.
+  </div>
+</div>
+{% endif %}
+{% endblock %}

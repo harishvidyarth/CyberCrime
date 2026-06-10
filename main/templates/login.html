@@ -166,7 +166,11 @@
             <label for="passwordInput">Password</label>
             <div class="control">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              <input type="password" id="passwordInput" name="password" placeholder="Enter password" required autocomplete="current-password">
+              <input type="password" id="passwordInput" name="password" placeholder="Enter password" required autocomplete="current-password" style="padding-right:44px">
+              <button type="button" id="pwToggle" aria-label="Show password" aria-pressed="false"
+                      style="position:absolute;right:10px;background:none;border:none;cursor:pointer;color:var(--ink-400);padding:4px;display:flex">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
             </div>
           </div>
 
@@ -180,12 +184,31 @@
           </span>
           &nbsp;&middot;&nbsp; Authorised personnel only &middot; Tamil Nadu Cyber Crime Wing
         </div>
+
+        {# Dev-only hint (Phase 3 item 4): visible ONLY when Flask runs in debug
+           mode — production builds never render this block. #}
+        {% if config.DEBUG %}
+        <div class="foot" style="margin-top:12px;border:1px dashed #cbd5e1;border-radius:10px;padding:8px 12px">
+          Dev mode: run <code>python dev_seed.py</code> to reset credentials
+        </div>
+        {% endif %}
       </div>
     </main>
   </div>
 
   <script nonce="{{ csp_nonce }}">
-    // (reserved for client-side validation if needed)
+    // Show/hide password toggle (accessible: aria-pressed reflects state).
+    (function () {
+      var btn = document.getElementById('pwToggle');
+      var input = document.getElementById('passwordInput');
+      if (!btn || !input) return;
+      btn.addEventListener('click', function () {
+        var show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+        btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      });
+    })();
   </script>
 </body>
 </html>

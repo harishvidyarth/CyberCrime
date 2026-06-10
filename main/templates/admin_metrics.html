@@ -1,0 +1,115 @@
+{% extends "_layout.html" %}
+{% block title %}Metrics{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('admin_dashboard') }}">Dashboard</a><span class="sep">›</span>
+  <span class="current">Metrics</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Operations Metrics</h1>
+    <div class="sub">Management view — uploads, case mix, and recovery performance</div>
+  </div>
+</header>
+
+<div class="stat-grid mb-6">
+  <div class="stat-card">
+    <span class="stat-icon primary" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+    </span>
+    <div><div class="stat-value" data-countup="{{ total_cases }}">{{ total_cases }}</div><div class="stat-label">Total Cases</div></div>
+  </div>
+  <div class="stat-card">
+    <span class="stat-icon primary" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+    </span>
+    <div><div class="stat-value" data-countup="{{ total_officers }}">{{ total_officers }}</div><div class="stat-label">Officers</div></div>
+  </div>
+  <div class="stat-card">
+    <span class="stat-icon success" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+    </span>
+    <div><div class="stat-value">{{ '%.1f'|format(recovery_pct) }}%</div><div class="stat-label">Hold→Refund Recovery</div></div>
+  </div>
+  <div class="stat-card">
+    <span class="stat-icon warning" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+    </span>
+    <div><div class="stat-value">₹{{ '{:,.0f}'.format(held) }}</div><div class="stat-label">Held (₹{{ '{:,.0f}'.format(refunded) }} refunded)</div></div>
+  </div>
+</div>
+
+<div class="grid-2 mb-6">
+  <!-- Uploads per week (pure CSS bar chart — offline, no JS dependency) -->
+  <section class="ds-card" aria-labelledby="weeklyTitle">
+    <div class="card-header"><h2 class="card-title" id="weeklyTitle">Uploads per Week (last 12)</h2></div>
+    {% set maxc = weeks|map(attribute='count')|max or 1 %}
+    <div class="flex items-center gap-2" style="align-items:flex-end;height:160px" role="img"
+         aria-label="Bar chart of uploads per week: {% for w in weeks %}{{ w.label }}: {{ w.count }}{{ ', ' if not loop.last }}{% endfor %}">
+      {% for w in weeks %}
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px" title="{{ w.label }}: {{ w.count }}">
+        <span class="text-xs text-secondary">{{ w.count or '' }}</span>
+        <div style="width:100%;max-width:34px;height:{{ (w.count / maxc * 120)|round|int if maxc else 0 }}px;min-height:2px;background:var(--color-primary);border-radius:var(--radius-sm) var(--radius-sm) 0 0"></div>
+        <span class="text-xs text-muted" style="white-space:nowrap">{{ w.label }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <!-- Case status mix -->
+  <section class="ds-card" aria-labelledby="mixTitle">
+    <div class="card-header"><h2 class="card-title" id="mixTitle">Case Status Mix</h2></div>
+    {% set total_status = status_counts.values()|sum or 1 %}
+    {% for label, cls in [('Open', 'badge-open'), ('Under Investigation', 'badge-progress'), ('Closed', 'badge-closed')] %}
+    {% set n = status_counts.get(label, 0) + (status_counts.get(none, 0) if label == 'Open' else 0) %}
+    <div class="mb-4">
+      <div class="flex justify-between mb-2">
+        <span class="badge {{ cls }}">{{ label }}</span>
+        <span class="text-secondary">{{ n }} ({{ '%.0f'|format(n / total_status * 100) }}%)</span>
+      </div>
+      <div class="progress-bar"><span style="width:{{ n / total_status * 100 }}%"></span></div>
+    </div>
+    {% endfor %}
+  </section>
+</div>
+
+<div class="grid-2">
+  <!-- Officer activity -->
+  <section class="ds-card" aria-labelledby="offActTitle">
+    <div class="card-header"><h2 class="card-title" id="offActTitle">Uploads by Officer</h2></div>
+    {% if officer_rows %}
+    <div class="table-wrap">
+      <table class="ds-table">
+        <thead><tr><th>Officer</th><th class="sortable">Files Uploaded</th></tr></thead>
+        <tbody>
+          {% for uploader, count in officer_rows %}
+          <tr><td>{{ uploader or '—' }}</td><td class="num">{{ count }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state"><div class="es-title">No uploads yet</div></div>
+    {% endif %}
+  </section>
+
+  <!-- System health (Feature F26 companion card) -->
+  <section class="ds-card" aria-labelledby="healthTitle">
+    <div class="card-header"><h2 class="card-title" id="healthTitle">System Health</h2></div>
+    <div class="flex justify-between mb-4">
+      <span class="text-secondary">Application version</span><span class="badge badge-neutral">v{{ app_version }}</span>
+    </div>
+    <div class="flex justify-between mb-4">
+      <span class="text-secondary">Database</span><span class="badge badge-closed">connected</span>
+    </div>
+    <div class="flex justify-between mb-4">
+      <span class="text-secondary">Health endpoint</span><a class="mono" href="{{ url_for('healthz') }}">/healthz</a>
+    </div>
+    <p class="form-hint">Point an uptime monitor at <span class="mono">/healthz</span> — it returns JSON app + DB status without authentication.</p>
+  </section>
+</div>
+{% endblock %}

@@ -10,6 +10,29 @@ repeater accounts, and auto-generates official letters to banks.
 
 ---
 
+## 0. First Time Setup (developers — fastest path)
+
+Foolproof, four steps, no passwords to lose:
+
+```bash
+# Step 1 — clone
+git clone git@github.com:harishvidyarth/CyberCrime.git && cd CyberCrime
+
+# Step 2 — install requirements (Python 3.10+)
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r main/requirements.txt
+
+# Step 3 — seed the DEV accounts (known passwords, dev machines only)
+python dev_seed.py
+
+# Step 4 — run, then log in with the credentials the script printed
+cd main && python app.py        # -> http://127.0.0.1:5050
+```
+
+The dev accounts and reset instructions live in [`CREDENTIALS.md`](CREDENTIALS.md).
+**Deploying for real?** Skip `dev_seed.py` and use `scripts/create_user.py`
+(random per-machine passwords) as described in section 2 below.
+
 ## 1. What you need first
 
 - **Python 3.10+** and **git**

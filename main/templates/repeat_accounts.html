@@ -1,0 +1,62 @@
+{% extends "_layout.html" %}
+{% block title %}Repeat Accounts{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('admin_dashboard') }}">Dashboard</a><span class="sep">›</span>
+  <span class="current">Repeat Accounts</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Cross-Case Repeat Accounts</h1>
+    <div class="sub">Beneficiary accounts appearing in more than one case — likely mule accounts. {{ accounts|length }} flagged.</div>
+  </div>
+  <input class="form-input" style="max-width:280px" type="search" placeholder="Filter accounts…"
+         data-filter-table="repeatTable" aria-label="Filter repeat accounts table">
+</header>
+
+{% if accounts %}
+<div class="table-wrap">
+  <table class="ds-table" id="repeatTable">
+    <thead>
+      <tr>
+        <th>Account</th>
+        <th class="sortable">Cases</th>
+        <th class="sortable">Transactions</th>
+        <th class="sortable">Total Amount</th>
+        <th>Bank</th>
+        <th>Seen In</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in accounts %}
+      <tr>
+        <td class="mono font-semibold"><span class="badge badge-flagged">{{ a.account }}</span></td>
+        <td class="num">{{ a.case_count }}</td>
+        <td class="num">{{ a.txn_count }}</td>
+        <td class="num">₹{{ '{:,.2f}'.format(a.total_amount) }}</td>
+        <td class="truncate">{{ a.bank or '—' }}</td>
+        <td>
+          {% for ack in a.ack_nos[:4] %}
+          <a class="badge badge-open" href="{{ url_for('graph_tree1', ack_no=ack) }}">{{ ack }}</a>
+          {% endfor %}
+          {% if a.ack_nos|length > 4 %}<span class="badge badge-neutral">+{{ a.ack_nos|length - 4 }}</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="ds-card">
+  <div class="empty-state">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+    <div class="es-title">No repeat accounts found</div>
+    No beneficiary account currently appears in more than one case.
+  </div>
+</div>
+{% endif %}
+{% endblock %}

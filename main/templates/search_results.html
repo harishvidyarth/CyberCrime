@@ -1,0 +1,78 @@
+{% extends "_layout.html" %}
+{% block title %}Search{% endblock %}
+
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('role_home') }}">Dashboard</a><span class="sep">›</span>
+  <span class="current">Search</span>
+</nav>
+{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>Search Results</h1>
+    {% if q %}<div class="sub">Results for “{{ q }}” across your accessible cases</div>{% endif %}
+  </div>
+</header>
+
+{% if q|length < 3 %}
+<div class="ds-card">
+  <div class="empty-state">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <div class="es-title">Type at least 3 characters</div>
+    Search by ACK number, account number, transaction ID, or bank name using the box in the top bar.
+  </div>
+</div>
+{% else %}
+
+<section class="ds-card mb-6" aria-labelledby="caseResults">
+  <div class="card-header"><h2 class="card-title" id="caseResults">Cases ({{ results.cases|length }})</h2></div>
+  {% if results.cases %}
+  <div class="table-wrap">
+    <table class="ds-table">
+      <thead><tr><th>ACK No</th><th>Status</th><th>File</th><th></th></tr></thead>
+      <tbody>
+        {% for c in results.cases %}
+        <tr>
+          <td class="mono font-semibold">{{ c.ack_no }}</td>
+          <td>{% set st = c.status or 'Open' %}
+            <span class="badge {{ 'badge-closed' if st == 'Closed' else 'badge-progress' if st == 'Under Investigation' else 'badge-open' }}">{{ st }}</span></td>
+          <td class="truncate">{{ c.file_name or '—' }}</td>
+          <td class="flex gap-2">
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('graph_tree1', ack_no=c.ack_no) }}">Graph</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('case_timeline', ack_no=c.ack_no) }}">Timeline</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}<p class="text-secondary">No matching cases.</p>{% endif %}
+</section>
+
+<section class="ds-card" aria-labelledby="txnResults">
+  <div class="card-header"><h2 class="card-title" id="txnResults">Transactions ({{ results.transactions|length }}{% if results.transactions|length == 100 %}, capped{% endif %})</h2></div>
+  {% if results.transactions %}
+  <div class="table-wrap">
+    <table class="ds-table">
+      <thead><tr><th>ACK No</th><th>Layer</th><th>From</th><th>To</th><th>Bank</th><th>Txn ID</th><th>Amount</th></tr></thead>
+      <tbody>
+        {% for t in results.transactions %}
+        <tr>
+          <td class="mono"><a href="{{ url_for('graph_tree1', ack_no=t.ack_no) }}">{{ t.ack_no }}</a></td>
+          <td>{{ t.layer or '—' }}</td>
+          <td class="mono truncate">{{ t.from_account or '—' }}</td>
+          <td class="mono truncate">{{ t.to_account or '—' }}</td>
+          <td class="truncate">{{ t.bank_name or '—' }}</td>
+          <td class="mono truncate">{{ t.txn_id or '—' }}</td>
+          <td class="num">₹{{ '{:,.2f}'.format(t.amount or 0) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}<p class="text-secondary">No matching transactions.</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

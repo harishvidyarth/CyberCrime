@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Two-Factor Verification — FundTrail</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=2.0">
+</head>
+<body>
+<main class="auth-page">
+  <div class="auth-card">
+    <img class="auth-logo" src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="Tamil Nadu Police logo">
+    <h1>Two-Factor Verification</h1>
+    <p class="auth-sub">Enter the 6-digit code from your authenticator app to finish signing in.</p>
+
+    {% if error %}
+    <div class="alert danger" role="alert">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('verify_2fa') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+      <div class="form-group">
+        <label class="form-label" for="totpCode">Authentication code</label>
+        <input class="form-input mono" type="text" id="totpCode" name="code" inputmode="numeric"
+               pattern="[0-9 ]{6,7}" maxlength="7" placeholder="123 456" autocomplete="one-time-code"
+               autofocus required style="text-align:center;font-size:var(--text-xl);letter-spacing:.3em">
+      </div>
+      <button class="btn btn-primary btn-block" type="submit">Verify &amp; Sign In</button>
+    </form>
+
+    <p class="dev-hint">Lost your device? Ask an administrator to reset your account.</p>
+    <p style="text-align:center;margin-top:var(--space-4)"><a href="{{ url_for('login') }}">← Back to login</a></p>
+  </div>
+</main>
+</body>
+</html>

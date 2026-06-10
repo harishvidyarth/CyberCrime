@@ -1,108 +1,97 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "_layout.html" %}
+{% block title %}All Cases{% endblock %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>All Registered Cases</title>
-    <style>
-        /* v3 UI — offline-safe (no CDN). Same data/columns; only the look improved. */
-        :root{
-            --navy-900:#06182f; --navy-800:#0a2e63; --navy-700:#103a82;
-            --brand-600:#1e40af; --brand-500:#2451d6; --gold:#f5b301;
-            --ink-900:#0f172a; --ink-600:#475569; --ink-400:#94a3b8;
-            --line:#e6eaf2; --bg:#f2f4f9; --white:#fff;
-            --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-        }
-        *{box-sizing:border-box}
-        body{margin:0;font-family:var(--font);background:var(--bg);color:var(--ink-900);-webkit-font-smoothing:antialiased}
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('admin_dashboard') }}">Dashboard</a><span class="sep">›</span>
+  <span class="current">All Cases</span>
+</nav>
+{% endblock %}
 
-        /* Floating "Back to Dashboard" — fixed top-right, always visible */
-        .floating-back{
-            position:fixed;top:16px;right:22px;z-index:1000;
-            display:inline-flex;align-items:center;gap:8px;text-decoration:none;
-            background:linear-gradient(180deg,var(--brand-500),var(--brand-600));color:#fff;
-            font-weight:650;font-size:14px;padding:10px 18px;border-radius:999px;
-            box-shadow:0 12px 26px -8px rgba(8,28,71,.6);transition:filter .15s,transform .06s}
-        .floating-back:hover{filter:brightness(1.08)}
-        .floating-back:active{transform:translateY(1px)}
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1>All Registered Cases</h1>
+    <div class="sub">{{ complaint_data|length }} case{{ 's' if complaint_data|length != 1 }} on record</div>
+  </div>
+  <input class="form-input" style="max-width:280px" type="search" placeholder="Filter cases…"
+         data-filter-table="casesTable" aria-label="Filter cases table">
+</header>
 
-        /* Header */
-        .header{position:relative;padding:26px 20px 24px;color:#eaf1ff;text-align:center;
-            background:radial-gradient(900px 300px at 80% -40%,var(--navy-700),transparent 60%),
-                       linear-gradient(160deg,var(--navy-800),var(--navy-900));
-            box-shadow:0 10px 30px -16px rgba(8,28,71,.55)}
-        .header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;
-            background:linear-gradient(90deg,transparent,var(--gold),transparent)}
-        .header img{width:70px;display:block;margin:0 auto 10px;background:rgba(255,255,255,.95);border-radius:12px;padding:6px}
-        .header h1{font-size:24px;margin:0;font-weight:740;letter-spacing:-.3px;color:#fff}
-        .header h2{font-size:13px;font-weight:600;color:#9db6e6;margin:8px 0 0;text-transform:uppercase;letter-spacing:1.6px}
-
-        /* Table card */
-        .wrap{max-width:1200px;margin:28px auto;padding:0 22px}
-        .card{background:var(--white);border:1px solid var(--line);border-radius:14px;
-            box-shadow:0 18px 40px -22px rgba(8,28,71,.4);overflow:hidden}
-        .table-scroll{max-height:calc(100vh - 230px);overflow-y:auto}
-        table{width:100%;border-collapse:separate;border-spacing:0;font-size:15px}
-        thead th{position:sticky;top:0;z-index:1;background:var(--navy-800);color:#fff;
-            font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;
-            text-align:left;padding:14px 20px;border-bottom:2px solid var(--gold)}
-        tbody td{padding:13px 20px;border-bottom:1px solid var(--line);color:var(--ink-900)}
-        tbody tr:last-child td{border-bottom:none}
-        tbody tr:nth-child(even){background:#f8fafc}
-        tbody tr:hover{background:#eef4ff}
-        tbody td:first-child{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-weight:600;color:var(--navy-800)}
-        .muted{color:var(--ink-400)}
-        .empty{text-align:center;padding:30px;color:var(--ink-600)}
-    </style>
-</head>
-
-<body>
-    <a href="{{ url_for('admin_dashboard') }}" class="floating-back" title="Back to Dashboard">&larr; Dashboard</a>
-
-    <div class="header">
-        <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="TN Police Logo">
-        <h1>Tamil Nadu Cyber Crime Police</h1>
-        <h2>All Registered Cases{% if complaint_data %} &middot; {{ complaint_data|length }}{% endif %}</h2>
-    </div>
-
-    <div class="wrap">
-        <div class="card">
-            <div class="table-scroll">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>ACK No</th>
-                            <th>Filename</th>
-                            <th>Uploaded By</th>
-                            <th>Upload Time</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for complaint in complaint_data %}
-                        <tr>
-                            <td>
-                                {% if complaint.ack_nos %}
-                                    {{ complaint.ack_nos[0] }}
-                                {% else %}
-                                    <span class="muted">&mdash;</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ complaint.filename }}</td>
-                            <td>{{ complaint.uploader }}</td>
-                            <td>
-                                {{ complaint.upload_time.strftime("%d/%m/%Y %H:%M") if complaint.upload_time else '—' }}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                        {% if not complaint_data %}
-                        <tr><td colspan="4" class="empty">No cases registered yet.</td></tr>
-                        {% endif %}
-                    </tbody>
-                </table>
-            </div>
+<div class="table-wrap">
+  <table class="ds-table" id="casesTable">
+    <thead>
+      <tr>
+        <th class="sortable">ACK No</th>
+        <th>Status</th>
+        <th class="sortable">Filename</th>
+        <th class="sortable">Uploaded By</th>
+        <th class="sortable">Upload Time</th>
+        <th>Assigned To</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for complaint in complaint_data %}
+      <tr>
+        <td class="mono font-semibold">
+          {% if complaint.ack_nos %}{{ complaint.ack_nos[0] }}{% else %}<span class="text-muted">&mdash;</span>{% endif %}
+        </td>
+        <td>
+          {% if complaint.ack_nos %}
+          {# Status badge + inline change (Feature A1) #}
+          <form method="POST" action="{{ url_for('update_case_status') }}" class="flex items-center gap-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="ack_no" value="{{ complaint.ack_nos[0] }}">
+            <select class="form-select" name="status" style="width:auto;height:32px" aria-label="Case status">
+              {% for s in statuses %}
+              <option value="{{ s }}" {% if s == complaint.case_status %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-secondary btn-sm" type="submit">Set</button>
+          </form>
+          {% else %}<span class="text-muted">&mdash;</span>{% endif %}
+        </td>
+        <td class="truncate">{{ complaint.filename }}</td>
+        <td>{{ complaint.uploader }}</td>
+        <td>{{ complaint.upload_time.strftime("%d/%m/%Y %H:%M") if complaint.upload_time else '—' }}</td>
+        <td>
+          {% if complaint.ack_nos %}
+          <form method="POST" action="{{ url_for('assign_case') }}" class="flex items-center gap-2 wrap">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="ack_no" value="{{ complaint.ack_nos[0] }}">
+            <select class="form-select" name="officer_id" style="width:auto;height:32px" aria-label="Assign officer">
+              <option value="0" {% if not complaint.assigned_to_id %}selected{% endif %}>— Unassigned —</option>
+              {% for o in officers %}
+              <option value="{{ o.id }}" {% if o.id == complaint.assigned_to_id %}selected{% endif %}>{{ o.username }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-secondary btn-sm" type="submit">Assign</button>
+          </form>
+          {% else %}<span class="text-muted">&mdash;</span>{% endif %}
+        </td>
+        <td>
+          {% if complaint.ack_nos %}
+          <div class="flex gap-2">
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('graph_tree1', ack_no=complaint.ack_nos[0]) }}">Graph</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('case_timeline', ack_no=complaint.ack_nos[0]) }}">Timeline</a>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('download_letters_zip', ack_no=complaint.ack_nos[0]) }}"
+               title="Download all generated letters as ZIP">Letters</a>
+          </div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not complaint_data %}
+      <tr><td colspan="7">
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <div class="es-title">No cases registered yet</div>
+          Cases appear here when officers upload bank-transaction files.
         </div>
-    </div>
-</body>
-
-</html>
+      </td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
