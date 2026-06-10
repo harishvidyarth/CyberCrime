@@ -19,8 +19,8 @@ FundTrail is a **Flask** web app used by police cybercrime investigators.
 4. It enriches accounts with **bank/branch/state** from a 51 MB **IFSC dataset**.
 5. Officers mark suspect accounts **"on hold"** and **auto-generate official .docx/PDF
    letters** to banks requesting KYC or asking to freeze funds.
-6. **Roles:** Admin (manage everything), Investigative Officer (investigate),
-   Viewer (read-only).
+6. **Roles:** Admin (manage everything), Investigative Officer (investigate).
+   *(The read-only Viewer role was removed.)*
 
 **Tech:** Python/Flask, SQLAlchemy ORM, SQLite *or* MySQL, Flask-Login (auth),
 Flask-WTF (CSRF), Flask-Limiter (rate limiting), pandas/openpyxl (Excel),

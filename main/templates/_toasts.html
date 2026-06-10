@@ -12,34 +12,39 @@
 {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
 <style nonce="{{ csp_nonce }}">
-  .toast-stack{position:fixed;top:18px;right:18px;z-index:9999;display:flex;flex-direction:column;
-    gap:10px;max-width:360px;width:calc(100% - 36px);pointer-events:none}
-  .toast{pointer-events:auto;display:flex;align-items:flex-start;gap:10px;background:#fff;color:#0f172a;
-    border:1px solid #e6eaf2;border-left:4px solid #2451d6;border-radius:11px;padding:12px 12px 12px 14px;
-    box-shadow:0 14px 34px -14px rgba(8,28,71,.42);
+  /* Everything is scoped under #toastStack so page styles can't interfere, and the
+     stack has a DEFINITE width (not %) so the message can never collapse to a
+     one-character-per-line column. */
+  #toastStack{position:fixed;top:18px;right:18px;z-index:2147483000;
+    max-width:calc(100vw - 36px);
+    display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:none}
+  #toastStack *{box-sizing:border-box}
+  #toastStack .toast{pointer-events:auto;display:flex;align-items:flex-start;gap:10px;
+    width:max-content;min-width:240px;max-width:560px;
+    background:#fff;color:#0f172a;border:1px solid #e6eaf2;border-left:4px solid #2451d6;
+    border-radius:11px;padding:12px 14px;box-shadow:0 14px 34px -14px rgba(8,28,71,.42);
     font:500 14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
     animation:toast-in .22s ease-out}
-  .toast.is-hiding{animation:toast-out .2s ease-in forwards}
-  .toast.success{border-left-color:#16a34a}
-  .toast.error,.toast.danger{border-left-color:#dc2626}
-  .toast.warning{border-left-color:#f59e0b}
-  .toast .t-icon{flex-shrink:0;width:18px;height:18px;margin-top:1px;color:#2451d6}
-  .toast.success .t-icon{color:#16a34a}
-  .toast.error .t-icon,.toast.danger .t-icon{color:#dc2626}
-  .toast.warning .t-icon{color:#f59e0b}
-  .toast .t-msg{flex:1;word-break:break-word}
-  .toast .t-close{flex-shrink:0;border:none;background:none;cursor:pointer;color:#94a3b8;
-    padding:2px;margin:-2px -2px 0 0;font-size:19px;line-height:1;border-radius:6px;
-    transition:color .12s,background .12s}
-  .toast .t-close:hover{color:#0f172a;background:#f1f5f9}
+  #toastStack .toast.is-hiding{animation:toast-out .2s ease-in forwards}
+  #toastStack .toast.success{border-left-color:#16a34a}
+  #toastStack .toast.error,#toastStack .toast.danger{border-left-color:#dc2626}
+  #toastStack .toast.warning{border-left-color:#f59e0b}
+  #toastStack .t-icon{flex:0 0 auto;width:18px;height:18px;margin-top:1px;color:#2451d6}
+  #toastStack .toast.success .t-icon{color:#16a34a}
+  #toastStack .toast.error .t-icon,#toastStack .toast.danger .t-icon{color:#dc2626}
+  #toastStack .toast.warning .t-icon{color:#f59e0b}
+  #toastStack .t-msg{flex:1 1 auto;min-width:0;white-space:normal;overflow-wrap:break-word;word-break:normal}
+  #toastStack .t-close{flex:0 0 auto;border:none;background:none;cursor:pointer;color:#94a3b8;
+    padding:0 3px;margin:-2px -2px 0 0;font-size:20px;line-height:1.1;border-radius:6px}
+  #toastStack .t-close:hover{color:#0f172a;background:#f1f5f9}
   @keyframes toast-in{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
   @keyframes toast-out{to{opacity:0;transform:translateX(16px)}}
 </style>
-<div class="toast-stack" id="toastStack">
+<div id="toastStack">
   {% for category, message in messages %}
   <div class="toast {{ category }}" role="status">
     <svg class="t-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-         stroke-linecap="round" stroke-linejoin="round">
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       {% if category in ['error', 'danger'] %}
         <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
       {% elif category == 'warning' %}

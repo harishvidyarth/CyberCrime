@@ -24,7 +24,7 @@ Tick every box before handing the project back.
 - [ ] `IFSC_CODES.pkl` documented as external (not committed)
 
 ## Functionality (#39)
-- [ ] Login + roles (Admin/Officer/Viewer) work; lockout works
+- [ ] Login + roles (Admin/Officer) work; lockout works
 - [ ] Excel upload shows **complete** data incl. POS/AEPS (#10 fixed)
 - [ ] Graph renders; put-on-hold + KYC save; letters generate (.docx/.pdf)
 

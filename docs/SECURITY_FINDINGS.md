@@ -17,7 +17,7 @@ Status legend: ✅ fixed & still holds · 🟡 fix weakened / partial regression
 | ID | Finding | Severity (CVSS) | Retest | **Current code** | Action |
 |----|---------|-----------------|--------|------------------|--------|
 | FT-001 | IDOR — mass financial data exposure | Critical (9.8) | ✅ FIXED | ✅ `check_case_access()` used ×8 in app.py | keep |
-| FT-002 | Hardcoded admin credentials | Critical (9.8) | ✅ FIXED | 🟡 app generates strong random pw, **but** `reset_admin_password.py`/`reset_officer_password.py` set `admin123`/`officer123`, bypassing the policy | don't ship weak creds; force change |
+| FT-002 | Hardcoded admin credentials | Critical (9.8) | ✅ FIXED | ✅ `create_user.py` generates strong random passwords + forces a change on first login; the old `reset_*_password.py` weak-credential scripts are not shipped in this repo | keep |
 | FT-003 | Viewer authentication bypass | Critical (9.1) | ✅ FIXED | ✅ all roles require password | keep |
 | FT-004 | Unauthenticated API endpoints | Critical (9.1) | ✅ FIXED | ✅ `@login_required` / `@admin_required` | keep |
 | FT-005 | Database files world-readable | High (8.6) | ✅ FIXED | 🟡 **partial regression** — `_ensure_secure_file()` only secures the `data/` copies; **stray 755 (world-readable) DB copies** with password hashes exist in `main/` and `main/instance/` | delete strays (DB consolidation), enforce 600 |

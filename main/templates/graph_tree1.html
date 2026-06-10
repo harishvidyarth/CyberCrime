@@ -5,23 +5,12 @@
   <meta charset="UTF-8">
   <title>Fund Flow Graph</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <!-- D3.js -->
-  <script src="https://d3js.org/d3.v7.min.js"
-    integrity="sha384-CjloA8y00+1SDAUkjs099PVfnY2KmDC2BZnws9kh8D/lX1s46w6EPhpXdqMfjK6i"
-    crossorigin="anonymous"></script>
-
-  <!-- html2canvas for capturing the chart -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
-    integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H"
-    crossorigin="anonymous"></script>
-
-  <!-- pdfMake -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"
-    integrity="sha384-VFQrHzqBh5qiJIU0uGU5CIW3+OWpdGGJM9LBnGbuIH2mkICcFZ7lPd/AAtI7SNf7"
-    crossorigin="anonymous"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"
-    integrity="sha384-/RlQG9uf0M2vcTw3CX7fbqgbj/h8wKxw7C3zu9/GxcBPRKOEcESxaxufwRXqzq6n"
-    crossorigin="anonymous"></script>
+  <!-- Vendored locally for fully offline / air-gapped use (previously external CDNs,
+       which break on disconnected machines and were partly blocked by the CSP). -->
+  <script src="{{ url_for('static', filename='d3.v7.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='html2canvas.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='pdfmake.min.js') }}"></script>
+  <script src="{{ url_for('static', filename='vfs_fonts.js') }}"></script>
 
   <style>
     /* Left Panel - Compact and separate styling */
@@ -1948,7 +1937,7 @@
     }
   </script>
 
-  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <!-- D3 already loaded once (vendored) in <head>; no second CDN copy needed. -->
   <script src="{{ url_for('static', filename='graph.js') }}"></script>
   <!-- 🌟 Enhanced PROFESSIONAL LEGEND PANEL -->
   <div class="legend-box" style="

@@ -12,7 +12,6 @@ from bank transaction data, visualise fund flow, and generate official bank lett
 |------|--------------|
 | Admin | Manage officers, view all cases, analytics, audit logs |
 | Investigative Officer | Upload data, trace funds, hold accounts, generate letters |
-| Viewer | Read-only access to fund flows and reports |
 
 ## 3. Functional requirements
 - **FR-1** Authenticate users with strong hashing, lockout, forced password change.

@@ -221,43 +221,23 @@ tbody tr:hover td{background:#f8fafc}
     </div>
   </div>
 
-  <!-- IFSC + State -->
-  <div class="two-col">
-    <div class="section">
-      <div class="sh"><h2>🔢 Top IFSC Codes (My Files)</h2></div>
-      {% if top_ifsc %}
-      <table>
-        <thead><tr><th>IFSC</th><th>Bank</th><th class="num">Count</th></tr></thead>
-        <tbody>
-          {% for ifsc, bank, cnt in top_ifsc %}
-          <tr>
-            <td style="font-family:monospace;font-size:12px;font-weight:600">{{ ifsc or '—' }}</td>
-            <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ bank or '—' }}</td>
-            <td class="num">{{ cnt }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}<div class="empty">No data yet</div>{% endif %}
-    </div>
-
-    <div class="section">
-      <div class="sh"><h2>🗺️ States (My Files)</h2></div>
-      {% if state_dist %}
-      <table>
-        <thead><tr><th>State</th><th class="num">Txns</th><th class="num">Amount</th></tr></thead>
-        <tbody>
-          {% for state, cnt, amt in state_dist %}
-          <tr>
-            <td style="font-weight:500">{{ state or 'Unknown' }}</td>
-            <td class="num">{{ cnt }}</td>
-            <td class="amt-cell">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}<div class="empty">No data yet</div>{% endif %}
-    </div>
+  <!-- Top IFSC Codes (the "States (My Files)" section was removed per request) -->
+  <div class="section">
+    <div class="sh"><h2>🔢 Top IFSC Codes (My Files)</h2></div>
+    {% if top_ifsc %}
+    <table>
+      <thead><tr><th>IFSC</th><th>Bank</th><th class="num">Count</th></tr></thead>
+      <tbody>
+        {% for ifsc, bank, cnt in top_ifsc %}
+        <tr>
+          <td style="font-family:monospace;font-size:12px;font-weight:600">{{ ifsc }}</td>
+          <td style="max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ bank or '—' }}</td>
+          <td class="num">{{ cnt }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<div class="empty">No data yet</div>{% endif %}
   </div>
 
 </div><!-- /content -->

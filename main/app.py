@@ -32,7 +32,10 @@ from sqlalchemy import func, desc, inspect, text, or_
 from sqlalchemy.orm import defer
 from flask_migrate import Migrate  # pyright: ignore[reportMissingModuleSource]
 import pymysql  # pyright: ignore[reportMissingModuleSource]
-pymysql.install_as_MySQLdb()
+# Only patch pymysql as MySQLdb when actually using MySQL. The default path is
+# SQLite, which needs no patch. (DATABASE_URL is loaded by load_dotenv() above.)
+if os.environ.get('DATABASE_URL', '').startswith('mysql'):
+    pymysql.install_as_MySQLdb()
 import concurrent.futures
 import re
 from decimal import Decimal, InvalidOperation
@@ -107,7 +110,9 @@ app.wsgi_app = StripServerHeaderMiddleware(app.wsgi_app)
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"],
+    # Generous global cap for an interactive internal tool (graphs/analytics fire many
+    # AJAX calls). 50/hour used to make normal use randomly hit "Too Many Requests".
+    default_limits=["5000 per day", "1000 per hour"],
     storage_uri="memory://"
 )
 
@@ -137,7 +142,7 @@ def set_security_headers(response):
     
     csp_policy = (
         "default-src 'self'; "
-        f"script-src 'self' https://d3js.org 'nonce-{nonce}'; "
+        f"script-src 'self' 'nonce-{nonce}'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; "
         "font-src 'self'; "
@@ -224,6 +229,16 @@ def get_state(ifsc):
         ifsc_cache[ifsc] = state
         return state
     # Fallback to local IFSC_CODES.xlsx lookup
+    try:
+        from ifsc_utils import get_state as excel_get_state
+        state = excel_get_state(ifsc)
+        if state and state != 'Unknown':
+            ifsc_cache[ifsc] = state
+            return state
+    except Exception as e:
+        logger.error(f"Error fetching state for IFSC from excel {ifsc}: {e}")
+    ifsc_cache[ifsc] = 'Unknown'
+    return 'Unknown'
 
 def check_case_access(ack_no):
     """
@@ -257,35 +272,10 @@ def check_case_access(ack_no):
     logger.warning(f"Unauthorized access attempt to resource {ack_no} by {current_user.username}")
     abort(403)
 
-    try:
-        from ifsc_utils import get_state as excel_get_state
-        state = excel_get_state(ifsc)
-        if state and state != 'Unknown':
-            ifsc_cache[ifsc] = state
-            return state
-    except Exception as e:
-        logger.error(f"Error fetching state for IFSC from excel {ifsc}: {e}")
-    ifsc_cache[ifsc] = 'Unknown'
-    return 'Unknown'
 
-
-def validate_password(password):
-    """Enforce password complexity"""
-    if len(password) < 12:
-        return False, "Password must be at least 12 characters"
-    if not re.search(r'[A-Z]', password):
-        return False, "Password must contain uppercase letter"
-    if not re.search(r'[a-z]', password):
-        return False, "Password must contain lowercase letter"
-    if not re.search(r'[0-9]', password):
-        return False, "Password must contain number"
-    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
-        return False, "Password must contain special character"
-    return True, "Valid"
-
-# Note: The User model in models.py has its own validate_password function that raises ValueError.
-# This one is kept if needed for other checks, but we should align them.
-# For now, we rely on User.set_password to enforce complexity.
+# Password complexity is enforced in one place: models.validate_password (called by
+# User.set_password). A duplicate validate_password() previously lived here but was never
+# called — removed during de-duplication so there's a single source of truth for the policy.
 
 ALLOWED_IFSC_DOMAIN = 'ifsc.razorpay.com'
 MAX_WORKERS = 10
@@ -382,6 +372,22 @@ def admin_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def is_admin():
+    """Authoritative admin check — uses current_user (DB-backed), not the possibly-stale
+    session['role'] copy. Safe to call for anonymous users (returns False, no error)."""
+    return current_user.is_authenticated and getattr(current_user, 'role', None) == 'Admin'
+
+# Control characters that must never be stored in text fields (keep tab/newline/return).
+_CONTROL_RE = re.compile('[' + re.escape(''.join(chr(c) for c in range(32) if c not in (9, 10, 13)) + chr(127)) + ']')
+
+def sanitize_text(value, max_len=255):
+    """Defence-in-depth for user-supplied text that gets stored/displayed: strip null
+    bytes & control characters, trim whitespace, cap length. (Output is still
+    Jinja-escaped; this hardens what we persist and pass around.)"""
+    if value is None:
+        return ''
+    return _CONTROL_RE.sub('', str(value)).strip()[:max_len]
+
 def _is_posix():
     return os.name != 'nt'
 
@@ -452,6 +458,11 @@ app.config['SESSION_REFRESH_EACH_REQUEST'] = False
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+# Hard ceiling on any incoming request body — stops an oversized/malicious POST from
+# exhausting memory before per-file checks run. (Excel uploads are capped at 10MB
+# separately; this bounds the whole request.)
+app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024  # 25 MB
 
 db.init_app(app)
 
@@ -724,7 +735,12 @@ def change_password():
     return render_template('change_password.html', error=error, forced=forced)
 
 @app.route('/login', methods=['GET', 'POST'])
-@limiter.limit("5 per minute")
+# Brute-force throttle: only count actual POST login attempts, NOT page views/refreshes.
+# (The old "5 per minute" counted every GET of the page too, so just reloading the login
+#  screen a few times — or normal testing — tripped "Too Many Requests".)
+# The per-account lockout (5 failed tries -> 15 min, below) is the primary defence; this
+# per-IP cap is a secondary guard.
+@limiter.limit("10 per minute", exempt_when=lambda: request.method != 'POST')
 def login():
     error = None
     if request.method == 'POST':
@@ -813,7 +829,7 @@ def logout():
 
 @app.route('/admin_dashboard')
 def admin_dashboard():
-    if 'username' in session and session['role'] == 'Admin':
+    if is_admin():
         return render_template('admin_dashboard.html', username=session['username'])
     else:
         return redirect(url_for('login'))
@@ -903,6 +919,7 @@ def upload_file():
 
 @app.route('/upload_excel', methods=['POST'])
 @login_required
+@limiter.limit("20 per hour")
 def upload_excel():
     # Allow Viewer to upload complaints
     # if session.get('role') in VIEW_ONLY_ROLES:
@@ -1490,6 +1507,7 @@ def graph_tree1(ack_no):
     return render_template('graph_tree1.html', ack_no=ack_no, role=session.get('role'), layer_1_total=formatted_l1_total)
 
 @app.route('/complaints')
+@login_required
 def complaints():
     if 'username' not in session:
         return redirect('/login')
@@ -1943,6 +1961,10 @@ def available_ack_nos():
     return jsonify({'available_ack_nos': sorted(ack_list)})
 
 
+# Parsed ATM-sheet results cached by (upload_id, ack_no). The stored Excel blob is
+# immutable per upload, so re-parsing it on every click was pure waste (the slow part).
+_ATM_RESULT_CACHE = {}
+
 @app.route('/atm_data/<ack_no>')
 @login_required
 def atm_data(ack_no):
@@ -1956,6 +1978,9 @@ def atm_data(ack_no):
              return jsonify({'atm': []})
 
         up = up_row
+        _ck = (up.id, ack_no)
+        if _ck in _ATM_RESULT_CACHE:                 # fast path: already parsed this file
+            return jsonify(_ATM_RESULT_CACHE[_ck])
         file_bytes = None
         if up.data:
             file_bytes = up.data
@@ -2105,7 +2130,9 @@ def atm_data(ack_no):
 
         rows = df.fillna('').to_dict(orient='records')
         logger.info(f"[atm_data] Rows extracted: {len(rows)}")
-        return jsonify({'atm': rows, 'columns': list(df.columns)})
+        _result = {'atm': rows, 'columns': list(df.columns)}
+        _ATM_RESULT_CACHE[(up.id, ack_no)] = _result   # cache: blob is immutable per upload
+        return jsonify(_result)
     except Exception as e:
         logger.error(f"[atm_data] Error: {e}", exc_info=True)
         return jsonify({'atm': [], 'error': str(e)})
@@ -2341,10 +2368,11 @@ def state_transactions(ack_no, state):
     })
 
 @app.route('/save_kyc', methods=['POST'])
+@login_required
 def save_kyc():
     if session.get('role') in VIEW_ONLY_ROLES:
         return jsonify({"status": "error", "message": "View-only users cannot edit KYC"}), 403
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}   # malformed JSON -> {} instead of a 500
     txn_id = data.get('txn_id')
 
     if not txn_id:
@@ -2357,18 +2385,24 @@ def save_kyc():
             kyc_entry = KYCDetails(txn_id=txn_id)
             db.session.add(kyc_entry)
         
-        kyc_entry.name = data.get('name')
-        kyc_entry.aadhar = data.get('aadhar')
-        kyc_entry.mobile = data.get('mobile')
-        kyc_entry.address = data.get('address')
-        
+        # Sanitise once (strip control chars + cap to column lengths), apply to both stores
+        name = sanitize_text(data.get('name'), 120)
+        aadhar = sanitize_text(data.get('aadhar'), 20)
+        mobile = sanitize_text(data.get('mobile'), 20)
+        address = sanitize_text(data.get('address'), 200)
+
+        kyc_entry.name = name
+        kyc_entry.aadhar = aadhar
+        kyc_entry.mobile = mobile
+        kyc_entry.address = address
+
         # Also update the main Transaction table for backward compatibility
         txn = Transaction.query.filter_by(txn_id=txn_id).first()
         if txn:
-            txn.kyc_name = data.get('name')
-            txn.kyc_aadhar = data.get('aadhar')
-            txn.kyc_mobile = data.get('mobile')
-            txn.kyc_address = data.get('address')
+            txn.kyc_name = name
+            txn.kyc_aadhar = aadhar
+            txn.kyc_mobile = mobile
+            txn.kyc_address = address
 
         db.session.commit()
         logger.info(f"KYC Save Request processed for txn_id: {txn_id}")
@@ -2380,6 +2414,7 @@ def save_kyc():
 
 
 @app.route('/save_hold_refund', methods=['POST'])
+@login_required
 def save_hold_refund():
     """Save court order / refund details for a put-on-hold transaction."""
     try:
@@ -3050,7 +3085,7 @@ def view_all_complaints():
 
 @app.route('/view_officers')
 def view_officers():
-    if 'username' not in session or session.get('role') != 'Admin':
+    if not is_admin():
         return redirect('/login')
 
     # Get all officers
@@ -3076,7 +3111,7 @@ def view_officers():
 
 @app.route('/update_officer', methods=['POST'])
 def update_officer():
-    if 'username' not in session or session.get('role') != 'Admin':
+    if not is_admin():
         flash('Access Denied!')
         return redirect(url_for('login'))
 
@@ -3096,9 +3131,9 @@ def update_officer():
         return redirect(url_for('view_officers'))
 
     # Update editable fields (keep it minimal)
-    user.name = (request.form.get('name') or '').strip() or None
-    user.rank = (request.form.get('rank') or '').strip() or None
-    user.email = (request.form.get('email') or '').strip() or None
+    user.name = sanitize_text(request.form.get('name'), 100) or None
+    user.rank = sanitize_text(request.form.get('rank'), 100) or None
+    user.email = sanitize_text(request.form.get('email'), 120) or None
 
     manual_upload_count_raw = (request.form.get('manual_upload_count') or '').strip()
     if manual_upload_count_raw == '':
@@ -3118,7 +3153,7 @@ def update_officer():
 @app.route('/edit_officer/<int:officer_id>', methods=['POST'])
 @login_required
 def edit_officer(officer_id):
-    if session.get('role') != 'Admin':
+    if not is_admin():
         return jsonify({'error': 'Access denied'}), 403
 
     officer = User.query.get(officer_id)
@@ -3139,7 +3174,7 @@ def edit_officer(officer_id):
 
 @app.route('/delete_officer', methods=['POST'])
 def delete_officer():
-    if 'username' not in session or session.get('role') != 'Admin':
+    if not is_admin():
         flash('Access Denied!')
         return redirect(url_for('login'))
 
@@ -3314,13 +3349,24 @@ def view_analytics():
      .order_by(desc('cnt')).limit(10).all()
 
     # ── State-wise distribution ───────────────────────────────────────
-    state_dist = db.session.query(
-        Transaction.state,
+    # Derive state from each IFSC via the local memoised IFSC table, NOT the cached
+    # Transaction.state column — that column is only filled lazily (when a case's
+    # state-wise summary is opened), so it was mostly NULL and this table showed empty.
+    # Aggregate by unique IFSC -> one O(1) lookup each.
+    from ifsc_utils import get_ifsc_info as _gii
+    _ifsc_rows = db.session.query(
+        Transaction.ifsc_code,
         func.count(Transaction.id).label('cnt'),
         func.sum(Transaction.amount).label('amt')
-    ).filter(Transaction.state.isnot(None))\
-     .group_by(Transaction.state)\
-     .order_by(desc('cnt')).limit(15).all()
+    ).filter(Transaction.ifsc_code.isnot(None)).group_by(Transaction.ifsc_code).all()
+    _state_agg = defaultdict(lambda: {'cnt': 0, 'amt': 0.0})
+    for _ifsc, _cnt, _amt in _ifsc_rows:
+        _info = _gii(_ifsc) or {}
+        _st = (str(_info.get('STATE') or _info.get('State') or '').strip().title()) or 'Unknown'
+        _state_agg[_st]['cnt'] += _cnt
+        _state_agg[_st]['amt'] += (_amt or 0)
+    state_dist = sorted(_state_agg.items(), key=lambda kv: -kv[1]['cnt'])[:15]
+    state_dist = [(_s, _v['cnt'], _v['amt']) for _s, _v in state_dist]
 
     # ── Officer upload stats ──────────────────────────────────────────
     officer_stats = db.session.query(
@@ -3505,14 +3551,14 @@ def add_officer():
 @app.route('/submit_officer', methods=['POST'])
 @login_required
 def submit_officer():
-    if session.get('role') != 'Admin':
+    if not is_admin():
         flash('Access Denied!', 'danger')
         return redirect(url_for('login'))
 
-    name = request.form.get('name', '').strip()
-    rank = request.form.get('rank', '').strip()
-    email = request.form.get('email', '').strip()
-    username = request.form.get('username', '').strip()
+    name = sanitize_text(request.form.get('name'), 100)
+    rank = sanitize_text(request.form.get('rank'), 100)
+    email = sanitize_text(request.form.get('email'), 120)
+    username = request.form.get('username', '').strip()[:80]   # cap length; keep .strip() so it matches login
     # Do NOT strip the password: it is stored exactly as typed and must match what
     # the officer enters at login (the login route does not strip it either).
     password = request.form.get('password', '')
@@ -3566,16 +3612,7 @@ with app.app_context():
     # ✅ Indentation correctly inside app_context
     if User.query.count() == 0:
         # Generate random initial passwords that meet complexity requirements
-        def generate_secure_password(length=16):
-            alphabet = string.ascii_letters + string.digits + '!@#$%^&*(),.?":{}|<>'
-            while True:
-                password = ''.join(secrets.choice(alphabet) for i in range(length))
-                if (any(c.islower() for c in password)
-                        and any(c.isupper() for c in password)
-                        and any(c.isdigit() for c in password)
-                        and any(c in '!@#$%^&*(),.?":{}|<>' for c in password)):
-                    return password
-
+        # uses the module-level generate_secure_password() defined earlier (de-duplicated)
         admin_password = generate_secure_password()
         officer_password = generate_secure_password()
 
@@ -3642,6 +3679,13 @@ def internal_error(error):
     return render_template("errors/500.html"), 500
 
 
+@app.errorhandler(413)
+def request_too_large(error):
+    # Triggered by MAX_CONTENT_LENGTH — keep it simple and clear.
+    return ("The request was too large. Excel uploads are limited to 10 MB.",
+            413, {'Content-Type': 'text/plain; charset=utf-8'})
+
+
 @app.route('/download_fundtrail_pdf', methods=['POST'])
 @login_required
 def download_fundtrail_pdf():
@@ -3679,7 +3723,7 @@ def download_fundtrail_pdf():
         H_BG = colors.HexColor('#F86262'); H_AC = colors.HexColor('#b91c1c'); H_TI = colors.HexColor('#7f1d1d')
 
         MARGIN = 50
-        HEAD_H = 80
+        HEAD_H = 94
         BOX_W = 360
         x = (width - BOX_W) / 2.0
         PAD = 16
@@ -3716,24 +3760,35 @@ def download_fundtrail_pdf():
             return out or ['']
 
         def draw_band():
-            # deep-navy letterhead band with a gold underline
+            # official government letterhead: emblem + titles on a deep-navy band
             c.setFillColor(NAVY); c.rect(0, height - HEAD_H, width, HEAD_H, fill=1, stroke=0)
             c.setFillColor(GOLD); c.rect(0, height - HEAD_H, width, 3, fill=1, stroke=0)
-            c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 19)
-            c.drawString(MARGIN, height - 42, "Fund Trail Analysis")
+            logo = os.path.join(app.root_path, 'static', 'tn_police_logo.png')
+            try:
+                c.drawImage(logo, MARGIN, height - HEAD_H + (HEAD_H - 58) / 2.0,
+                            width=58, height=58, preserveAspectRatio=True, mask='auto')
+            except Exception:
+                pass
+            tx = MARGIN + 72
+            c.setFillColor(GOLD); c.setFont("Helvetica-Bold", 8)
+            c.drawString(tx, height - 32, "GOVERNMENT OF TAMIL NADU")
+            c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 17)
+            c.drawString(tx, height - 52, "TAMIL NADU CYBER CRIME POLICE")
             c.setFillColor(HEADSUB); c.setFont("Helvetica", 9.5)
-            c.drawString(MARGIN, height - 58, "Put-On-Hold Money Trail   |   Tamil Nadu Cyber Crime Wing")
-            c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 9.5)
-            c.drawRightString(width - MARGIN, height - 40, "Ack No: %s" % ack_no)
+            c.drawString(tx, height - 70, "Fund Trail Analysis  -  Put-On-Hold Money Trail")
+            c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 9)
+            c.drawRightString(width - MARGIN, height - 34, "Ack No: %s" % ack_no)
             c.setFillColor(HEADSUB); c.setFont("Helvetica", 8.5)
-            c.drawRightString(width - MARGIN, height - 56, "Generated " + datetime.now().strftime("%d %b %Y, %H:%M"))
+            c.drawRightString(width - MARGIN, height - 50, "Generated " + datetime.now().strftime("%d %b %Y, %H:%M"))
+            c.setFillColor(HEADSUB); c.setFont("Helvetica-Bold", 7.5)
+            c.drawRightString(width - MARGIN, height - 65, "CONFIDENTIAL")
 
         def draw_footer():
             c.setStrokeColor(LINEC); c.setLineWidth(0.8)
             c.line(MARGIN, 42, width - MARGIN, 42)
             c.setFillColor(MUTED); c.setFont("Helvetica", 8)
             c.drawString(MARGIN, 30, "CONFIDENTIAL  -  For authorised investigation use only")
-            c.drawRightString(width - MARGIN, 30, "Page %d" % c.getPageNumber())
+            c.drawRightString(width - MARGIN, 30, "Computer-generated  ·  Page %d" % c.getPageNumber())
 
         def draw_summary(y_top):
             # summary-of-findings stat row (forensic reports lead with the key numbers)
@@ -3865,6 +3920,16 @@ def download_fundtrail_pdf():
             else:
                 y = top - box_h - 20
 
+        # ---------- attestation block (government form) ----------
+        if y < 110:
+            c.showPage(); y = begin_page(False)
+        c.setFillColor(MUTED); c.setFont("Helvetica-Oblique", 7.5)
+        c.drawString(MARGIN, y - 24, "Verified from FundTrail records as on date of generation.")
+        c.setStrokeColor(INK); c.setLineWidth(0.8)
+        c.line(width - MARGIN - 190, y - 22, width - MARGIN, y - 22)
+        c.setFillColor(LABELC); c.setFont("Helvetica", 8.5)
+        c.drawRightString(width - MARGIN, y - 34, "Signature of Investigating Officer")
+
         c.save()
         buffer.seek(0)
         
@@ -3961,12 +4026,16 @@ def my_analytics():
     state_dist = sorted(state_map.items(), key=lambda x: -x[1]['cnt'])[:15]
     state_dist = [(s, v['cnt'], v['amt']) for s, v in state_dist]
 
-    # Top IFSC
+    # Top IFSC — skip junk values (nan/none/unknown/blank) so the table isn't polluted
     ifsc_map = defaultdict(lambda: {'cnt': 0, 'bank': ''})
+    _JUNK = {'', 'nan', 'none', 'null', 'unknown', 'n/a', 'na', '-', '—'}
     for t in my_txns:
-        if t.ifsc_code:
-            ifsc_map[t.ifsc_code]['cnt'] += 1
-            ifsc_map[t.ifsc_code]['bank'] = t.bank_name or ''
+        _ifsc = (t.ifsc_code or '').strip()
+        if _ifsc and _ifsc.lower() not in _JUNK:
+            ifsc_map[_ifsc]['cnt'] += 1
+            _bank = (t.bank_name or '').strip()
+            if _bank and _bank.lower() not in _JUNK:
+                ifsc_map[_ifsc]['bank'] = _bank
     top_ifsc = sorted(ifsc_map.items(), key=lambda x: -x[1]['cnt'])[:10]
     top_ifsc = [(i, v['bank'], v['cnt']) for i, v in top_ifsc]
 
@@ -3997,5 +4066,5 @@ if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
     # Port is configurable via the PORT env var so it can avoid conflicts — e.g.
     # macOS AirPlay Receiver (Control Center) occupies 5000 by default. Default 5000.
-    port = int(os.environ.get('PORT', '5000'))
+    port = int(os.environ.get('PORT', '5050'))
     app.run(debug=debug_mode, host='127.0.0.1', port=port)

@@ -1,15 +1,22 @@
-Flask
-Flask-SQLAlchemy
-pandas
-Flask-Login
-Flask-Migrate
-PyMySQL
-cryptography
-openpyxl
-requests
-python-dotenv
-Flask-WTF
-Flask-Limiter
-xhtml2pdf
-reportlab
- python-docx
+# Pinned to the known-working versions (tested on the Python 3.9 venv) so that
+# `pip install -r requirements.txt` is reproducible and never pulls a breaking new
+# release. Bump versions deliberately, then re-run tests/smoke_test.py.
+Flask==3.1.3
+Flask-SQLAlchemy==3.1.1
+pandas==2.3.3
+Flask-Login==0.6.3
+Flask-Migrate==4.1.0
+PyMySQL==1.2.0
+cryptography==48.0.0
+openpyxl==3.1.5
+requests==2.32.5
+python-dotenv==1.2.1
+Flask-WTF==1.2.2
+Flask-Limiter==3.11.0
+
+# Two PDF tools, kept on purpose (Phase 6, item 24): xhtml2pdf renders the HTML letter
+# templates; reportlab draws the data-visual reports (fund-trail, analytics). Migrating
+# letters to reportlab would be a risky rewrite of core output for little real gain.
+xhtml2pdf==0.2.17
+reportlab==4.5.1
+python-docx==1.2.0

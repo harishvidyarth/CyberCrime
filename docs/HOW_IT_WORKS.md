@@ -16,7 +16,7 @@ info, so the officer can see where the money went, freeze suspect accounts, and 
 official letters to banks.
 
 ## 2. What an officer actually does (the real workflow)
-1. **Log in** (Admin / Investigative Officer / Viewer).
+1. **Log in** (Admin / Investigative Officer).
 2. **Upload** the bank Excel file for a complaint (identified by an *Acknowledgement
    Number*, `ack_no`).
 3. The app **reads the Excel**, splits out money transfers, ATM/POS/cheque/AEPS
@@ -83,7 +83,8 @@ link; `layer` decides the depth.
 - **Admin** → everything: manage officers, all cases, analytics, logs.
 - **Investigative Officer** → upload, trace, hold, letters — but only **their own /
   unassigned** cases (`check_case_access` enforces this).
-- **Viewer** → read-only.
+
+*(The read-only Viewer role was removed — only Admin and Investigative Officer remain.)*
 
 ## 8. Security model (short version)
 Login lockout + strong hashing (scrypt), CSRF on every form, role checks on every
