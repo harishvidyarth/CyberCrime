@@ -26,7 +26,7 @@ from models import db, User, Transaction, UploadedFile, Complaint, UsageLog, POH
 import pandas as pd  # pyright: ignore[reportMissingImports]
 from werkzeug.security import check_password_hash, generate_password_hash
 from flask_login import login_required, LoginManager, login_user, logout_user, current_user  # pyright: ignore[reportMissingImports]
-from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFProtect, CSRFError
 from datetime import timezone, timedelta, datetime
 from sqlalchemy import func, desc, inspect, text, or_
 from sqlalchemy.orm import defer
@@ -662,6 +662,17 @@ VIEW_ONLY_ROLES = set()  # Viewer (read-only) role removed — only Admin & Inve
 def home():
     return redirect('/login')
 
+@app.route('/home')
+def role_home():
+    """Single 'Home' entry point. Always sends a user to THEIR OWN dashboard, so an
+    admin never lands on the officer dashboard (and vice-versa). Generic 'Return to
+    Home' links point here instead of hard-coding one dashboard."""
+    if 'username' not in session:
+        return redirect(url_for('login'))
+    if session.get('role') == 'Admin':
+        return redirect(url_for('admin_dashboard'))
+    return redirect(url_for('index'))
+
 ALLOWED_HOSTS = {'localhost', '127.0.0.1', '0.0.0.0'}
 
 def is_safe_url(target):
@@ -676,29 +687,41 @@ def is_safe_url(target):
 @app.route('/change_password', methods=['GET', 'POST'])
 @login_required
 def change_password():
-    if not getattr(current_user, 'must_change_password', False):
-        return redirect(url_for('index'))
-    
-    error = None
+    # Accessible voluntarily by any logged-in user, OR forced when
+    # must_change_password is True (e.g. first login after admin creates account).
+    forced = getattr(current_user, 'must_change_password', False)
+    error  = None
+
     if request.method == 'POST':
-        new_password = request.form.get('new_password')
-        confirm_password = request.form.get('confirm_password')
-        
-        if new_password != confirm_password:
-            error = "Passwords do not match."
+        current_pw  = request.form.get('current_password', '')
+        new_pw      = request.form.get('new_password', '')
+        confirm_pw  = request.form.get('confirm_password', '')
+
+        # 1. Verify the user knows their present password
+        if not current_user.check_password(current_pw):
+            error = "Current password is incorrect."
+        elif new_pw != confirm_pw:
+            error = "New passwords do not match."
+        elif new_pw == current_pw:
+            error = "New password must be different from your current password."
         else:
-            is_valid, msg = validate_password(new_password)
-            if not is_valid:
-                error = msg
-            else:
-                current_user.set_password(new_password)
+            try:
+                current_user.set_password(new_pw)   # also validates complexity
                 current_user.must_change_password = False
                 db.session.commit()
-                flash("Password updated successfully. Please login again.")
-                logout_user()
-                return redirect(url_for('login'))
-                
-    return render_template('change_password.html', error=error)
+                log_usage('change_password')
+                flash("Password changed successfully.", "success")
+                # Forced change → log out so they re-authenticate with new password
+                if forced:
+                    logout_user()
+                    return redirect(url_for('login'))
+                # Voluntary change → stay logged in, return to their dashboard
+                role = session.get('role', '')
+                return redirect(url_for('admin_dashboard') if role == 'Admin' else url_for('index'))
+            except ValueError as e:
+                error = str(e)
+
+    return render_template('change_password.html', error=error, forced=forced)
 
 @app.route('/login', methods=['GET', 'POST'])
 @limiter.limit("5 per minute")
@@ -800,6 +823,10 @@ def admin_dashboard():
 def index():
     if 'username' not in session:
         return redirect('/login')
+    # Strict role separation: the admin has their own dashboard. If an admin reaches
+    # the officer dashboard, bounce them back to the admin dashboard.
+    if session.get('role') == 'Admin':
+        return redirect(url_for('admin_dashboard'))
     return render_template('index.html')
 
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
@@ -982,15 +1009,20 @@ def upload_excel():
             flash("⚠️ No Acknowledgement numbers found in the Excel file!", "warning")
             return redirect('/index')
 
-        # ✅ Step 3: Check if any of these ACK numbers already exist in DB
-        existing_acks = (
-            Transaction.query.filter(Transaction.ack_no.in_(acknos_in_excel)).all()
-        )
+        # ✅ Step 3: Purge ALL existing transactions for these ACK numbers.
+        # This is belt-and-suspenders: the filename-dedup above handles same-name
+        # re-uploads, but this catches any lingering rows from a differently-named
+        # copy of the same data (which would otherwise double every amount shown).
+        existing_acks = Transaction.query.filter(
+            Transaction.ack_no.in_(acknos_in_excel)
+        ).all()
         if existing_acks:
-          for record in existing_acks:
-             db.session.delete(record)
-          db.session.commit()
-          flash("ℹ️ Existing ACK numbers found — old records replaced.", "info")
+            # Bulk-delete is faster and avoids per-object overhead
+            Transaction.query.filter(
+                Transaction.ack_no.in_(acknos_in_excel)
+            ).delete(synchronize_session='fetch')
+            db.session.commit()
+            flash("ℹ️ Existing records for these ACK numbers replaced.", "info")
 
         # Re-read file to get binary data for storage
         with open(file_path, 'rb') as f:
@@ -3131,6 +3163,87 @@ def delete_officer():
     return redirect(url_for('view_officers'))
 
 
+# ─────────────────────────────────────────────────────────────────
+#  File Management — view / download / delete uploaded Excel files
+# ─────────────────────────────────────────────────────────────────
+@app.route('/manage_files')
+@login_required
+@admin_required
+def manage_files():
+    """List all uploaded Excel files with per-file stats."""
+    try:
+        log_usage('manage_files')
+    except Exception:
+        pass
+    files = UploadedFile.query.options(defer(UploadedFile.data)).order_by(UploadedFile.upload_time.desc()).all()
+    file_stats = []
+    for f in files:
+        txns = Transaction.query.filter_by(upload_id=f.id).all()
+        ack_nos = list({t.ack_no for t in txns if t.ack_no})
+        total_amt    = sum(t.amount          or 0 for t in txns)
+        disputed_amt = sum(t.disputed_amount or 0 for t in txns)
+        hold_count   = sum(1 for t in txns if t.put_on_hold_txn_id)
+        hold_amt     = sum(t.put_on_hold_amount or 0 for t in txns if t.put_on_hold_txn_id)
+        layers       = sorted({t.layer for t in txns if t.layer})
+        file_stats.append({
+            'id':           f.id,
+            'filename':     f.filename,
+            'uploader':     f.uploader or '—',
+            'upload_time':  f.upload_time.strftime('%d %b %Y, %H:%M') if f.upload_time else '—',
+            'txn_count':    len(txns),
+            'ack_nos':      ack_nos,
+            'total_amt':    total_amt,
+            'disputed_amt': disputed_amt,
+            'hold_count':   hold_count,
+            'hold_amt':     hold_amt,
+            'layers':       layers,
+        })
+    return render_template('manage_files.html', file_stats=file_stats)
+
+
+@app.route('/delete_upload/<int:file_id>', methods=['POST'])
+@login_required
+@admin_required
+def delete_upload(file_id):
+    """Delete an uploaded file and all its transactions."""
+    f = UploadedFile.query.get_or_404(file_id)
+    fname = f.filename
+    try:
+        # Delete transactions linked to this upload
+        Transaction.query.filter_by(upload_id=file_id).delete(synchronize_session='fetch')
+        db.session.delete(f)
+        db.session.commit()
+        # Remove disk copy if it exists
+        disk_path = os.path.join(app.config.get('UPLOAD_FOLDER', ''), fname)
+        if os.path.exists(disk_path):
+            os.remove(disk_path)
+        flash(f'File "{fname}" and all its transactions deleted.', 'success')
+        log_usage('delete_upload', filename=fname)
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"delete_upload error for id={file_id}: {e}")
+        flash(f'Error deleting file: {e}', 'danger')
+    return redirect(url_for('manage_files'))
+
+
+@app.route('/download_upload/<int:file_id>')
+@login_required
+@admin_required
+def download_upload(file_id):
+    """Stream the original Excel file back to the browser."""
+    f = UploadedFile.query.get_or_404(file_id)
+    if not f.data:
+        flash('File data not found in database.', 'danger')
+        return redirect(url_for('manage_files'))
+    log_usage('download_upload', filename=f.filename)
+    return send_file(
+        io.BytesIO(f.data),
+        mimetype=f.mimetype or 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=f.filename
+    )
+
+
 @app.route('/view_analytics')
 @login_required
 @admin_required
@@ -3139,48 +3252,106 @@ def view_analytics():
         log_usage('view_analytics')
     except Exception as e:
         logger.error(f"UsageLog view_analytics error: {e}")
-    # Total unique filenames uploaded (regardless of duplicates)
-    total_uploaded_files = db.session.query(func.count(func.distinct(UploadedFile.filename))).scalar()
 
-    # Total transactions
-    total_txns = db.session.query(func.count(Transaction.id)).scalar()
+    # ── Summary KPIs ──────────────────────────────────────────────────
+    total_files   = db.session.query(func.count(func.distinct(UploadedFile.filename))).scalar() or 0
+    total_txns    = db.session.query(func.count(Transaction.id)).scalar() or 0
+    total_amount  = float(db.session.query(func.sum(Transaction.amount)).scalar() or 0)
+    disputed_amt  = float(db.session.query(func.sum(Transaction.disputed_amount)).scalar() or 0)
+    hold_amt      = float(db.session.query(func.sum(Transaction.put_on_hold_amount)).scalar() or 0)
+    hold_count    = db.session.query(func.count(Transaction.id)).filter(Transaction.put_on_hold_txn_id.isnot(None)).scalar() or 0
+    unique_accts  = db.session.query(func.count(func.distinct(Transaction.to_account))).scalar() or 0
+    unique_banks  = db.session.query(func.count(func.distinct(Transaction.bank_name))).scalar() or 0
+    unique_states = db.session.query(func.count(func.distinct(Transaction.state))).filter(Transaction.state.isnot(None)).scalar() or 0
+    max_layer     = db.session.query(func.max(Transaction.layer)).scalar() or 0
+    active_officers = db.session.query(func.count(func.distinct(UploadedFile.uploader))).scalar() or 0
 
-    # Total amount
-    total_amount = db.session.query(func.sum(Transaction.amount)).scalar() or 0
+    # ── Per-file breakdown (all important numbers) ────────────────────
+    files = UploadedFile.query.options(defer(UploadedFile.data)).order_by(UploadedFile.upload_time.desc()).all()
+    file_rows = []
+    for f in files:
+        txns = Transaction.query.filter_by(upload_id=f.id).all()
+        ack_nos   = list({t.ack_no for t in txns if t.ack_no})
+        fa        = sum(t.amount or 0 for t in txns)
+        fd        = sum(t.disputed_amount or 0 for t in txns)
+        fh        = sum(t.put_on_hold_amount or 0 for t in txns)
+        fhc       = sum(1 for t in txns if t.put_on_hold_txn_id)
+        file_rows.append({
+            'filename':    f.filename,
+            'uploader':    f.uploader or '—',
+            'upload_time': f.upload_time.strftime('%d %b %Y, %H:%M') if f.upload_time else '—',
+            'txn_count':   len(txns),
+            'ack_count':   len(ack_nos),
+            'total_amt':   fa,
+            'disputed_amt':fd,
+            'hold_amt':    fh,
+            'hold_count':  fhc,
+        })
 
-    # Transactions per file
-    txns_per_file = db.session.query(
-        UploadedFile.filename,
-        func.count(Transaction.id).label("txn_count")
-    ).join(Transaction, Transaction.upload_id == UploadedFile.id)\
-     .group_by(UploadedFile.filename)\
-     .all()
+    # ── Layer-wise distribution ───────────────────────────────────────
+    layer_dist = db.session.query(
+        Transaction.layer,
+        func.count(Transaction.id),
+        func.sum(Transaction.amount)
+    ).group_by(Transaction.layer).order_by(Transaction.layer).all()
 
-    # Uploads by investigative officers
-    officer_uploads = db.session.query(
+    # ── Top banks by transaction volume ──────────────────────────────
+    top_banks = db.session.query(
+        Transaction.bank_name,
+        func.count(Transaction.id).label('cnt'),
+        func.sum(Transaction.amount).label('amt')
+    ).filter(Transaction.bank_name.isnot(None))\
+     .group_by(Transaction.bank_name)\
+     .order_by(desc('cnt')).limit(10).all()
+
+    # ── Top IFSC codes ────────────────────────────────────────────────
+    top_ifsc = db.session.query(
+        Transaction.ifsc_code,
+        Transaction.bank_name,
+        func.count(Transaction.id).label('cnt')
+    ).filter(Transaction.ifsc_code.isnot(None))\
+     .group_by(Transaction.ifsc_code, Transaction.bank_name)\
+     .order_by(desc('cnt')).limit(10).all()
+
+    # ── State-wise distribution ───────────────────────────────────────
+    state_dist = db.session.query(
+        Transaction.state,
+        func.count(Transaction.id).label('cnt'),
+        func.sum(Transaction.amount).label('amt')
+    ).filter(Transaction.state.isnot(None))\
+     .group_by(Transaction.state)\
+     .order_by(desc('cnt')).limit(15).all()
+
+    # ── Officer upload stats ──────────────────────────────────────────
+    officer_stats = db.session.query(
         User.username,
-        func.count(UploadedFile.id).label('upload_count')
+        User.name,
+        func.count(UploadedFile.id).label('uploads')
     ).join(UploadedFile, UploadedFile.uploader == User.username)\
      .filter(User.role == 'Investigative Officer')\
-     .group_by(User.username)\
-     .all()
+     .group_by(User.username, User.name)\
+     .order_by(desc('uploads')).all()
 
-    # Frequent IFSC codes
-    frequent_ifsccodes = db.session.query(
-        Transaction.ifsc_code,
-        func.count(Transaction.id).label('count')
-    ).group_by(Transaction.ifsc_code)\
-     .order_by(desc('count'))\
-     .limit(5)\
-     .all()
+    # ── ATM / Cheque withdrawal counts ───────────────────────────────
+    atm_count    = db.session.query(func.count(Transaction.id)).filter(Transaction.atm_id.isnot(None)).scalar() or 0
+    cheque_count = db.session.query(func.count(Transaction.id)).filter(Transaction.cheque_no.isnot(None)).scalar() or 0
 
     return render_template("view_analytics.html",
-        total_uploaded_files=total_uploaded_files,
-        total_txns=total_txns,
-        total_amount=total_amount,
-        txns_per_file=txns_per_file,
-        officer_uploads=officer_uploads,
-        frequent_ifsccodes=frequent_ifsccodes
+        # KPIs
+        total_files=total_files,    total_txns=total_txns,
+        total_amount=total_amount,  disputed_amt=disputed_amt,
+        hold_amt=hold_amt,          hold_count=hold_count,
+        unique_accts=unique_accts,  unique_banks=unique_banks,
+        unique_states=unique_states,max_layer=max_layer,
+        active_officers=active_officers,
+        atm_count=atm_count,        cheque_count=cheque_count,
+        # Tables
+        file_rows=file_rows,
+        layer_dist=layer_dist,
+        top_banks=top_banks,
+        top_ifsc=top_ifsc,
+        state_dist=state_dist,
+        officer_stats=officer_stats,
     )
 @app.route('/download_logs')
 def download_logs():
@@ -3322,40 +3493,17 @@ def view_complaint(complaint_id):
 
     return render_template('complaint.html', complaint=complaint)
 
-@app.route('/admin/add_officer', methods=['GET', 'POST'])
+@app.route('/admin/add_officer', methods=['GET'])
 @login_required
 @admin_required
 def add_officer():
-    if session.get('role') != 'Admin':  # FIXED: 'Admin' not 'admin'
-        flash('Access Denied!')
-        return redirect(url_for('login'))
-
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-
-        existing_user = User.query.filter_by(username=username).first()
-        if existing_user:
-            flash('Officer with that username already exists.')
-            return redirect(url_for('add_officer'))
-
-        new_officer = User(
-            username=username,
-            role='Investigative Officer'
-        )
-        try:
-            new_officer.set_password(password)
-            db.session.add(new_officer)
-            db.session.commit()
-            flash('Verification Officer added successfully.')
-            return redirect(url_for('view_officers'))
-        except ValueError as e:
-            flash(str(e))
-            return redirect(url_for('add_officer'))
-
+    # This page only shows the form. Submitting it POSTs to /submit_officer, which
+    # validates the input, creates the officer, and re-renders this page with an
+    # inline error message if anything is wrong.
     return render_template('add_officer.html')
 
 @app.route('/submit_officer', methods=['POST'])
+@login_required
 def submit_officer():
     if session.get('role') != 'Admin':
         flash('Access Denied!', 'danger')
@@ -3364,17 +3512,27 @@ def submit_officer():
     name = request.form.get('name', '').strip()
     rank = request.form.get('rank', '').strip()
     email = request.form.get('email', '').strip()
-    username = request.form['username'].strip()
-    password = request.form['password'].strip()
+    username = request.form.get('username', '').strip()
+    # Do NOT strip the password: it is stored exactly as typed and must match what
+    # the officer enters at login (the login route does not strip it either).
+    password = request.form.get('password', '')
+
+    # On any problem, re-render the SAME form with a clear inline error and keep
+    # what was already typed. (The old code redirected to '/add_officer' — a route
+    # that does not exist; the real one is '/admin/add_officer' — so a weak password
+    # produced a 404 instead of a helpful message.)
+    def _reject(message):
+        return render_template(
+            'add_officer.html',
+            error=message,
+            form={'name': name, 'rank': rank, 'email': email, 'username': username},
+        )
 
     if not (name and rank and email and username and password):
-        flash("All fields are required.", "warning")
-        return redirect('/add_officer')
+        return _reject("All fields are required.")
 
-    existing = User.query.filter_by(username=username).first()
-    if existing:
-        flash("Username already exists.", "danger")
-        return redirect('/add_officer')
+    if User.query.filter_by(username=username).first():
+        return _reject(f"The username '{username}' is already taken. Please choose another.")
 
     new_officer = User(
         username=username,
@@ -3384,15 +3542,20 @@ def submit_officer():
         email=email
     )
     try:
-        new_officer.set_password(password)  # ✅ Use method, not direct assignment
-        db.session.add(new_officer)
-        db.session.commit()
+        # set_password enforces the complexity policy and raises ValueError naming
+        # the exact rule that failed (e.g. "Password must be at least 12 characters").
+        new_officer.set_password(password)
     except ValueError as e:
-        flash(str(e), "danger")
-        return redirect('/add_officer')
+        return _reject(str(e))
 
-    flash("Verification Officer added successfully!", "success")
-    return redirect('/admin_dashboard')
+    # This password is TEMPORARY. Force the officer to set their own on first login:
+    # must_change_password makes the login flow redirect them straight to /change_password.
+    new_officer.must_change_password = True
+    db.session.add(new_officer)
+    db.session.commit()
+
+    flash(f"Officer '{username}' added successfully. They must set a new password on first login.", "success")
+    return redirect(url_for('view_officers'))
 
 
 with app.app_context():
@@ -3429,12 +3592,40 @@ with app.app_context():
         db.session.commit()
         
         logger.info("Users initialized with secure random passwords.")
+
+        # Save the generated passwords to a gitignored file as well as printing them.
+        # The console message scrolls away the moment the app starts logging requests,
+        # which is exactly why the admin password kept getting "lost" after a clone.
+        try:
+            creds_path = os.path.join(secure_base, 'INITIAL_CREDENTIALS.txt')
+            with open(creds_path, 'w') as cf:
+                cf.write(
+                    "FundTrail initial login credentials (auto-generated)\n"
+                    "Change these on first login, then delete this file.\n\n"
+                    f"  admin    password: {admin_password}\n"
+                    f"  officer  password: {officer_password}\n"
+                )
+            if _is_posix():
+                os.chmod(creds_path, 0o600)
+            print(f"[SETUP] Credentials also saved to: {creds_path}")
+        except Exception as exc:
+            logger.warning(f"Could not write INITIAL_CREDENTIALS.txt: {exc}")
+
         print(f"[SETUP] Initial admin password: {admin_password}")
         print(f"[SETUP] Initial officer password: {officer_password}")
         print("[SETUP] Change these passwords immediately!")
 
 
 # Configure custom error handlers
+@app.errorhandler(CSRFError)
+def handle_csrf_error(error):
+    # Flask-WTF normally returns a raw "400 Bad Request: The CSRF token is missing".
+    # That's what users were seeing on the Change/Reset Password form when their
+    # session had expired or cookies weren't being stored. Show a friendly page that
+    # explains it and lets them try again.
+    return render_template("errors/csrf.html"), 400
+
+
 @app.errorhandler(404)
 def not_found(error):
     return render_template("errors/404.html"), 404
@@ -3688,6 +3879,111 @@ def download_fundtrail_pdf():
     except Exception as e:
         logger.error(f"Error generating fundtrail PDF: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# ─────────────────────────────────────────────────────────────────
+#  Officer Analytics — shows only the current officer's own uploads
+# ─────────────────────────────────────────────────────────────────
+@app.route('/my_analytics')
+@login_required
+def my_analytics():
+    """Analytics filtered to the logged-in officer's own uploads only."""
+    me = session.get('username')
+    try:
+        log_usage('my_analytics')
+    except Exception:
+        pass
+
+    my_files = UploadedFile.query.options(defer(UploadedFile.data)).filter_by(uploader=me).order_by(UploadedFile.upload_time.desc()).all()
+    my_file_ids = [f.id for f in my_files]
+
+    # All my transactions
+    my_txns = Transaction.query.filter(Transaction.upload_id.in_(my_file_ids)).all() if my_file_ids else []
+
+    # KPIs
+    total_files   = len(my_files)
+    total_txns    = len(my_txns)
+    total_amount  = sum(t.amount or 0 for t in my_txns)
+    disputed_amt  = sum(t.disputed_amount or 0 for t in my_txns)
+    hold_amt      = sum(t.put_on_hold_amount or 0 for t in my_txns if t.put_on_hold_txn_id)
+    hold_count    = sum(1 for t in my_txns if t.put_on_hold_txn_id)
+    unique_accts  = len({t.to_account for t in my_txns if t.to_account})
+    unique_banks  = len({t.bank_name  for t in my_txns if t.bank_name})
+    max_layer     = max((t.layer for t in my_txns if t.layer), default=0)
+    atm_count     = sum(1 for t in my_txns if t.atm_id)
+    cheque_count  = sum(1 for t in my_txns if t.cheque_no)
+
+    # Per-file breakdown
+    file_rows = []
+    for f in my_files:
+        ftxns = [t for t in my_txns if t.upload_id == f.id]
+        ack_nos    = list({t.ack_no for t in ftxns if t.ack_no})
+        fa         = sum(t.amount or 0 for t in ftxns)
+        fd         = sum(t.disputed_amount or 0 for t in ftxns)
+        fh         = sum(t.put_on_hold_amount or 0 for t in ftxns if t.put_on_hold_txn_id)
+        fhc        = sum(1 for t in ftxns if t.put_on_hold_txn_id)
+        file_rows.append({
+            'id':           f.id,
+            'filename':     f.filename,
+            'upload_time':  f.upload_time.strftime('%d %b %Y, %H:%M') if f.upload_time else '—',
+            'txn_count':    len(ftxns),
+            'ack_nos':      ack_nos,
+            'total_amt':    fa,
+            'disputed_amt': fd,
+            'hold_count':   fhc,
+            'hold_amt':     fh,
+        })
+
+    # Layer-wise
+    from collections import defaultdict
+    layer_map = defaultdict(lambda: {'txns': 0, 'amt': 0.0})
+    for t in my_txns:
+        if t.layer:
+            layer_map[t.layer]['txns'] += 1
+            layer_map[t.layer]['amt']  += (t.amount or 0)
+    layer_dist = [(lyr, v['txns'], v['amt']) for lyr, v in sorted(layer_map.items())]
+
+    # Top banks
+    bank_map = defaultdict(lambda: {'cnt': 0, 'amt': 0.0})
+    for t in my_txns:
+        if t.bank_name:
+            bank_map[t.bank_name]['cnt'] += 1
+            bank_map[t.bank_name]['amt'] += (t.amount or 0)
+    top_banks = sorted(bank_map.items(), key=lambda x: -x[1]['cnt'])[:10]
+    top_banks = [(b, v['cnt'], v['amt']) for b, v in top_banks]
+
+    # State-wise
+    state_map = defaultdict(lambda: {'cnt': 0, 'amt': 0.0})
+    for t in my_txns:
+        if t.state:
+            state_map[t.state]['cnt'] += 1
+            state_map[t.state]['amt'] += (t.amount or 0)
+    state_dist = sorted(state_map.items(), key=lambda x: -x[1]['cnt'])[:15]
+    state_dist = [(s, v['cnt'], v['amt']) for s, v in state_dist]
+
+    # Top IFSC
+    ifsc_map = defaultdict(lambda: {'cnt': 0, 'bank': ''})
+    for t in my_txns:
+        if t.ifsc_code:
+            ifsc_map[t.ifsc_code]['cnt'] += 1
+            ifsc_map[t.ifsc_code]['bank'] = t.bank_name or ''
+    top_ifsc = sorted(ifsc_map.items(), key=lambda x: -x[1]['cnt'])[:10]
+    top_ifsc = [(i, v['bank'], v['cnt']) for i, v in top_ifsc]
+
+    return render_template('my_analytics.html',
+        me=me,
+        total_files=total_files,    total_txns=total_txns,
+        total_amount=total_amount,  disputed_amt=disputed_amt,
+        hold_amt=hold_amt,          hold_count=hold_count,
+        unique_accts=unique_accts,  unique_banks=unique_banks,
+        max_layer=max_layer,        atm_count=atm_count,
+        cheque_count=cheque_count,
+        file_rows=file_rows,
+        layer_dist=layer_dist,
+        top_banks=top_banks,
+        top_ifsc=top_ifsc,
+        state_dist=state_dist,
+    )
 
 
 if __name__ == '__main__':

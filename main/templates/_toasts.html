@@ -1,0 +1,71 @@
+{# ───────────────────────────────────────────────────────────────────────────
+   Reusable toast notifications.
+
+   Compact cards in the top-right corner. Each has a close (×) button and
+   auto-dismisses after a few seconds, so messages like "Officer updated
+   successfully" no longer sit there taking up the whole width of the page.
+
+   Usage: put  {% include "_toasts.html" %}  just after <body> in any template.
+   It reads Flask's flashed messages, so the route just needs flash(msg, category).
+   Categories: success | error | danger | warning | info (default = info/blue).
+   ─────────────────────────────────────────────────────────────────────────── #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<style nonce="{{ csp_nonce }}">
+  .toast-stack{position:fixed;top:18px;right:18px;z-index:9999;display:flex;flex-direction:column;
+    gap:10px;max-width:360px;width:calc(100% - 36px);pointer-events:none}
+  .toast{pointer-events:auto;display:flex;align-items:flex-start;gap:10px;background:#fff;color:#0f172a;
+    border:1px solid #e6eaf2;border-left:4px solid #2451d6;border-radius:11px;padding:12px 12px 12px 14px;
+    box-shadow:0 14px 34px -14px rgba(8,28,71,.42);
+    font:500 14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    animation:toast-in .22s ease-out}
+  .toast.is-hiding{animation:toast-out .2s ease-in forwards}
+  .toast.success{border-left-color:#16a34a}
+  .toast.error,.toast.danger{border-left-color:#dc2626}
+  .toast.warning{border-left-color:#f59e0b}
+  .toast .t-icon{flex-shrink:0;width:18px;height:18px;margin-top:1px;color:#2451d6}
+  .toast.success .t-icon{color:#16a34a}
+  .toast.error .t-icon,.toast.danger .t-icon{color:#dc2626}
+  .toast.warning .t-icon{color:#f59e0b}
+  .toast .t-msg{flex:1;word-break:break-word}
+  .toast .t-close{flex-shrink:0;border:none;background:none;cursor:pointer;color:#94a3b8;
+    padding:2px;margin:-2px -2px 0 0;font-size:19px;line-height:1;border-radius:6px;
+    transition:color .12s,background .12s}
+  .toast .t-close:hover{color:#0f172a;background:#f1f5f9}
+  @keyframes toast-in{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
+  @keyframes toast-out{to{opacity:0;transform:translateX(16px)}}
+</style>
+<div class="toast-stack" id="toastStack">
+  {% for category, message in messages %}
+  <div class="toast {{ category }}" role="status">
+    <svg class="t-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+         stroke-linecap="round" stroke-linejoin="round">
+      {% if category in ['error', 'danger'] %}
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      {% elif category == 'warning' %}
+        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      {% else %}
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+      {% endif %}
+    </svg>
+    <div class="t-msg">{{ message }}</div>
+    <button type="button" class="t-close" aria-label="Dismiss notification">&times;</button>
+  </div>
+  {% endfor %}
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  function dismiss(t) {
+    if (!t || t.classList.contains('is-hiding')) return;
+    t.classList.add('is-hiding');
+    setTimeout(function () { t.remove(); }, 220);
+  }
+  document.querySelectorAll('#toastStack .toast').forEach(function (t) {
+    var btn = t.querySelector('.t-close');
+    if (btn) btn.addEventListener('click', function () { dismiss(t); });
+    setTimeout(function () { dismiss(t); }, 6000);   // auto-dismiss after 6s
+  });
+})();
+</script>
+{% endif %}
+{% endwith %}

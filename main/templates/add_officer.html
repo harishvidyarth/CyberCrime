@@ -46,14 +46,17 @@
             box-shadow:0 10px 20px -10px rgba(30,64,175,.55);transition:filter .15s,transform .06s}
         .form-container button:hover{filter:brightness(1.06)} .form-container button:active{transform:translateY(1px)}
 
-        .alert{margin:14px auto;max-width:430px;padding:12px 16px;border-radius:10px;font-weight:600;font-size:14px;border:1px solid transparent}
+        .alert{margin:0 0 16px;padding:11px 15px;border-radius:10px;font-weight:600;font-size:13.5px;border:1px solid transparent;text-align:left}
         .alert-success{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
         .alert-danger{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
         .alert-warning{background:#fffbeb;color:#b45309;border-color:#fde68a}
+        .pw-hint{font-size:12px;color:var(--ink-400);margin:-8px 0 14px;line-height:1.45}
     </style>
 </head>
 
 <body>
+
+    {% include "_toasts.html" %}
 
     <a href="{{ url_for('admin_dashboard') }}" class="floating-back" title="Back to Dashboard">&larr; Dashboard</a>
 
@@ -63,23 +66,24 @@
         <h2><strong>Add Investigative Officer</strong></h2>
     </div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-                <div class="alert alert-{{ category }}">{{ message }}</div>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
+    {% set f = form or {} %}
 
     <div class="form-container">
         <h3>Enter Officer Details</h3>
+
+        {% if error %}
+        <div class="alert alert-danger">{{ error }}</div>
+        {% endif %}
+
         <form action="{{ url_for('submit_officer') }}" method="POST">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-            <input type="text" name="name" placeholder="Name" required>
-            <input type="text" name="rank" placeholder="Rank" required>
-            <input type="email" name="email" placeholder="Email" required>
-            <input type="text" name="username" placeholder="Username" required>
-            <input type="password" name="password" placeholder="Password" required>
+            <input type="text" name="name" placeholder="Name" value="{{ f.get('name', '') }}" required>
+            <input type="text" name="rank" placeholder="Rank" value="{{ f.get('rank', '') }}" required>
+            <input type="email" name="email" placeholder="Email" value="{{ f.get('email', '') }}" required>
+            <input type="text" name="username" placeholder="Username" value="{{ f.get('username', '') }}" required>
+            <input type="password" name="password" placeholder="Temporary password" required>
+            <p class="pw-hint">Temporary password — the officer sets their own on first login.
+               Must be at least 12 characters with an uppercase &amp; lowercase letter, a number, and a special character (!@#$%…).</p>
             <button type="submit">Add Officer</button>
         </form>
     </div>

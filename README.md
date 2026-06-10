@@ -32,25 +32,35 @@ source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install --upgrade pip
 pip install -r main/requirements.txt
 
-# 4) Create your .env (a fresh secret key + local-dev settings) in one step
-python3 - <<'PY'
-import secrets
-open(".env", "w").write(
-    f"SECRET_KEY={secrets.token_hex(32)}\n"
-    "SESSION_COOKIE_INSECURE=true\n"   # allows login over local http
-    "FLASK_DEBUG=false\n"
-    "PORT=5050\n")                     # 5000 is taken by AirPlay on macOS
-print(".env created")
-PY
-
-# 5) Create the first users, then run
+# 4) One-command setup: creates .env (with a fresh secret key) AND the first users
 cd main
-python scripts/create_user.py        # creates admin / officer / viewer
+python scripts/create_user.py
+
+# 5) Run
 python app.py                        # -> http://127.0.0.1:5050
 ```
 
-Then open **<http://127.0.0.1:5050>** and log in — default **role = Admin**,
-username `admin`, password `admin123` (change it after first login).
+`create_user.py` **prints the admin & officer passwords** in the terminal and also
+saves them to **`data/INITIAL_CREDENTIALS.txt`** (git-ignored) so you never lose
+them. The passwords are **random and unique to your machine** — there is no shared
+default. Run the script again any time you're locked out; it safely resets both
+accounts (your `.env` is never overwritten).
+
+Then open **<http://127.0.0.1:5050>**, log in (**role = Admin**, username `admin`,
+password from the terminal). You'll be **required to set a new password on first
+login**, after which you can delete `INITIAL_CREDENTIALS.txt`.
+
+> ### ❓ "What is the default password when I clone?"
+> **There isn't one — and that's on purpose.** A fixed password committed to the repo
+> would be a security hole. Instead, `python scripts/create_user.py` generates a
+> **fresh, random password** for `admin` and `officer` on *your* machine and:
+> - **prints them in the terminal**, and
+> - **saves them to `data/INITIAL_CREDENTIALS.txt`** (git-ignored).
+>
+> So your password = whatever the script printed/saved for your clone. **Lost it?**
+> Just run `python scripts/create_user.py` again — it safely resets both accounts and
+> writes the new passwords to the same file. You're forced to set your own password on
+> first login anyway.
 
 > **Port note:** on macOS, port **5000 is used by AirPlay Receiver**, so we default
 > to **5050** via the `PORT` variable in `.env`. Set it to any free port.

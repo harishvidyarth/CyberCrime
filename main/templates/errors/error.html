@@ -36,14 +36,11 @@
     <div class="error-code">{{ code }}</div>
     <h2>{{ title }}</h2>
     <p class="message">{{ message }}</p>
-    <a class="home" href="{{ url_for('index') }}">
+    <a class="home" href="{{ url_for('role_home') }}">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12l9-9 9 9"/><path d="M9 21V12h6v9"/></svg>
       Return to Home
     </a>
-    <div class="hint">You'll be redirected automatically in a few seconds…</div>
+    <div class="hint">This takes you to your own dashboard.</div>
   </div>
-<script>
-setTimeout(function(){ window.location.href = "/"; }, 10000);
-</script>
 </body>
 </html>

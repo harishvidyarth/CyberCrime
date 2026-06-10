@@ -1,139 +1,296 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FundTrail Admin Analytics</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=1.2">
-    <style>
-        /* v3 UI — offline-safe. Metric IDs, number-format script and tables unchanged. */
-        :root{
-            --navy-900:#06182f; --navy-800:#0a2e63; --navy-700:#103a82;
-            --brand-600:#1e40af; --brand-500:#2451d6; --gold:#f5b301;
-            --ink-900:#0f172a; --ink-600:#475569; --ink-400:#94a3b8;
-            --line:#e6eaf2; --bg:#f2f4f9; --white:#fff;
-            --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-        }
-        *{box-sizing:border-box}
-        body{margin:0;font-family:var(--font);background:var(--bg);color:var(--ink-900);text-align:center;-webkit-font-smoothing:antialiased}
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Analytics — FundTrail Admin</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+:root{
+  --navy:#0a2e63;--gold:#f5b301;--brand:#2451d6;--ink:#0f172a;
+  --muted:#64748b;--line:#e2e8f0;--bg:#f1f5f9;--white:#fff;
+  --red:#ef4444;--green:#10b981;--orange:#f59e0b;--purple:#8b5cf6;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
+.header{background:var(--navy);color:#fff;padding:18px 32px;display:flex;align-items:center;gap:14px;border-bottom:3px solid var(--gold)}
+.header img{width:42px;border-radius:8px;background:#fff;padding:4px}
+.header h1{margin:0;font-size:20px;font-weight:700}
+.header small{color:#c7d6f0;font-size:13px}
+.floating-back{position:fixed;top:16px;right:22px;z-index:100;display:inline-flex;align-items:center;gap:8px;
+  text-decoration:none;background:var(--brand);color:#fff;font-weight:600;font-size:13px;
+  padding:9px 16px;border-radius:999px;box-shadow:0 8px 20px -6px rgba(8,28,71,.5)}
+.floating-back:hover{filter:brightness(1.08)}
+.content{padding:28px 32px 48px}
 
-        .floating-back{position:fixed;top:16px;right:22px;z-index:1000;display:inline-flex;align-items:center;gap:8px;
-            text-decoration:none;background:linear-gradient(180deg,var(--brand-500),var(--brand-600));color:#fff;
-            font-weight:650;font-size:14px;padding:10px 18px;border-radius:999px;
-            box-shadow:0 12px 26px -8px rgba(8,28,71,.6);transition:filter .15s,transform .06s}
-        .floating-back:hover{filter:brightness(1.08)} .floating-back:active{transform:translateY(1px)}
+/* ── KPI cards ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin-bottom:32px}
+.kpi{background:var(--white);border-radius:14px;border:1px solid var(--line);padding:18px 20px;
+  box-shadow:0 4px 16px rgba(10,46,99,.06);position:relative;overflow:hidden}
+.kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:2px}
+.kpi.blue::before{background:var(--brand)} .kpi.green::before{background:var(--green)}
+.kpi.red::before{background:var(--red)}   .kpi.orange::before{background:var(--orange)}
+.kpi.purple::before{background:var(--purple)} .kpi.navy::before{background:var(--navy)}
+.kpi-val{font-size:18px;font-weight:800;color:var(--navy);line-height:1.2;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.kpi-lbl{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;margin-top:5px;letter-spacing:.4px}
 
-        .header{position:relative;padding:26px 20px 24px;color:#eaf1ff;
-            background:radial-gradient(900px 300px at 80% -40%,var(--navy-700),transparent 60%),
-                       linear-gradient(160deg,var(--navy-800),var(--navy-900));box-shadow:0 10px 30px -16px rgba(8,28,71,.55)}
-        .header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;
-            background:linear-gradient(90deg,transparent,var(--gold),transparent)}
-        .header img{width:70px;background:rgba(255,255,255,.95);border-radius:12px;padding:6px}
-        .header h1{font-size:23px;margin:10px 0 0;font-weight:740;letter-spacing:-.3px;color:#fff}
+/* ── Section headers ── */
+.section{margin-bottom:32px}
+.section-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.section-head h2{margin:0;font-size:17px;font-weight:700;color:var(--navy)}
+.section-head .badge{background:#dbeafe;color:#1e40af;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px}
 
-        .metrics{display:flex;justify-content:center;flex-wrap:wrap;gap:26px;margin:34px 0}
-        .metric{background:var(--white);padding:24px 34px;border-radius:14px;min-width:230px;
-            border:1px solid var(--line);box-shadow:0 18px 40px -24px rgba(8,28,71,.4);transition:transform .15s}
-        .metric:hover{transform:translateY(-3px)}
-        .metric h2{font-size:30px;margin:0;font-weight:760;letter-spacing:-.5px;
-            background:linear-gradient(180deg,var(--brand-500),var(--brand-600));-webkit-background-clip:text;background-clip:text;color:transparent}
-        .metric p{margin:8px 0 0;font-weight:600;color:var(--ink-600);font-size:14px}
+/* ── Tables ── */
+table{width:100%;border-collapse:collapse;background:var(--white);border-radius:12px;overflow:hidden;
+  box-shadow:0 4px 12px rgba(10,46,99,.06);border:1px solid var(--line)}
+thead tr{background:var(--navy)}
+th{padding:11px 14px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#fff;text-align:left}
+td{padding:10px 14px;font-size:13px;border-bottom:1px solid var(--line)}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:#f8fafc}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.amt-cell{font-weight:700;color:var(--navy);text-align:right}
+.hold-pill{display:inline-block;background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px}
+.bar-wrap{background:#f1f5f9;border-radius:4px;height:8px;overflow:hidden;min-width:80px}
+.bar{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--brand),#6366f1)}
 
-        h3{margin-top:42px;font-size:19px;color:var(--navy-800);font-weight:700}
+/* ── Two-col grid ── */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:860px){.two-col{grid-template-columns:1fr}}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}
+@media(max-width:1100px){.three-col{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.three-col{grid-template-columns:1fr}}
 
-        table{margin:18px auto;border-collapse:separate;border-spacing:0;width:80%;max-width:1000px;
-            background:var(--white);border:1px solid var(--line);border-radius:14px;overflow:hidden;
-            box-shadow:0 18px 40px -24px rgba(8,28,71,.4);font-size:15px}
-        th{background:var(--navy-800);color:#fff;font-size:12.5px;font-weight:600;text-transform:uppercase;
-            letter-spacing:.6px;padding:13px 16px;border-bottom:2px solid var(--gold)}
-        td{padding:12px 16px;border-bottom:1px solid var(--line);color:var(--ink-900)}
-        tbody tr:last-child td{border-bottom:none}
-        tr:hover td{background:#eef4ff}
-
-        .dl-link{margin-left:14px;font-size:14px;color:var(--brand-500);text-decoration:none;font-weight:600}
-        .dl-link:hover{text-decoration:underline}
-    </style>
+.dl-link{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--brand);text-decoration:none;font-weight:600}
+.dl-link:hover{text-decoration:underline}
+</style>
 </head>
-
 <body>
-    <a href="{{ url_for('admin_dashboard') }}" class="floating-back" title="Back to Dashboard">&larr; Dashboard</a>
+<a href="{{ url_for('admin_dashboard') }}" class="floating-back">← Dashboard</a>
 
-    <div class="header">
-        <img src="{{ url_for('static', filename='tn_police_logo.png') }}">
-        <h1>FundTrail Admin Analytics</h1>
+<div class="header">
+  <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="TN">
+  <div>
+    <h1>Analytics Dashboard</h1>
+    <small>All data from uploaded Excel files — Tamil Nadu Cyber Crime Wing</small>
+  </div>
+</div>
+
+<div class="content">
+
+  <!-- ── KPI Grid ── -->
+  <div class="kpi-grid">
+    <div class="kpi blue">
+      <div class="kpi-val" data-raw="{{ total_files }}">{{ total_files }}</div>
+      <div class="kpi-lbl">📁 Uploaded Files</div>
+    </div>
+    <div class="kpi blue">
+      <div class="kpi-val" data-raw="{{ total_txns }}">{{ total_txns }}</div>
+      <div class="kpi-lbl">📄 Total Transactions</div>
+    </div>
+    <div class="kpi navy">
+      <div class="kpi-val" data-currency data-raw="{{ total_amount }}">₹{{ '%.2f'|format(total_amount) }}</div>
+      <div class="kpi-lbl">💰 Total Amount Traced</div>
+    </div>
+    <div class="kpi orange">
+      <div class="kpi-val" data-currency data-raw="{{ disputed_amt }}">₹{{ '%.2f'|format(disputed_amt) }}</div>
+      <div class="kpi-lbl">⚠️ Disputed Amount</div>
+    </div>
+    <div class="kpi red">
+      <div class="kpi-val" data-currency data-raw="{{ hold_amt }}">₹{{ '%.2f'|format(hold_amt) }}</div>
+      <div class="kpi-lbl">🔒 Total On-Hold Amount</div>
+    </div>
+    <div class="kpi red">
+      <div class="kpi-val" data-raw="{{ hold_count }}">{{ hold_count }}</div>
+      <div class="kpi-lbl">🔒 On-Hold Transactions</div>
+    </div>
+    <div class="kpi green">
+      <div class="kpi-val" data-raw="{{ unique_accts }}">{{ unique_accts }}</div>
+      <div class="kpi-lbl">🏦 Unique Accounts</div>
+    </div>
+    <div class="kpi purple">
+      <div class="kpi-val" data-raw="{{ unique_banks }}">{{ unique_banks }}</div>
+      <div class="kpi-lbl">🏛️ Unique Banks</div>
+    </div>
+    <div class="kpi green">
+      <div class="kpi-val" data-raw="{{ unique_states }}">{{ unique_states }}</div>
+      <div class="kpi-lbl">🗺️ States Involved</div>
+    </div>
+    <div class="kpi navy">
+      <div class="kpi-val" data-raw="{{ max_layer }}">{{ max_layer }}</div>
+      <div class="kpi-lbl">📊 Max Fund Trail Depth</div>
+    </div>
+    <div class="kpi purple">
+      <div class="kpi-val" data-raw="{{ active_officers }}">{{ active_officers }}</div>
+      <div class="kpi-lbl">👮 Active Officers</div>
+    </div>
+    <div class="kpi orange">
+      <div class="kpi-val" data-raw="{{ atm_count }}">{{ atm_count }}</div>
+      <div class="kpi-lbl">🏧 ATM Withdrawals</div>
+    </div>
+    <div class="kpi orange">
+      <div class="kpi-val" data-raw="{{ cheque_count }}">{{ cheque_count }}</div>
+      <div class="kpi-lbl">🎫 Cheque Withdrawals</div>
+    </div>
+  </div>
+
+  <!-- ── Per-file breakdown ── -->
+  <div class="section">
+    <div class="section-head">
+      <h2>📁 Per-File Breakdown</h2>
+      <span class="badge">{{ file_rows|length }} files</span>
+      <a href="{{ url_for('manage_files') }}" class="dl-link" style="margin-left:auto;">
+        Manage Files (Download / Delete) →
+      </a>
+    </div>
+    <table>
+      <thead><tr>
+        <th>#</th><th>Filename</th><th>Officer</th><th>Upload Date</th>
+        <th class="num">Txns</th><th class="num">ACKs</th>
+        <th class="num">Total Amount</th><th class="num">Disputed</th>
+        <th class="num">On-Hold Amt</th><th class="num">Hold Txns</th>
+      </tr></thead>
+      <tbody>
+        {% for f in file_rows %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td style="font-weight:600;color:var(--navy);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.filename }}</td>
+          <td>{{ f.uploader }}</td>
+          <td>{{ f.upload_time }}</td>
+          <td class="num">{{ f.txn_count }}</td>
+          <td class="num">{{ f.ack_count }}</td>
+          <td class="amt-cell">₹{{ '{:,.0f}'.format(f.total_amt) }}</td>
+          <td class="amt-cell" style="color:var(--orange)">₹{{ '{:,.0f}'.format(f.disputed_amt) }}</td>
+          <td class="amt-cell" style="color:var(--red)">₹{{ '{:,.0f}'.format(f.hold_amt) }}</td>
+          <td class="num">{% if f.hold_count %}<span class="hold-pill">{{ f.hold_count }}</span>{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── Layer-wise + Bank-wise ── -->
+  <div class="two-col">
+    <div class="section">
+      <div class="section-head"><h2>📊 Layer-wise Distribution</h2></div>
+      <table>
+        <thead><tr><th>Layer</th><th class="num">Transactions</th><th class="num">Total Amount</th><th>% of Total</th></tr></thead>
+        <tbody>
+          {% set total_txns_safe = total_txns if total_txns > 0 else 1 %}
+          {% for layer, cnt, amt in layer_dist %}
+          <tr>
+            <td style="font-weight:600">Layer {{ layer }}</td>
+            <td class="num">{{ cnt }}</td>
+            <td class="amt-cell">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
+            <td>
+              <div class="bar-wrap"><div class="bar" style="width:{{ [(cnt * 100 // total_txns_safe), 100]|min }}%"></div></div>
+              <small style="color:var(--muted)">{{ '%.1f'|format(cnt * 100 / total_txns_safe) }}%</small>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
 
-    <div class="metrics">
-        <div class="metric">
-            <h2 id="metricFiles">{{ total_uploaded_files }}</h2>
-            <p>Total Uploaded Files</p>
-        </div>
-        <div class="metric">
-            <h2 id="metricTxns">{{ total_txns }}</h2>
-            <p>Total Transactions</p>
-        </div>
-        <div class="metric">
-            <h2 id="metricAmt">₹{{ '%.2f'|format(total_amount) }}</h2>
-            <p>Total Amount</p>
-        </div>
+    <div class="section">
+      <div class="section-head"><h2>🏛️ Top Banks by Volume</h2></div>
+      <table>
+        <thead><tr><th>Bank</th><th class="num">Txns</th><th class="num">Total Amount</th></tr></thead>
+        <tbody>
+          {% for bank, cnt, amt in top_banks %}
+          <tr>
+            <td style="font-weight:500;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ bank or '—' }}</td>
+            <td class="num">{{ cnt }}</td>
+            <td class="amt-cell">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
-    <script nonce="{{ csp_nonce }}">
-      (function () {
-        function fmtNum(el, isCurrency=false) {
-          if (!el) return;
-          const raw = el.textContent.replace(/[^\d.]/g, '');
-          const num = Number(raw || 0);
-          const str = num.toLocaleString('en-IN', { minimumFractionDigits: isCurrency ? 2 : 0, maximumFractionDigits: isCurrency ? 2 : 0 });
-          el.textContent = isCurrency ? `₹${str}` : str;
-        }
-        fmtNum(document.getElementById('metricFiles'), false);
-        fmtNum(document.getElementById('metricTxns'), false);
-        fmtNum(document.getElementById('metricAmt'), true);
-      })();
-    </script>
+  </div>
 
-    <h3>📁 Transactions Per File <a href="{{ url_for('download_logs') }}" title="Download logs" class="dl-link">📥 Download logs</a></h3>
+  <!-- ── IFSC + State ── -->
+  <div class="two-col">
+    <div class="section">
+      <div class="section-head"><h2>🔢 Top IFSC Codes</h2></div>
+      <table>
+        <thead><tr><th>IFSC</th><th>Bank</th><th class="num">Frequency</th></tr></thead>
+        <tbody>
+          {% for ifsc, bank, cnt in top_ifsc %}
+          <tr>
+            <td style="font-family:monospace;font-size:12px;font-weight:600">{{ ifsc or '—' }}</td>
+            <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ bank or '—' }}</td>
+            <td class="num">{{ cnt }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><h2>🗺️ State-wise Distribution</h2></div>
+      <table>
+        <thead><tr><th>State</th><th class="num">Txns</th><th class="num">Total Amount</th></tr></thead>
+        <tbody>
+          {% for state, cnt, amt in state_dist %}
+          <tr>
+            <td style="font-weight:500">{{ state or 'Unknown' }}</td>
+            <td class="num">{{ cnt }}</td>
+            <td class="amt-cell">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Officer stats ── -->
+  <div class="section">
+    <div class="section-head">
+      <h2>👮 Officer Upload Activity</h2>
+      <a href="{{ url_for('download_logs') }}" class="dl-link" style="margin-left:auto;">
+        📥 Download usage logs
+      </a>
+    </div>
     <table>
+      <thead><tr><th>#</th><th>Username</th><th>Full Name</th><th class="num">Files Uploaded</th></tr></thead>
+      <tbody>
+        {% for uname, name, cnt in officer_stats %}
         <tr>
-            <th>Filename</th>
-            <th>No. of Transactions</th>
+          <td>{{ loop.index }}</td>
+          <td style="font-weight:600">{{ uname }}</td>
+          <td>{{ name or '—' }}</td>
+          <td class="num">{{ cnt }}</td>
         </tr>
-        {% for file, count in txns_per_file %}
-        <tr>
-            <td>{{ file }}</td>
-            <td>{{ count }}</td>
-        </tr>
+        {% else %}
+        <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px">No officer upload data yet</td></tr>
         {% endfor %}
+      </tbody>
     </table>
+  </div>
 
-    <h3>🕵️ Uploads by Investigative Officers</h3>
-    <table>
-        <tr>
-            <th>Officer Username</th>
-            <th>No. of Files Uploaded</th>
-        </tr>
-        {% for officer, count in officer_uploads %}
-        <tr>
-            <td>{{ officer }}</td>
-            <td>{{ count }}</td>
-        </tr>
-        {% endfor %}
-    </table>
+</div><!-- /content -->
 
-    <h3>🏦 Frequent IFSC Codes or Banks</h3>
-    <table>
-        <tr>
-            <th>IFSC Code</th>
-            <th>Frequency</th>
-        </tr>
-        {% for ifsc, count in frequent_ifsccodes %}
-        <tr>
-            <td>{{ ifsc }}</td>
-            <td>{{ count }}</td>
-        </tr>
-        {% endfor %}
-    </table>
-
-    <div style="height:40px;"></div>
+<script nonce="{{ csp_nonce }}">
+// Format all numbers in Indian locale
+(function () {
+  function fmtIN(n, currency) {
+    if (isNaN(n)) return;
+    if (currency) {
+      const s = Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits:2, maximumFractionDigits:2 });
+      return '₹' + s;
+    }
+    return n.toLocaleString('en-IN', { maximumFractionDigits:0 });
+  }
+  document.querySelectorAll('.kpi-val').forEach(el => {
+    const raw = parseFloat(el.dataset.raw || el.textContent.replace(/[^0-9.]/g, ''));
+    const isCurrency = el.hasAttribute('data-currency');
+    const fmt = fmtIN(raw, isCurrency);
+    if (fmt) el.textContent = fmt;
+  });
+})();
+</script>
 </body>
 </html>
