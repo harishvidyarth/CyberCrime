@@ -1,5 +1,8 @@
 # FundTrail Analysis Tool
 
+![CI](https://github.com/harishvidyarth/CyberCrime/actions/workflows/ci.yml/badge.svg)
+**Version 2.0** · Python 3.10+ · Flask · fully offline-capable
+
 A web-based tool for **cybercrime investigators** to trace stolen-money trails.
 Officers upload bank-transaction Excel files; the app reconstructs how funds
 moved account-to-account, draws an interactive flow graph, flags suspect /
@@ -7,6 +10,21 @@ repeater accounts, and auto-generates official letters to banks.
 
 > New to the project? Read [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md) first —
 > it explains the whole thing from the basics.
+
+## What's new in v2.0 (June 2026)
+
+- **Case workflow** — Open / Under Investigation / Closed status on every case
+- **Global search** across ACK numbers, accounts, transaction IDs and banks
+- **Repeat-account (mule) detection** across cases · **case notes & timeline**
+- **Refund recovery dashboard** and **admin metrics** (uploads/week, recovery rate)
+- **Two-factor authentication (TOTP)**, audit-log viewer, idle auto-logout,
+  password expiry + reuse prevention, last-login display
+- **Bulk letter ZIP download**, Excel exports, multi-file batch upload
+- **New design system UI** — sidebar navigation, dark mode, accessibility pass
+- All dependency CVEs patched (`pip-audit` clean), GitHub Actions CI, `/healthz`
+
+Full details in [`CHANGELOG.md`](CHANGELOG.md). Dev login credentials:
+[`CREDENTIALS.md`](CREDENTIALS.md).
 
 ---
 
@@ -99,18 +117,24 @@ centrally — see [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) and "Hosting secure
 
 ```
 CyberCrime/
-├── .env.example          # template; your real .env is git-ignored
 ├── README.md             # this file
+├── CHANGELOG.md          # version history (v2.0 = enterprise upgrade)
+├── CREDENTIALS.md        # DEV-ONLY default accounts + reset instructions
+├── dev_seed.py           # DEV-ONLY: reset accounts to known passwords
+├── LICENSE               # proprietary — internal TN Police use
+├── pyproject.toml        # ruff lint + pytest configuration
+├── .github/workflows/    # CI: tests + dependency audit + lint on every push
 ├── docs/                 # HOW_IT_WORKS, architecture, security, deployment…
 └── main/
-    ├── app.py            # the running application (being refactored into app/)
-    ├── app/              # modular version (target architecture)
+    ├── app.py            # the running application (all routes)
     ├── models.py         # database tables (Transaction, User, Complaint…)
     ├── ifsc_utils.py     # local IFSC -> bank/branch/state lookup
     ├── IFSC_CODES.pkl    # the 176k-entry IFSC dataset (ships with the repo)
-    ├── templates/        # HTML pages
-    ├── static/           # CSS / JS / images (D3 fund-flow graph)
+    ├── .env.example      # template; your real .env is git-ignored
+    ├── templates/        # HTML pages (_layout.html = sidebar base layout)
+    ├── static/           # css/design-system.css, app.js, vendored D3 graph libs
     ├── migrations/       # Alembic database migrations
+    ├── tests/            # smoke + access-control suites (run before/after changes)
     └── scripts/          # admin + security-verification scripts
 ```
 
@@ -118,9 +142,21 @@ CyberCrime/
 
 | Role | Can do |
 |------|--------|
-| **Admin** | Manage officers, view all cases, analytics, audit logs |
-| **Investigative Officer** | Upload data, trace funds, put accounts on hold, generate letters |
-| **Viewer** | Read-only view of fund flows and reports |
+| **Admin** | Manage/assign officers & cases, all analytics, metrics, audit logs, repeat-account detection |
+| **Investigative Officer** | Upload data, trace funds, put accounts on hold, generate letters, case notes & status |
+
+(The old read-only *Viewer* role was removed — every account authenticates with a password.)
+
+## 6. Running the tests
+
+```bash
+cd main
+python tests/smoke_test.py            # routes, auth, pages render, CSRF
+python tests/test_access_control.py   # per-officer isolation, validators
+```
+
+Both suites are dependency-free, use a throwaway temp database, and run in CI on
+every push. Run them **before and after every change**.
 
 ---
 More: [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md) (workflow & mental model) ·
