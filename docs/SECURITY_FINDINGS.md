@@ -40,17 +40,39 @@ prevention (`is_safe_url`).
 
 ## Additional findings from our own review (not in the original 14)
 
-| ID | Finding | Severity | Action |
+| ID | Finding | Severity | Status |
 |----|---------|----------|--------|
 | R-01 | **Real victim PII + case `.db` files committed to Git** | High (privacy) | clean repo (`docs/FILES_TO_UPLOAD.md`) |
-| R-02 | **~5 scattered DB copies** at different paths (monolith vs package) | High | consolidate to one store (fixes FT-005 strays + Excel bug) |
+| R-02 | **~5 scattered DB copies** at different paths | High | consolidate to one store |
 | R-03 | Placeholder `SECRET_KEY` shipped in `.env` | Medium | ship only `.env.example`; generate real key |
-| R-04 | Excel upload validation depth (real `.xlsx`? size cap? formula injection?) | Medium | verify/harden `upload_excel()` |
+| R-04 | Excel upload validation depth (size cap, formula injection) | Medium | verify/harden `upload_excel()` |
 
-## How to verify a fix (your regression net)
+## Post-v2.0 fixes (June 2026 — internal audit)
+
+9 additional vulnerabilities found and patched after the formal retest. None were
+present at the v1.x retest; they were introduced during the v2.0 feature sprint.
+
+| ID | Route | Finding | Severity | Status |
+|----|-------|---------|----------|--------|
+| A-01 | `POST /edit_officer/<id>` | **IDOR** — bare `User.query.get(officer_id)` allowed an Admin to edit officers in any group | High | ✅ Fixed — `_officers_q().filter_by(id=officer_id).first()` |
+| A-02 | `DELETE /delete_complaint/<id>` | **Group isolation bypass** — no `owner_admin_id` check on delete | High | ✅ Fixed — 403 if `owner_admin_id` ≠ `current_user.id` |
+| A-03 | `GET /available_ack_nos` | **Privilege escalation** — Admin path returned ACK numbers across all groups | Medium | ✅ Fixed — replaced with `_cases_q()`-scoped query |
+| A-04 | `POST /download_fundtrail_pdf` | **Missing authorisation** — PDF generated without case access check | High | ✅ Fixed — `check_case_access(ack_no)` added |
+| A-05 | `after_request` HSTS header | **HSTS mis-fire** — header sent over plain HTTP LAN, breaking offline deployments | Medium | ✅ Fixed — conditional on `SESSION_COOKIE_INSECURE=false` |
+| A-06 | `POST /login` | **Timing side-channel** — success/failure response times differed, leaking valid usernames | Low | ✅ Fixed — random 50–150 ms sleep added |
+| A-07 | `POST /delete_by_ack` | **IDOR** — any Admin could delete another group's cases | High | ✅ Fixed — `owner_admin_id` check added before delete |
+| A-08 | `POST /assign_case` | **Cross-group IDOR** — bare `Complaint.query.filter_by()` allowed reassigning other groups' cases | Medium | ✅ Fixed — changed to `_cases_q().filter_by()` |
+| A-09 | `GET /view_complaint/<id>` | **IDOR** — any Admin could view complaints from any group | Low | ✅ Fixed — non-SuperAdmin Admins gated on `owner_admin_id` |
+
+### Known open issues (accepted risk)
+| ID | Route | Finding | Reason not fixed |
+|----|-------|---------|-----------------|
+| A-10 | `graph_tree1.html` + related routes | **Stored XSS** — transaction data rendered without escaping in the D3 graph | Graph page is "untouchable" — modifying it risks breaking the core fund-trail visualisation |
+
+## How to verify a fix (regression net)
 ```bash
 cd main
 python scripts/verify_secret_key.py        # etc. — one per finding
 ```
 A finding is only ✅ when its verify script passes. Re-run them after every change
-so we never silently regress a fix again (which is exactly what happened to FT-006).
+so we never silently regress a fix (as happened to FT-006).

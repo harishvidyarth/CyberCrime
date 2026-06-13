@@ -1,0 +1,19 @@
+# Keep secrets, case data (PII) and bloat OUT of the image.
+.git
+.github
+docs
+**/__pycache__
+**/*.pyc
+**/.venv*
+.ruff_cache
+.pytest_cache
+.env
+**/.env
+data/
+main/data/
+main/uploads/
+main/generated_letters/
+**/*.db
+**/*.sqlite*
+Dockerfile
+docker-compose.yml

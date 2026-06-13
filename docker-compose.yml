@@ -1,0 +1,24 @@
+# FundTrail v2.0 — single-container deployment.
+#   SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))") docker compose up -d
+# Then open http://127.0.0.1:5050
+services:
+  fundtrail:
+    build: .
+    image: fundtrail:2.0
+    ports:
+      - "5050:5050"
+    environment:
+      # REQUIRED — the app refuses to start without it.
+      SECRET_KEY: ${SECRET_KEY:?Generate one with  python3 -c "import secrets; print(secrets.token_hex(32))"}
+      # true = login works over plain HTTP (localhost/LAN). Put an HTTPS reverse
+      # proxy in front and set this to false for any real deployment.
+      SESSION_COOKIE_INSECURE: ${SESSION_COOKIE_INSECURE:-true}
+      PASSWORD_MAX_AGE_DAYS: ${PASSWORD_MAX_AGE_DAYS:-90}
+      LOG_FORMAT: ${LOG_FORMAT:-}
+    volumes:
+      # SQLite DB + INITIAL_CREDENTIALS.txt + logs persist here across rebuilds.
+      - fundtrail-data:/data
+    restart: unless-stopped
+
+volumes:
+  fundtrail-data:

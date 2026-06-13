@@ -19,6 +19,7 @@ Flask-WTF==1.2.2
 Flask-Limiter==3.11.0
 Flask-Compress==1.18      # gzip responses (Feature D20)
 pyotp==2.9.0              # TOTP two-factor auth (Feature B9)
+qrcode==8.0               # QR code generation for 2FA setup page (Pillow already required)
 
 # Two PDF tools, kept on purpose (Phase 6, item 24): xhtml2pdf renders the HTML letter
 # templates; reportlab draws the data-visual reports (fund-trail, analytics). Migrating

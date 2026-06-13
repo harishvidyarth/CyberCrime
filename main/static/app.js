@@ -22,14 +22,15 @@
   if (collapseBtn) {
     collapseBtn.addEventListener('click', function () {
       var collapsed = document.body.classList.toggle('nav-collapsed');
+      collapseBtn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
+      collapseBtn.setAttribute('title',      collapsed ? 'Expand sidebar' : 'Collapse sidebar');
       try { localStorage.setItem('ft-nav', collapsed ? '1' : ''); } catch (e) {}
     });
-  }
-  var hamburger = document.getElementById('navHamburger');
-  if (hamburger) {
-    hamburger.addEventListener('click', function () {
-      document.body.classList.toggle('nav-open');
-    });
+    /* sync label to restored collapsed state on page load */
+    if (document.body.classList.contains('nav-collapsed')) {
+      collapseBtn.setAttribute('aria-label', 'Expand sidebar');
+      collapseBtn.setAttribute('title',      'Expand sidebar');
+    }
   }
 
   /* ── Toasts: auto-dismiss after 4s, manual close ─────────── */

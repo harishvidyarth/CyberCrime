@@ -13,7 +13,7 @@
 | `main/scripts/` | Admin & security-verification scripts |
 | `main/requirements.txt` | Dependency list |
 | `main/setup.sql` | DB/user creation (with placeholder password only) |
-| `main/FundTrail.spec`, `main/build_configs/*.spec` | PyInstaller build configs |
+| `main/build_configs/*.spec` | PyInstaller build configs (if re-added) |
 | `.env.example`, `.gitignore`, `README.md`, `docs/` | Project hygiene & docs |
 
 ## ⛔ NEVER commit (data, secrets, bloat)

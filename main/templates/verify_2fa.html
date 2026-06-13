@@ -3,34 +3,80 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Two-Factor Verification — FundTrail</title>
+  <title>Two-Factor Verification &mdash; FundTrail</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=2.0">
+  <script nonce="{{ csp_nonce }}">(function(){var t=localStorage.getItem('ft-theme');if(t)document.documentElement.setAttribute('data-theme',t)})()</script>
+  <style>
+    .verify-shell{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+    .verify-card{
+      width:100%;max-width:400px;
+      background:var(--white,#fff);border:1px solid var(--border,#e2e8f0);
+      border-radius:16px;padding:40px 36px;
+      box-shadow:0 20px 60px -20px rgba(8,28,71,.18)
+    }
+    .verify-logo{display:block;width:52px;height:52px;object-fit:contain;margin:0 auto 16px}
+    .verify-title{text-align:center;font-size:1.35rem;font-weight:700;margin:0 0 6px;letter-spacing:-.2px}
+    .verify-sub{text-align:center;color:var(--text-secondary,#64748b);font-size:.875rem;margin:0 0 24px;line-height:1.5}
+    .app-chips{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:24px}
+    .app-chip{display:flex;align-items:center;gap:6px;background:var(--bg,#f4f6fb);border:1px solid var(--border,#e2e8f0);border-radius:20px;padding:4px 10px;font-size:12px;color:var(--text-secondary,#64748b)}
+    .big-code{text-align:center;font-size:2rem;letter-spacing:.4em;font-family:'ui-monospace','SFMono-Regular','Menlo','Monaco',monospace;font-weight:700}
+    .back-link{display:block;text-align:center;margin-top:20px;font-size:.875rem;color:var(--text-secondary,#64748b)}
+    .back-link a{color:var(--brand,#2451d6);text-decoration:none}
+    .back-link a:hover{text-decoration:underline}
+    .admin-hint{text-align:center;margin-top:16px;font-size:12px;color:var(--text-secondary,#64748b)}
+    [data-theme="dark"] .verify-card{background:#1e293b;border-color:#334155}
+    [data-theme="dark"] .app-chip{background:#0f172a;border-color:#334155}
+  </style>
 </head>
 <body>
-<main class="auth-page">
-  <div class="auth-card">
-    <img class="auth-logo" src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="Tamil Nadu Police logo">
-    <h1>Two-Factor Verification</h1>
-    <p class="auth-sub">Enter the 6-digit code from your authenticator app to finish signing in.</p>
+<div class="verify-shell">
+  <div class="verify-card">
+    <img class="verify-logo" src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="Tamil Nadu Police">
+    <h1 class="verify-title">Two-Factor Verification</h1>
+    <p class="verify-sub">Enter the 6-digit code from your authenticator app to finish signing in.</p>
+
+    <div class="app-chips">
+      <span class="app-chip">
+        <svg width="14" height="14" viewBox="0 0 48 48"><path fill="#4285F4" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#34A853" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#EA4335" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Google Authenticator
+      </span>
+      <span class="app-chip">
+        <svg width="14" height="14" viewBox="0 0 21 21"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+        Microsoft Authenticator
+      </span>
+    </div>
 
     {% if error %}
-    <div class="alert danger" role="alert">{{ error }}</div>
+    <div class="alert danger" role="alert" style="margin-bottom:20px">{{ error }}</div>
     {% endif %}
 
     <form method="POST" action="{{ url_for('verify_2fa') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
       <div class="form-group">
-        <label class="form-label" for="totpCode">Authentication code</label>
-        <input class="form-input mono" type="text" id="totpCode" name="code" inputmode="numeric"
-               pattern="[0-9 ]{6,7}" maxlength="7" placeholder="123 456" autocomplete="one-time-code"
-               autofocus required style="text-align:center;font-size:var(--text-xl);letter-spacing:.3em">
+        <label class="form-label" for="totpCode" style="text-align:center;display:block">Authentication code</label>
+        <input class="form-input big-code" type="text" id="totpCode" name="code"
+               inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7"
+               placeholder="000 000" autocomplete="one-time-code"
+               autofocus required>
       </div>
       <button class="btn btn-primary btn-block" type="submit">Verify &amp; Sign In</button>
     </form>
 
-    <p class="dev-hint">Lost your device? Ask an administrator to reset your account.</p>
-    <p style="text-align:center;margin-top:var(--space-4)"><a href="{{ url_for('login') }}">← Back to login</a></p>
+    <p class="admin-hint">Lost your device? Contact your administrator to reset your account.</p>
+    <p class="back-link"><a href="{{ url_for('login') }}">&larr; Back to login</a></p>
   </div>
-</main>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var input = document.getElementById('totpCode');
+  if (!input) return;
+  input.addEventListener('input', function () {
+    var v = this.value.replace(/\D/g, '').slice(0, 6);
+    this.value = v.length > 3 ? v.slice(0, 3) + ' ' + v.slice(3) : v;
+    if (v.length === 6) this.closest('form').submit();
+  });
+})();
+</script>
 </body>
 </html>

@@ -20,7 +20,7 @@
       --shadow:0 20px 45px -20px rgba(8,28,71,.45);
       --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
     }
-    *{box-sizing:border-box}
+*{box-sizing:border-box}
     html,body{height:100%}
     body{margin:0;font-family:var(--font);background:var(--bg);color:var(--ink-900);-webkit-font-smoothing:antialiased}
 
@@ -62,7 +62,7 @@
     .field{margin-bottom:18px}
     .field label{display:block;font-size:13px;font-weight:600;color:var(--ink-600);margin-bottom:7px}
     .control{position:relative;display:flex;align-items:center}
-    .control svg{position:absolute;left:14px;color:var(--ink-400);pointer-events:none}
+    .control > svg{position:absolute;left:14px;color:var(--ink-400);pointer-events:none}
     .control input,.control select{
       width:100%;padding:13px 14px 13px 42px;font-size:15px;font-family:inherit;color:var(--ink-900);
       background:var(--white);border:1px solid var(--line);border-radius:var(--radius-sm);
@@ -168,13 +168,19 @@
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               <input type="password" id="passwordInput" name="password" placeholder="Enter password" required autocomplete="current-password" style="padding-right:44px">
               <button type="button" id="pwToggle" aria-label="Show password" aria-pressed="false"
-                      style="position:absolute;right:10px;background:none;border:none;cursor:pointer;color:var(--ink-400);padding:4px;display:flex">
+                      style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--ink-400);padding:4px;display:flex;align-items:center">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
               </button>
             </div>
           </div>
 
           <button class="btn" type="submit">Sign in &rarr;</button>
+          <div style="text-align:center;margin-top:12px">
+            <a href="{{ url_for('forgot_password') }}"
+               style="font-size:13px;color:var(--ink-600);text-decoration:none">
+              Forgot password?
+            </a>
+          </div>
         </form>
 
         <div class="foot">

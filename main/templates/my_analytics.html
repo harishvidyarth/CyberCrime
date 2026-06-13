@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>My Analytics — FundTrail</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script nonce="{{ csp_nonce }}">(function(){var t=localStorage.getItem('ft-theme');if(t)document.documentElement.setAttribute('data-theme',t)})()</script>
 <style>
 :root{
   --navy:#0a2e63;--gold:#f5b301;--brand:#2451d6;--ink:#0f172a;
@@ -12,6 +13,16 @@
   --red:#ef4444;--green:#10b981;--orange:#f59e0b;--purple:#8b5cf6;
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 }
+[data-theme="dark"]{
+  --navy:#1e3a5f;--brand:#5b8def;--ink:#f1f5f9;
+  --muted:#94a3b8;--line:#334155;--bg:#0f172a;--white:#1e293b;
+  --red:#f87171;--green:#34d399;--orange:#fbbf24;--purple:#a78bfa;
+}
+[data-theme="dark"] body{background:var(--bg);color:var(--ink)}
+[data-theme="dark"] .header{background:#0b1322}
+[data-theme="dark"] .header-btn.secondary{background:#1e293b;color:#e2e8f0;border:1px solid var(--line)}
+[data-theme="dark"] tbody tr:hover td{background:#1e293b}
+[data-theme="dark"] table{background:var(--white)}
 *{box-sizing:border-box}
 body{margin:0;font-family:var(--font);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
 
@@ -22,12 +33,14 @@ body{margin:0;font-family:var(--font);background:var(--bg);color:var(--ink);-web
 .hinfo{flex:1}
 .hinfo h1{margin:0;font-size:19px;font-weight:700}
 .hinfo small{color:#c7d6f0;font-size:12.5px}
-.back-btn{position:fixed;top:16px;right:22px;z-index:100;display:inline-flex;align-items:center;gap:8px;
-  text-decoration:none;background:linear-gradient(180deg,var(--brand),#1e40af);color:#fff;
-  font-weight:650;font-size:13px;padding:9px 16px;border-radius:999px;
-  box-shadow:0 8px 20px -6px rgba(8,28,71,.5);transition:filter .15s}
-.back-btn:hover{filter:brightness(1.08)}
-.back-btn svg{width:14px;height:14px}
+.header-actions{margin-left:auto;display:flex;align-items:center;gap:10px}
+.header-btn{display:inline-flex;align-items:center;gap:7px;font-family:var(--font);
+  font-weight:600;font-size:13px;padding:9px 16px;border-radius:9px;
+  text-decoration:none;transition:filter .15s,box-shadow .15s;cursor:pointer;border:none}
+.header-btn.secondary{background:#fff;color:var(--navy)}
+.header-btn.secondary:hover{filter:brightness(.96)}
+.header-btn.primary{background:var(--brand);color:#fff;box-shadow:0 4px 14px -4px rgba(36,81,214,.5)}
+.header-btn.primary:hover{filter:brightness(1.08)}
 
 .content{padding:24px 28px 48px}
 
@@ -74,20 +87,23 @@ tbody tr:hover td{background:#f8fafc}
 </head>
 <body>
 
-<a href="{{ url_for('index') }}" class="back-btn">← Dashboard</a>
-
 <div class="header">
   <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="TN Police logo">
   <div class="hinfo">
     <h1>My Analytics</h1>
     <small>Showing only your uploads — Investigative Officer: <b>{{ me }}</b></small>
   </div>
-  {# Feature A6: one-click Excel export of this officer's analytics #}
-  <a href="{{ url_for('export_my_analytics_xlsx') }}"
-     style="margin-left:auto;display:inline-flex;align-items:center;gap:7px;background:#fff;color:#0a2e63;font-weight:600;font-size:13px;padding:9px 16px;border-radius:9px;text-decoration:none">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-    Export to Excel
-  </a>
+  <div class="header-actions">
+    {# Feature A6: one-click Excel export of this officer's analytics #}
+    <a href="{{ url_for('export_my_analytics_xlsx') }}" class="header-btn secondary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export to Excel
+    </a>
+    <a href="{{ url_for('index') }}" class="header-btn primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+      Dashboard
+    </a>
+  </div>
 </div>
 
 <div class="content">

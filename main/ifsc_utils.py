@@ -3,6 +3,7 @@
 Source priority: IFSC_CODES.pkl (a ready {IFSC: row} dict) -> .json cache -> .xlsx.
 Loaded once and memoised, so per-lookup cost is a dict access.
 """
+
 import os
 import sys
 import json
@@ -50,14 +51,27 @@ def load_ifsc_table():
             df = pd.read_excel(p, dtype=str).fillna("")
             cols = {c.strip(): c for c in df.columns}
 
-            ifsc_col = next((cols[c] for c in ("IFSC", "Ifsc Code", "Ifsc", "IFSC Code") if c in cols), None) \
-                or next((c for c in df.columns if "ifsc" in c.lower()), None)
+            ifsc_col = next((cols[c] for c in ("IFSC", "Ifsc Code", "Ifsc", "IFSC Code") if c in cols), None) or next(
+                (c for c in df.columns if "ifsc" in c.lower()), None
+            )
             if not ifsc_col:
                 continue
-            branch_col = next((c for c in ("BRANCH", "Branch", "BRANCH_NAME", "Branch Name", "BranchName", "BRANCH NAME") if c in cols), None) \
-                or next((c for c in df.columns if "branch" in str(c).lower()), None)
-            phone_col = next((c for c in ("Phone", "PHONE", "Contact", "Telephone", "Contact Number", "Phone No", "PhoneNumber") if c in cols), None) \
-                or next((c for c in df.columns if any(t in str(c).lower() for t in ("phone", "contact", "tel"))), None)
+            branch_col = next(
+                (
+                    c
+                    for c in ("BRANCH", "Branch", "BRANCH_NAME", "Branch Name", "BranchName", "BRANCH NAME")
+                    if c in cols
+                ),
+                None,
+            ) or next((c for c in df.columns if "branch" in str(c).lower()), None)
+            phone_col = next(
+                (
+                    c
+                    for c in ("Phone", "PHONE", "Contact", "Telephone", "Contact Number", "Phone No", "PhoneNumber")
+                    if c in cols
+                ),
+                None,
+            ) or next((c for c in df.columns if any(t in str(c).lower() for t in ("phone", "contact", "tel"))), None)
 
             mapping = {}
             for row in df.to_dict("records"):

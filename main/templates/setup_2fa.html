@@ -1,5 +1,5 @@
 {% extends "_layout.html" %}
-{% block title %}Two-Factor Auth{% endblock %}
+{% block title %}Two-Factor Authentication{% endblock %}
 
 {% block breadcrumbs %}
 <nav class="breadcrumbs" aria-label="Breadcrumb">
@@ -12,56 +12,185 @@
 <header class="page-header">
   <div>
     <h1>Two-Factor Authentication</h1>
-    <div class="sub">Protect your account with an authenticator app (TOTP) — a stolen password alone won't be enough.</div>
+    <div class="sub">A stolen password alone won&rsquo;t be enough &mdash; your phone is the second lock.</div>
   </div>
 </header>
 
 {% if enabled %}
+{# ── Already enabled ── #}
 <section class="ds-card" style="max-width:520px">
   <div class="card-header">
-    <h2 class="card-title">2FA is enabled <span class="badge badge-closed">active</span></h2>
+    <h2 class="card-title">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--success,#16a34a);vertical-align:-3px;margin-right:6px"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      2FA is active
+      <span class="badge badge-closed" style="margin-left:6px">enabled</span>
+    </h2>
   </div>
-  <p class="text-secondary mb-4">Every sign-in asks for a code from your authenticator app.
-    To turn it off, confirm your password below.</p>
+  <p class="text-secondary" style="margin-bottom:var(--space-4)">
+    Every sign-in requires a 6-digit code from your authenticator app.
+    Works with <strong>Google Authenticator</strong>, <strong>Microsoft Authenticator</strong>, Authy, and any TOTP-compatible app.
+  </p>
+  <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:var(--radius-md);padding:var(--space-3) var(--space-4);margin-bottom:var(--space-5);font-size:var(--text-sm)">
+    &#9888;&#65039; Disabling 2FA reduces your account security. Only do this if you are switching authenticator apps.
+  </div>
   <form method="POST" action="{{ url_for('disable_2fa') }}"
-        onsubmit="return confirm('Disable two-factor authentication for your account?');">
+        onsubmit="return confirm('Disable two-factor authentication? Your account will be less secure.');">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
     <div class="form-group">
-      <label class="form-label" for="pwConfirm">Current password</label>
-      <input class="form-input" type="password" id="pwConfirm" name="password" autocomplete="current-password" required>
+      <label class="form-label" for="pwConfirm">Confirm with current password</label>
+      <input class="form-input" type="password" id="pwConfirm" name="password"
+             autocomplete="current-password" placeholder="Enter your password" required>
     </div>
     <button class="btn btn-danger" type="submit">Disable 2FA</button>
   </form>
 </section>
+
 {% else %}
-<div class="grid-2">
-  <section class="ds-card">
-    <div class="card-header"><h2 class="card-title">Step 1 — Add to your authenticator app</h2></div>
-    <p class="text-secondary">In Google Authenticator, Microsoft Authenticator, Aegis or similar,
-      choose <b>Enter a setup key</b> and add:</p>
-    <div class="form-group mt-4">
-      <label class="form-label" for="secretBox">Account: FundTrail ({{ session.get('username') }}) — key (Base32, time-based):</label>
-      <input class="form-input mono" id="secretBox" value="{{ secret }}" readonly
-             style="text-align:center;letter-spacing:.15em" aria-label="TOTP secret key">
+{# ── Setup flow ── #}
+
+<div style="max-width:480px">
+
+  {# Step 1 — Scan QR code #}
+  <section class="ds-card" style="margin-bottom:var(--space-5)">
+    <div class="card-header">
+      <h2 class="card-title">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:var(--brand);color:#fff;border-radius:50%;font-size:13px;font-weight:700;margin-right:8px;flex-shrink:0">1</span>
+        Scan with your authenticator app
+      </h2>
     </div>
-    <p class="form-hint">Or paste this otpauth URI into an app that accepts links:</p>
-    <p class="mono text-xs" style="word-break:break-all">{{ otpauth_uri }}</p>
+
+    {# QR code hero — inline SVG (no Pillow/PNG needed, works on all platforms) #}
+    {% if qr_svg %}
+    <div style="text-align:center;margin:var(--space-4) 0 var(--space-3)">
+      <div style="display:inline-block;padding:14px;background:#fff;border:2px solid var(--border);border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,.10);line-height:0">
+        {{ qr_svg | safe }}
+      </div>
+      <p style="font-size:var(--text-sm);color:var(--text-secondary);margin:var(--space-3) 0 0">
+        Open your app &rarr; tap <strong>+</strong> &rarr; <strong>Scan QR code</strong>
+      </p>
+      <p style="font-size:var(--text-xs);color:var(--text-secondary);margin:4px 0 0">
+        Works with <strong>Google Authenticator</strong>, <strong>Microsoft Authenticator</strong>, Authy, and any TOTP app.
+      </p>
+    </div>
+    {% endif %}
+
+    {# Manual key — collapsible fallback #}
+    <details style="margin-top:var(--space-4);border-top:1px solid var(--border);padding-top:var(--space-3)">
+      <summary style="font-size:var(--text-sm);color:var(--text-secondary);cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;user-select:none">
+        <svg id="detailsChev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition:transform .2s;flex-shrink:0"><polyline points="6 9 12 15 18 9"/></svg>
+        Can&rsquo;t scan? Enter the key manually instead
+      </summary>
+      <div style="margin-top:var(--space-3)">
+        <p style="font-size:var(--text-sm);color:var(--text-secondary);margin:0 0 var(--space-2)">
+          In your app tap <strong>Enter a setup key</strong> and type:
+        </p>
+        <div style="position:relative">
+          <input class="form-input mono" id="secretBox" value="{{ secret }}" readonly
+                 style="text-align:center;letter-spacing:.16em;padding-right:48px;cursor:text;font-size:var(--text-sm)"
+                 aria-label="TOTP secret key">
+          <button type="button" id="copyBtn" title="Copy key"
+                  style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--brand);padding:6px;display:flex;align-items:center;line-height:1">
+            <svg id="copyIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+        <p style="font-size:var(--text-xs);color:var(--text-secondary);margin-top:var(--space-2)">
+          Account: <strong>FundTrail ({{ session.get('username') }})</strong> &bull; Type: <strong>Time-based (TOTP)</strong>
+        </p>
+      </div>
+    </details>
   </section>
 
+  {# Step 2 — Confirm code #}
   <section class="ds-card">
-    <div class="card-header"><h2 class="card-title">Step 2 — Confirm a code</h2></div>
-    <p class="text-secondary mb-4">Enter the 6-digit code your app shows now. 2FA activates only after a successful confirmation.</p>
-    <form method="POST" action="{{ url_for('setup_2fa') }}" data-busy-button="Verifying…">
+    <div class="card-header">
+      <h2 class="card-title">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:var(--brand);color:#fff;border-radius:50%;font-size:13px;font-weight:700;margin-right:8px;flex-shrink:0">2</span>
+        Confirm a code
+      </h2>
+    </div>
+    <p class="text-secondary" style="font-size:var(--text-sm);margin-bottom:var(--space-4)">
+      The app shows a 6-digit code that changes every 30 seconds.
+      Enter it here to confirm the setup worked.
+    </p>
+    <form method="POST" action="{{ url_for('setup_2fa') }}" data-busy-button="Verifying&#8230;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
       <div class="form-group">
-        <label class="form-label" for="setupCode">Authentication code</label>
-        <input class="form-input mono" type="text" id="setupCode" name="code" inputmode="numeric"
-               pattern="[0-9 ]{6,7}" maxlength="7" placeholder="123 456" autocomplete="one-time-code" required
-               style="text-align:center;font-size:var(--text-xl);letter-spacing:.3em">
+        <label class="form-label" for="setupCode">Code from your authenticator app</label>
+        <input class="form-input mono" type="text" id="setupCode" name="code"
+               inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7"
+               placeholder="000 000" autocomplete="one-time-code" required autofocus
+               style="text-align:center;font-size:1.6rem;letter-spacing:.35em">
       </div>
-      <button class="btn btn-primary" type="submit">Enable 2FA</button>
+      <button class="btn btn-primary" type="submit" style="width:100%">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;vertical-align:-2px"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        Enable 2FA
+      </button>
     </form>
+
+    <div style="margin-top:var(--space-4);padding:var(--space-3);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-md);font-size:var(--text-xs);color:var(--text-secondary)">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      Once enabled, your authenticator code doubles as a password-reset factor &mdash; so you can reset your own password from the login page without contacting an admin.
+    </div>
   </section>
+
 </div>
 {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script nonce="{{ csp_nonce }}">
+(function () {
+  // Auto-format 6-digit TOTP code as "000 000" and submit when complete.
+  var codeInput = document.getElementById('setupCode');
+  if (codeInput) {
+    codeInput.addEventListener('input', function () {
+      var v = this.value.replace(/\D/g, '').slice(0, 6);
+      this.value = v.length > 3 ? v.slice(0, 3) + ' ' + v.slice(3) : v;
+      if (v.length === 6) {
+        this.closest('form').querySelector('button[type=submit]').focus();
+      }
+    });
+  }
+
+  // Rotate the chevron inside <details> when opened/closed.
+  var det = document.querySelector('details');
+  var chev = document.getElementById('detailsChev');
+  if (det && chev) {
+    det.addEventListener('toggle', function () {
+      chev.style.transform = det.open ? 'rotate(180deg)' : '';
+    });
+  }
+
+  // Copy the TOTP secret key to clipboard.
+  // navigator.clipboard requires a secure context (HTTPS); on plain HTTP LAN
+  // we fall back to the legacy execCommand approach.
+  var copyBtn = document.getElementById('copyBtn');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', function () {
+      var box = document.getElementById('secretBox');
+      var icon = document.getElementById('copyIcon');
+      if (!box) return;
+
+      var markCopied = function () {
+        icon.innerHTML = '<polyline points="20 6 9 17 4 12"/>';
+        setTimeout(function () {
+          icon.innerHTML = '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>';
+        }, 2000);
+      };
+
+      if (window.isSecureContext && navigator.clipboard) {
+        navigator.clipboard.writeText(box.value).then(markCopied).catch(function () {
+          box.select();
+          document.execCommand('copy');
+          markCopied();
+        });
+      } else {
+        box.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        markCopied();
+      }
+    });
+  }
+})();
+</script>
 {% endblock %}

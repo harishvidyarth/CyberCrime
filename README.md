@@ -1,7 +1,7 @@
 # FundTrail Analysis Tool
 
 ![CI](https://github.com/harishvidyarth/CyberCrime/actions/workflows/ci.yml/badge.svg)
-**Version 2.0** · Python 3.10+ · Flask · fully offline-capable
+**Version 3.0** · Python 3.11+ · Flask · fully offline-capable
 
 A web-based tool for **cybercrime investigators** to trace stolen-money trails.
 Officers upload bank-transaction Excel files; the app reconstructs how funds
@@ -11,17 +11,20 @@ repeater accounts, and auto-generates official letters to banks.
 > New to the project? Read [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md) first —
 > it explains the whole thing from the basics.
 
-## What's new in v2.0 (June 2026)
+## What's new in v3.0 (June 2026)
 
-- **Case workflow** — Open / Under Investigation / Closed status on every case
-- **Global search** across ACK numbers, accounts, transaction IDs and banks
-- **Repeat-account (mule) detection** across cases · **case notes & timeline**
-- **Refund recovery dashboard** and **admin metrics** (uploads/week, recovery rate)
-- **Two-factor authentication (TOTP)**, audit-log viewer, idle auto-logout,
-  password expiry + reuse prevention, last-login display
-- **Bulk letter ZIP download**, Excel exports, multi-file batch upload
-- **New design system UI** — sidebar navigation, dark mode, accessibility pass
-- All dependency CVEs patched (`pip-audit` clean), GitHub Actions CI, `/healthz`
+- **9 additional security fixes** — IDOR and group-isolation bugs found and patched
+  in post-v2.0 internal audit (routes: `edit_officer`, `delete_complaint`,
+  `available_ack_nos`, `download_fundtrail_pdf`, `delete_by_ack`, `assign_case`,
+  `view_complaint`; plus HSTS mis-fire and login timing side-channel)
+- **2FA QR code** rendered as inline SVG — no Pillow/PNG dependency, works on all
+  platforms, visible in dark mode
+- **One-click Docker scripts** consolidated: `fundtrail.sh` (Mac/Linux) +
+  `fundtrail.bat` (Windows) replace the former four-file start/stop split
+- **Dark mode fixes** — analytics contrast + table alternating-row legibility
+
+v2.0 highlights: case workflow, global search, mule detection, 2FA, audit log,
+idle auto-logout, password expiry, bulk ZIP download, design system UI.
 
 Full details in [`CHANGELOG.md`](CHANGELOG.md). Dev login credentials:
 [`CREDENTIALS.md`](CREDENTIALS.md).
@@ -123,6 +126,8 @@ CyberCrime/
 ├── dev_seed.py           # DEV-ONLY: reset accounts to known passwords
 ├── LICENSE               # proprietary — internal TN Police use
 ├── pyproject.toml        # ruff lint + pytest configuration
+├── fundtrail.sh          # one-click start/stop for Mac/Linux  (./fundtrail.sh [start|stop])
+├── fundtrail.bat         # one-click start/stop for Windows    (fundtrail.bat [start|stop])
 ├── .github/workflows/    # CI: tests + dependency audit + lint on every push
 ├── docs/                 # HOW_IT_WORKS, architecture, security, deployment…
 └── main/
@@ -147,7 +152,34 @@ CyberCrime/
 
 (The old read-only *Viewer* role was removed — every account authenticates with a password.)
 
-## 6. Running the tests
+## 6. Docker (optional — one-command container)
+
+Docker is **not required** (the tool runs fine as a plain Python app), but the
+repo ships convenience scripts that auto-install Docker if missing:
+
+```bash
+# Mac / Linux
+./fundtrail.sh          # start  (builds image + waits for ready)
+./fundtrail.sh stop     # stop
+
+# Windows — double-click fundtrail.bat, or from Command Prompt:
+fundtrail.bat           # start
+fundtrail.bat stop      # stop
+```
+
+Or use Docker directly:
+
+```bash
+SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))") docker compose up -d
+# -> http://127.0.0.1:5050   (DB persists in the fundtrail-data volume)
+```
+
+Gunicorn (2 workers, --preload), non-root user, /healthz healthcheck. The
+image contains **no secrets and no case data** (.dockerignore excludes .env,
+databases, uploads and generated letters). For any non-localhost deployment put
+an HTTPS reverse proxy in front and set `SESSION_COOKIE_INSECURE=false`.
+
+## 7. Running the tests
 
 ```bash
 cd main

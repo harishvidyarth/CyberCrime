@@ -10,7 +10,10 @@
     .meta b { display: inline-block; width: 220px; }
     .content { margin-top: 20px; white-space: pre-line; }
     .footer { margin-top: 40px; }
+    [data-theme="dark"] body { background: #1e293b; color: #f1f5f9; }
+    [data-theme="dark"] h2, [data-theme="dark"] h3 { color: #e2e8f0; }
   </style>
+  <script nonce="{{ csp_nonce }}">(function(){var t=localStorage.getItem('ft-theme');if(t)document.documentElement.setAttribute('data-theme',t)})()</script>
 </head>
 <body>
   <div class="header">

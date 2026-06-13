@@ -19,26 +19,40 @@ cp .env.example .env      # then set SECRET_KEY
 cd main && python scripts/create_user.py && python app.py
 ```
 
-## Building the single-file app (PyInstaller)
-> **PyInstaller cannot cross-compile.** You must build on each target OS (or via a
-> VM/Docker for Linux). One machine cannot produce binaries for all three OSes.
+## One-click Docker deployment (recommended)
+
+The repo ships `fundtrail.sh` (Mac/Linux) and `fundtrail.bat` (Windows) that
+handle everything: install Docker if missing, generate `.env` with a fresh
+`SECRET_KEY` on first run, build the container image, wait for the health-check,
+and print the LAN access URL.
+
+```bash
+# Mac / Linux
+chmod +x fundtrail.sh
+./fundtrail.sh          # start
+./fundtrail.sh stop     # stop
+
+# Windows — double-click fundtrail.bat, or from Command Prompt:
+fundtrail.bat           # start
+fundtrail.bat stop      # stop
+```
+
+The SQLite database persists in a named Docker volume (`fundtrail-data`) and
+survives container restarts and image rebuilds.
+
+## Building a single-file app (PyInstaller) — DEPRECATED
+
+> ⚠️ `main/FundTrail.spec` has been removed from the repository. The Docker
+> deployment model above is the supported path. The notes below are kept for
+> historical reference only.
+
+PyInstaller **cannot cross-compile** — you must build on each target OS.
 
 | Target | Build on | Output | Command (from `main/`) |
 |--------|----------|--------|------------------------|
 | **Windows .exe** | Windows | `dist/FundTrail.exe` | `pyinstaller FundTrail.spec` |
-| **macOS** | macOS (this Mac) | `dist/FundTrail` / `.app` | `pyinstaller FundTrail.spec` |
-| **Linux** | Linux (or Docker) | `dist/FundTrail` | `pyinstaller FundTrail.spec` |
-
-The existing `FundTrail.spec` / `build_configs/*.spec` already bundle data files
-(templates, IFSC dataset). Verify the spec includes `IFSC_CODES.pkl`, the `.docx`
-templates, and `templates/` + `static/` via its `datas=[...]`.
-
-### Linux build via Docker (no Linux machine needed)
-```bash
-docker run --rm -v "$PWD":/src -w /src/main python:3.11-slim bash -lc \
-  "pip install -r requirements.txt pyinstaller && pyinstaller FundTrail.spec"
-# dist/FundTrail (Linux) appears in main/dist/
-```
+| **macOS** | macOS | `dist/FundTrail` / `.app` | `pyinstaller FundTrail.spec` |
+| **Linux** | Linux | `dist/FundTrail` | `pyinstaller FundTrail.spec` |
 
 ## Post-build checklist
 - Launch the binary on a clean machine (no Python) → app starts, login works.
