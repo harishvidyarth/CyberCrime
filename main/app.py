@@ -1503,11 +1503,16 @@ def file_lock(filepath):
 def upload_excel():
     """Import a bank-transaction Excel file and rebuild the case's fund trail."""
     file = request.files.get("excel_file")
-    if file is None or not file.filename or not file.filename.endswith(".xlsx"):
-        flash("Invalid file format. Please upload a .xlsx file.", "warning")
+    if file is None or not file.filename:
+        flash("No file selected. Please choose a .xlsx file.", "warning")
         return redirect("/index")
 
+    # secure_filename strips any directory components / path-traversal sequences;
+    # enforce the .xlsx extension case-insensitively on the *sanitised* name.
     filename = secure_filename(file.filename)
+    if not filename or not filename.lower().endswith(".xlsx"):
+        flash("Invalid file type. Only .xlsx workbooks are accepted.", "warning")
+        return redirect("/index")
     file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
 
     # Use file lock to prevent race conditions
@@ -1535,6 +1540,24 @@ def upload_excel():
             logger.info(f"Existing file and record deleted: {filename}")
 
         file.save(file_path)
+
+    # Defence-in-depth: a genuine .xlsx is an OOXML ZIP container and must begin with
+    # the ZIP magic bytes "PK". Reject (and delete) anything else BEFORE the parser
+    # touches it — this stops a renamed executable / script / macro-laden blob that
+    # slipped past the extension check from ever being parsed or stored in the DB.
+    try:
+        with open(file_path, "rb") as _sig_fh:
+            _magic = _sig_fh.read(4)
+    except OSError:
+        _magic = b""
+    if _magic[:2] != b"PK":
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass
+        logger.warning("Rejected non-xlsx upload (bad magic bytes): %s", filename)
+        flash("That file is not a valid .xlsx workbook and was rejected.", "danger")
+        return redirect("/index")
 
     try:
         # ✅ Step 2: Read Excel and extract acknowledgment numbers
@@ -1907,6 +1930,31 @@ def upload_excel():
         logger.debug(f"[UPLOAD] Excel columns in 'Money Transfer to': {list(tx_df.columns)}")
         logger.debug(f"[UPLOAD] Detected UTR2 column: {utr2_col}")
 
+        # Performance: pre-index the ATM / cheque / hold sheets ONCE, keyed by the
+        # account number (and, for holds, the txn id). The previous code re-filtered
+        # the entire sheet inside the per-row loop (`df[df[col].astype(str)...] == x`),
+        # which is O(rows × sheet) and re-stringifies the whole column every iteration —
+        # the reason a "small" upload felt slow. Now each row is an O(1) dict lookup.
+        _ACC_COL = "Account No./ (Wallet /PG/PA) Id"
+
+        def _index_by_account(df):
+            if df.empty or _ACC_COL not in df.columns:
+                return {}
+            tmp = df.copy()
+            tmp["_acc_key"] = tmp[_ACC_COL].astype(str).str.strip()
+            return {k: g for k, g in tmp.groupby("_acc_key")}
+
+        atm_by_acc = _index_by_account(atm_df)
+        chq_by_acc = _index_by_account(chq_df)
+
+        hold_by_key = {}
+        if not hold_df.empty and _ACC_COL in hold_df.columns and "Transaction Id / UTR Number" in hold_df.columns:
+            _h = hold_df.copy()
+            _h["_acc_key"] = _h[_ACC_COL].astype(str).str.strip()
+            _h["_txn_key"] = _h["Transaction Id / UTR Number"].astype(str).str.strip()
+            hold_by_key = {k: g for k, g in _h.groupby(["_acc_key", "_txn_key"])}
+
+        _EMPTY_DF = pd.DataFrame()
         transactions = []
 
         txn_id_counts = {"found": 0, "missing": 0}
@@ -1918,23 +1966,10 @@ def upload_excel():
 
             acc_to = str(row.get("Account No", "")).strip()
             extracted_txn_id = get_txn_id_from_row(row, utr2_col)
-            atm_info = (
-                atm_df[atm_df["Account No./ (Wallet /PG/PA) Id"].astype(str).str.strip() == acc_to]
-                if not atm_df.empty
-                else pd.DataFrame()
-            )
-            chq_info = (
-                chq_df[chq_df["Account No./ (Wallet /PG/PA) Id"].astype(str).str.strip() == acc_to]
-                if not chq_df.empty
-                else pd.DataFrame()
-            )
+            atm_info = atm_by_acc.get(acc_to, _EMPTY_DF)
+            chq_info = chq_by_acc.get(acc_to, _EMPTY_DF)
             hold_info = (
-                hold_df[
-                    (hold_df["Account No./ (Wallet /PG/PA) Id"].astype(str).str.strip() == acc_to)
-                    & (hold_df["Transaction Id / UTR Number"].astype(str).str.strip() == extracted_txn_id)
-                ]
-                if not hold_df.empty and extracted_txn_id
-                else pd.DataFrame()
+                hold_by_key.get((acc_to, extracted_txn_id), _EMPTY_DF) if extracted_txn_id else _EMPTY_DF
             )
             if extracted_txn_id:
                 txn_id_counts["found"] += 1

@@ -13,16 +13,27 @@
   --red:#ef4444;--green:#10b981;--orange:#f59e0b;--purple:#8b5cf6;
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 }
+/* Dark palette unified with design-system.css tokens so this page matches the rest
+   of the app (e.g. Repeat Accounts) and the admin View Analytics page in dark mode. */
 [data-theme="dark"]{
-  --navy:#1e3a5f;--brand:#5b8def;--ink:#f1f5f9;
-  --muted:#94a3b8;--line:#334155;--bg:#0f172a;--white:#1e293b;
+  --navy:#1e3a5f;--brand:#5b8def;--ink:#f9fafb;
+  --muted:#9ca3af;--line:#374151;--bg:#1f2937;--white:#111827;
   --red:#f87171;--green:#34d399;--orange:#fbbf24;--purple:#a78bfa;
 }
 [data-theme="dark"] body{background:var(--bg);color:var(--ink)}
 [data-theme="dark"] .header{background:#0b1322}
-[data-theme="dark"] .header-btn.secondary{background:#1e293b;color:#e2e8f0;border:1px solid var(--line)}
-[data-theme="dark"] tbody tr:hover td{background:#1e293b}
+[data-theme="dark"] .header-btn.secondary{background:#1f2937;color:#e2e8f0;border:1px solid var(--line)}
+[data-theme="dark"] tbody tr:hover td{background:#1f2937}
 [data-theme="dark"] table{background:var(--white)}
+[data-theme="dark"] td{color:var(--ink)}
+[data-theme="dark"] .kpi-val{color:var(--ink)}
+[data-theme="dark"] .sh h2{color:var(--ink)}
+[data-theme="dark"] .amt-cell{color:#93c5fd}
+[data-theme="dark"] .sh .badge{background:#1e40af;color:#bfdbfe}
+[data-theme="dark"] .ack-pill{background:#1e40af;color:#bfdbfe}
+[data-theme="dark"] .hold-pill{background:#7f1d1d;color:#fca5a5}
+[data-theme="dark"] .bar-wrap{background:#374151}
+[data-theme="dark"] .notice{background:#15294d;border-color:#1e40af;color:#bfdbfe}
 *{box-sizing:border-box}
 body{margin:0;font-family:var(--font);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
 
@@ -177,7 +188,7 @@ tbody tr:hover td{background:#f8fafc}
         {% for f in file_rows %}
         <tr>
           <td>{{ loop.index }}</td>
-          <td style="font-weight:600;color:var(--navy);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f['filename'] }}</td>
+          <td style="font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f['filename'] }}</td>
           <td>{{ f['upload_time'] }}</td>
           <td class="num">{{ f['txn_count'] }}</td>
           <td>
