@@ -17,10 +17,13 @@ if "!ACTION!"=="" set "ACTION=start"
 
 if /i "!ACTION!"=="start" goto :do_start
 if /i "!ACTION!"=="stop"  goto :do_stop
+if /i "!ACTION!"=="reset-password" goto :do_reset_password
+if /i "!ACTION!"=="reset" goto :do_reset_password
 
-echo Usage: fundtrail.bat [start^|stop]
-echo   start  -- (default) build image and launch the server
-echo   stop   -- stop and remove the container (data is preserved)
+echo Usage: fundtrail.bat [start^|stop^|reset-password]
+echo   start           -- (default) build image and launch the server
+echo   stop            -- stop the container (case data is preserved)
+echo   reset-password  -- regenerate the admin/officer login (data preserved)
 pause
 exit /b 1
 
@@ -45,6 +48,34 @@ echo ^|                                                          ^|
 echo ^|  Your case data is safe -- run fundtrail.bat to restart. ^|
 echo +----------------------------------------------------------+
 echo.
+pause
+exit /b 0
+
+REM ── RESET-PASSWORD ──────────────────────────────────────────────────────────
+REM Use this if locked out. Regenerates the admin/officer login only (via
+REM scripts/create_user.py inside the running container); case data is untouched.
+:do_reset_password
+where docker >nul 2>&1
+if errorlevel 1 (
+    echo Docker is not installed -- start FundTrail first: fundtrail.bat
+    pause & exit /b 1
+)
+docker info >nul 2>&1
+if errorlevel 1 (
+    echo Docker daemon is not running -- start FundTrail first: fundtrail.bat
+    pause & exit /b 1
+)
+docker compose ps 2>nul | findstr /i "fundtrail" >nul 2>&1
+if errorlevel 1 (
+    echo FundTrail isn't running -- start it first: fundtrail.bat
+    pause & exit /b 1
+)
+echo Resetting admin ^& officer passwords (your case data is NOT affected)...
+docker compose exec -T fundtrail python scripts/create_user.py
+echo.
+echo The new passwords are shown above and saved here:
+echo   docker compose exec fundtrail cat /data/INITIAL_CREDENTIALS.txt
+echo You'll be asked to set your own password on first login.
 pause
 exit /b 0
 

@@ -219,13 +219,37 @@ except Exception:
     echo "To stop:  ./fundtrail.sh stop"
 }
 
+# ── RESET-PASSWORD action ────────────────────────────────────────────────────
+# Use this if you're locked out. It does NOT touch case data — it only regenerates
+# the admin/officer login passwords (via scripts/create_user.py inside the running
+# container) and prints them. The database volume is left intact.
+do_reset_password() {
+    cd "$REPO_DIR"
+    if ! docker_installed || ! docker_running; then
+        echo "Docker isn't running. Start FundTrail first:  ./fundtrail.sh"
+        exit 1
+    fi
+    if ! docker compose ps 2>/dev/null | grep -q "fundtrail"; then
+        echo "FundTrail isn't running. Start it first:  ./fundtrail.sh"
+        exit 1
+    fi
+    echo "Resetting admin & officer passwords (your case data is NOT affected)..."
+    docker compose exec -T fundtrail python scripts/create_user.py
+    echo ""
+    echo "The new passwords are shown above and saved here:"
+    echo "  docker compose exec fundtrail cat /data/INITIAL_CREDENTIALS.txt"
+    echo "You'll be asked to set your own password on first login."
+}
+
 # ── Dispatch ───────────────────────────────────────────────────────────────
 case "$ACTION" in
     start) do_start ;;
     stop)  do_stop  ;;
+    reset-password|reset) do_reset_password ;;
     *)
-        echo "Usage: ./fundtrail.sh [start|stop]"
-        echo "  start  — (default) build image and launch the server"
-        echo "  stop   — stop and remove the container (data is preserved)"
+        echo "Usage: ./fundtrail.sh [start|stop|reset-password]"
+        echo "  start           — (default) build image and launch the server"
+        echo "  stop            — stop the container (case data is preserved)"
+        echo "  reset-password  — regenerate the admin/officer login (data preserved)"
         exit 1 ;;
 esac
