@@ -31,83 +31,108 @@ Full details in [`CHANGELOG.md`](CHANGELOG.md). Dev login credentials:
 
 ---
 
-## 0. First Time Setup (developers — fastest path)
+## 0. Running FundTrail — first time & every time
 
-Foolproof, four steps, no passwords to lose:
+Two ways to run it: **Docker** (one command, recommended) or **plain Python** (no
+Docker). Both serve the app at **<http://127.0.0.1:5050>** and keep all data **on
+your own machine**. In both modes the database persists between runs, so **your
+login stays the same every time** — it is never reset on restart.
+
+You only need **git** (and either Docker *or* Python 3.11+). The IFSC dataset and
+everything else needed to run ships with the repo; the database is embedded SQLite,
+so there is no database server to install.
+
+---
+
+### A) With Docker  *(recommended — one command)*
+
+`fundtrail.sh` (Mac/Linux) and `fundtrail.bat` (Windows) auto-install Docker if
+missing, generate `.env` with a fresh secret key on first run, build the image, and
+wait until the app is ready. The database lives in a Docker volume (`fundtrail-data`)
+that **survives every stop / start / rebuild**.
+
+**First time (after cloning):**
 
 ```bash
-# Step 1 — clone
+# Mac / Linux
 git clone git@github.com:harishvidyarth/CyberCrime.git && cd CyberCrime
-
-# Step 2 — install requirements (Python 3.10+)
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r main/requirements.txt
-
-# Step 3 — seed the DEV accounts (known passwords, dev machines only)
-python dev_seed.py
-
-# Step 4 — run, then log in with the credentials the script printed
-cd main && python app.py        # -> http://127.0.0.1:5050
+chmod +x fundtrail.sh
+./fundtrail.sh                         # builds + starts -> http://127.0.0.1:5050
 ```
 
-The dev accounts and reset instructions live in [`CREDENTIALS.md`](CREDENTIALS.md).
-**Deploying for real?** Skip `dev_seed.py` and use `scripts/create_user.py`
-(random per-machine passwords) as described in section 2 below.
+```bat
+:: Windows  (double-click fundtrail.bat, or from Command Prompt)
+git clone git@github.com:harishvidyarth/CyberCrime.git && cd CyberCrime
+fundtrail.bat                          :: builds + starts -> http://127.0.0.1:5050
+```
 
-## 1. What you need first
-
-- **Python 3.10+** and **git**
-- Nothing else — the IFSC dataset (`main/IFSC_CODES.pkl`) and everything needed to
-  run now **come with the repo**. The app uses **embedded SQLite**, so there is no
-  database server to install.
-
-## 2. Get it running — copy & paste (macOS / Linux)
+Get your first admin / officer password (random, per-machine):
 
 ```bash
-# 1) Clone (you must be a collaborator on the repo + have your SSH key set up)
-git clone git@github.com:harishvidyarth/CyberCrime.git
-cd CyberCrime
-
-# 2) Create & activate a virtual environment
-python3 -m venv .venv
-source .venv/bin/activate            # Windows: .venv\Scripts\activate
-
-# 3) Install dependencies
-pip install --upgrade pip
-pip install -r main/requirements.txt
-
-# 4) One-command setup: creates .env (with a fresh secret key) AND the first users
-cd main
-python scripts/create_user.py
-
-# 5) Run
-python app.py                        # -> http://127.0.0.1:5050
+docker compose exec fundtrail cat /data/INITIAL_CREDENTIALS.txt
 ```
 
-`create_user.py` **prints the admin & officer passwords** in the terminal and also
-saves them to **`data/INITIAL_CREDENTIALS.txt`** (git-ignored) so you never lose
-them. The passwords are **random and unique to your machine** — there is no shared
-default. Run the script again any time you're locked out; it safely resets both
-accounts (your `.env` is never overwritten).
+**Every time after that (nth time):**
 
-Then open **<http://127.0.0.1:5050>**, log in (**role = Admin**, username `admin`,
-password from the terminal). You'll be **required to set a new password on first
-login**, after which you can delete `INITIAL_CREDENTIALS.txt`.
+```bash
+# Mac / Linux                          # Windows
+./fundtrail.sh          # start        fundtrail.bat
+./fundtrail.sh stop     # stop         fundtrail.bat stop
+```
 
-> ### ❓ "What is the default password when I clone?"
-> **There isn't one — and that's on purpose.** A fixed password committed to the repo
-> would be a security hole. Instead, `python scripts/create_user.py` generates a
-> **fresh, random password** for `admin` and `officer` on *your* machine and:
-> - **prints them in the terminal**, and
-> - **saves them to `data/INITIAL_CREDENTIALS.txt`** (git-ignored).
+Same data, same login. ⚠️ Don't run `docker compose down -v` — the `-v` deletes the
+data volume (that is the only thing that wipes your DB and forces a new password).
+
+---
+
+### B) Without Docker  *(plain Python 3.11+)*
+
+Runs the app directly with embedded SQLite. The database is a local file at
+`data/fundtrail.db` and persists between runs.
+
+**First time (after cloning):**
+
+```bash
+# Mac / Linux
+git clone git@github.com:harishvidyarth/CyberCrime.git && cd CyberCrime
+python3 -m venv .venv && source .venv/bin/activate
+pip install --upgrade pip && pip install -r main/requirements.txt
+cd main && python scripts/create_user.py   # creates .env + first users (prints passwords)
+python app.py                              # -> http://127.0.0.1:5050
+```
+
+```bat
+:: Windows  (Command Prompt)
+git clone git@github.com:harishvidyarth/CyberCrime.git && cd CyberCrime
+python -m venv .venv && .venv\Scripts\activate
+pip install --upgrade pip && pip install -r main\requirements.txt
+cd main && python scripts\create_user.py
+python app.py                              :: -> http://127.0.0.1:5050
+```
+
+`create_user.py` **prints** the admin & officer passwords and **saves** them to
+`data/INITIAL_CREDENTIALS.txt` (git-ignored). They are random and unique to your
+machine — there is no shared default. **Lost them?** Just run `create_user.py` again;
+it safely resets both accounts (your `.env` is never overwritten). You're forced to
+set your own password on first login anyway.
+
+**Every time after that (nth time):**
+
+```bash
+# Mac / Linux                          :: Windows
+source .venv/bin/activate              .venv\Scripts\activate
+cd main && python app.py               cd main && python app.py
+```
+
+Same data, same login. *(Dev shortcut: `python dev_seed.py` from the repo root seeds
+known dev passwords — dev machines only; see [`CREDENTIALS.md`](CREDENTIALS.md).)*
+
+> **Port note:** on macOS, port **5000** is used by AirPlay Receiver, so we default to
+> **5050** via the `PORT` variable in `.env`. Set it to any free port.
 >
-> So your password = whatever the script printed/saved for your clone. **Lost it?**
-> Just run `python scripts/create_user.py` again — it safely resets both accounts and
-> writes the new passwords to the same file. You're forced to set your own password on
-> first login anyway.
-
-> **Port note:** on macOS, port **5000 is used by AirPlay Receiver**, so we default
-> to **5050** via the `PORT` variable in `.env`. Set it to any free port.
+> **Why is there no fixed default password?** A password committed to the repo would
+> be a security hole. Instead a fresh **random** password is generated on *your*
+> machine and printed/saved as described above.
 
 ## 3. Database — SQLite (no setup)
 
