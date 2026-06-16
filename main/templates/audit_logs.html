@@ -36,6 +36,14 @@
       <label class="form-label" for="f-ack">ACK No</label>
       <input class="form-input" style="width:190px" type="text" id="f-ack" name="ack" value="{{ f_ack }}" placeholder="acknowledgement no">
     </div>
+    <div>
+      <label class="form-label" for="f-from">From (date &amp; time)</label>
+      <input class="form-input" style="width:200px" type="datetime-local" id="f-from" name="from" value="{{ f_from }}">
+    </div>
+    <div>
+      <label class="form-label" for="f-to">To (date &amp; time)</label>
+      <input class="form-input" style="width:200px" type="datetime-local" id="f-to" name="to" value="{{ f_to }}">
+    </div>
     <div style="align-self:flex-end" class="flex gap-2">
       <button class="btn btn-primary" type="submit">Filter</button>
       <a class="btn btn-secondary" href="{{ url_for('audit_logs') }}">Clear</a>
@@ -63,7 +71,7 @@
 </div>
 
 <nav class="pagination" aria-label="Audit log pages">
-  {% set args = {'user': f_user, 'action': f_action, 'ack': f_ack} %}
+  {% set args = {'user': f_user, 'action': f_action, 'ack': f_ack, 'from': f_from, 'to': f_to} %}
   {% if page > 1 %}
   <a class="page-pill" href="{{ url_for('audit_logs', page=page-1, **args) }}" aria-label="Previous page">‹ Prev</a>
   {% endif %}

@@ -1459,6 +1459,12 @@ def index():
             .scalar()
             or 0.0
         ),
+        "recovered_amount": (
+            db.session.query(func.sum(Transaction.refund_amount))
+            .filter(Transaction.upload_id.in_(my_file_ids or [-1]))
+            .scalar()
+            or 0.0
+        ),
     }
     recent_cases = my_cases[:10]
     recent_activity = UsageLog.query.filter_by(username=me).order_by(UsageLog.timestamp.desc()).limit(5).all()
@@ -2100,6 +2106,10 @@ def upload_excel():
                     )
                 else:
                     _c.file_name = filename
+                    # Same ACK re-uploaded (e.g. the bank sent an updated Excel): refresh
+                    # the upload date so the case reflects when it was last updated. The
+                    # refund status lives in POHRefundDetails and is left untouched.
+                    _c.upload_time = datetime.now(timezone.utc)
                     if _c.uploaded_by is None:
                         _c.uploaded_by = current_user.id
                     if _c.assigned_to is None:
@@ -2149,6 +2159,7 @@ def download_file(filename):
     if not os.path.isfile(requested_path):
         abort(404)
 
+    log_usage("download_file", filename=safe_filename)
     return send_from_directory(app.config["UPLOAD_FOLDER"], safe_filename)
 
 
@@ -3328,7 +3339,11 @@ def save_hold_refund():
         poh_details.refund_amount = txn.refund_amount
 
         db.session.commit()
-        log_usage("save_hold_refund", ack_no=ack_no)
+        log_usage(
+            "save_hold_refund",
+            filename=f"status={txn.refund_status or 'cleared'}, amount={txn.refund_amount}",
+            ack_no=ack_no,
+        )
         logger.info("Refund details saved successfully (persisted to POHRefundDetails)")
 
         return jsonify({"status": "success"})
@@ -3495,6 +3510,7 @@ def generate_letter_pdf():
         # Reset buffer position for download (no disk write)
         pdf_buffer.seek(0)
 
+        log_usage("download_letter_pdf", filename=safe_filename_val, ack_no=ack_no)
         return send_file(pdf_buffer, mimetype="application/pdf", as_attachment=True, download_name=safe_filename_val)
 
     except Exception as e:
@@ -3525,6 +3541,25 @@ def generate_letter_docx():
 
         letter_type = data.get("letter_type")
         is_poh = data.get("is_poh", False)
+
+        # Validate the officer's contact details before they are written into an
+        # official letter to a bank. A malformed email or phone in a legal notice is
+        # not acceptable, so reject bad input (when provided) and normalise the phone.
+        _officer_email = (data.get("officer_email") or "").strip()
+        _officer_phone_raw = (data.get("officer_phone") or "").strip()
+        if _officer_email and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", _officer_email):
+            return jsonify({"error": "Please enter a valid email address for the officer."}), 400
+        if _officer_phone_raw and _officer_phone_raw != "<Phone>":
+            _phone_digits = re.sub(r"[\s\-()]", "", _officer_phone_raw)
+            # Accept a bare 10-digit number by auto-prefixing +91, so a valid number
+            # typed without the country code (or with spaces/dashes) isn't rejected.
+            if re.match(r"^[6-9]\d{9}$", _phone_digits):
+                _phone_digits = "+91" + _phone_digits
+            if not re.match(r"^\+91[6-9]\d{9}$", _phone_digits):
+                return jsonify(
+                    {"error": "Please enter a valid 10-digit mobile number (optionally prefixed with +91)."}
+                ), 400
+            data["officer_phone"] = _phone_digits  # clean, normalised number flows into the letter
         is_l1_grouped = data.get("is_l1_grouped", False)
 
         # Collect details
@@ -3635,6 +3670,32 @@ def generate_letter_docx():
 
                         for _key, tx_list in grouped.items():
                             txns_groups.append({"transactions": tx_list, "folder": acc})
+
+            else:
+                # Path-to-Root / explicit account selection (e.g. the green
+                # "Generate Letters (Path to Root)" button). The officer has picked
+                # specific accounts, so generate a suspect-account letter for EACH
+                # selected account FROM THAT ACCOUNT'S OWN real transactions. No
+                # fabrication: an account with no transactions is skipped, and if none
+                # qualify we return a clear message below instead of an empty ZIP.
+                for acc in account_numbers:
+                    acc_txns = [
+                        t
+                        for t in all_txns
+                        if str(t.account_number or "") == str(acc)
+                        or str(t.to_account or "") == str(acc)
+                        or str(t.from_account or "") == str(acc)
+                    ]
+                    if acc_txns:
+                        txns_groups.append({"transactions": acc_txns, "folder": str(acc)})
+
+            # If nothing matched (e.g. selected accounts have no transactions, or a
+            # Put-on-Hold request hit no held accounts) return a clear message rather
+            # than streaming an empty ZIP — and never invent letters from unrelated data.
+            if not txns_groups:
+                return jsonify({
+                    "error": "No accounts with transactions to generate letters for in this selection."
+                }), 400
 
             # Helper to create and save a DOCX for a transactions list. Optionally place under a seed subfolder.
             def _save_doc_for_transactions(transactions, seed_folder=None):
@@ -3832,21 +3893,47 @@ def generate_letter_docx():
                         p.addnext(tbl)
 
                 if target_table:
+                    # "N/A" for genuinely-missing values so no cell is left blank.
+                    def _v(x):
+                        return str(x) if (x is not None and str(x).strip() != "") else "N/A"
+
                     for idx, t in enumerate(transactions, 1):
                         row = target_table.add_row().cells
                         row[0].text = str(idx)
                         if is_poh:
-                            row[1].text = str(t.account_number or t.to_account or "")
-                            row[2].text = str(t.put_on_hold_date or "")
-                            row[3].text = str(t.put_on_hold_amount or "")
-                            row[4].text = str(t.put_on_hold_txn_id or "")
-                            row[5].text = str(t.ifsc_code or "")
+                            # For Put-on-Hold rows, fall back to the original transaction's
+                            # date / amount / id when the hold-specific value is empty —
+                            # that is why some letters were missing Date/Amount/Txn ID/UTR.
+                            row[1].text = _v(t.account_number or t.to_account)
+                            row[2].text = _v(t.put_on_hold_date or t.txn_date)
+                            row[3].text = _v(t.put_on_hold_amount if t.put_on_hold_amount is not None else t.amount)
+                            row[4].text = _v(t.put_on_hold_txn_id or t.txn_id)
+                            row[5].text = _v(t.ifsc_code)
                         else:
-                            row[1].text = str(t.to_account or t.account_number or t.from_account or "")
-                            row[2].text = str(t.txn_date or "")
-                            row[3].text = str(t.amount or "")
-                            row[4].text = str(t.txn_id or "")
-                            row[5].text = str(t.ifsc_code or "")
+                            row[1].text = _v(t.to_account or t.account_number or t.from_account)
+                            row[2].text = _v(t.txn_date)
+                            row[3].text = _v(t.amount)
+                            row[4].text = _v(t.txn_id)
+                            row[5].text = _v(t.ifsc_code)
+
+                    # Render the table with visible cell borders ("boxes") whether it came
+                    # from the template (which may be borderless) or was created above.
+                    from docx.oxml.ns import qn as _qn
+
+                    _tbl_el = target_table._tbl
+                    _tblPr = _tbl_el.tblPr
+                    if _tblPr is None:
+                        _tblPr = OxmlElement("w:tblPr")
+                        _tbl_el.insert(0, _tblPr)
+                    _borders = OxmlElement("w:tblBorders")
+                    for _edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+                        _e = OxmlElement(f"w:{_edge}")
+                        _e.set(_qn("w:val"), "single")
+                        _e.set(_qn("w:sz"), "6")
+                        _e.set(_qn("w:space"), "0")
+                        _e.set(_qn("w:color"), "000000")
+                        _borders.append(_e)
+                    _tblPr.append(_borders)
 
                 if is_poh or letter_type == "suspect":
                     subfolder_local = "suspect letter"
@@ -3893,6 +3980,11 @@ def generate_letter_docx():
             # Try to keep single file naming convention for download if possible, or just default to zip
             pass
 
+        log_usage(
+            "download_letters",
+            filename=f"{len(account_numbers)} account(s); type={letter_type or 'suspect'}",
+            ack_no=ack_no,
+        )
         return send_file(zip_buffer, mimetype="application/zip", as_attachment=True, download_name=zip_filename)
 
     except Exception as e:
@@ -4211,6 +4303,33 @@ def download_upload(file_id):
         mimetype=f.mimetype or "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         as_attachment=True,
         download_name=f.filename,
+    )
+
+
+@app.route("/download_case_excel/<ack_no>")
+@login_required
+def download_case_excel(ack_no):
+    """Download the original uploaded Excel for a case — available to the owning
+    officer AND to admins (case access enforced). Keyed by acknowledgement number,
+    so it works from the graph toolbar without needing the internal file id."""
+    ack_no = str(ack_no).strip()
+    check_case_access(ack_no)
+    row = (
+        db.session.query(UploadedFile)
+        .join(Transaction, Transaction.upload_id == UploadedFile.id)
+        .filter(Transaction.ack_no == ack_no)
+        .order_by(UploadedFile.upload_time.desc())
+        .first()
+    )
+    if not row or not row.data:
+        flash("No uploaded Excel found for this case.", "warning")
+        return redirect(url_for("role_home"))
+    log_usage("download_case_excel", filename=row.filename, ack_no=ack_no)
+    return send_file(
+        io.BytesIO(row.data),
+        mimetype=row.mimetype or "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=row.filename,
     )
 
 
@@ -5022,6 +5141,7 @@ def download_fundtrail_pdf():
         buffer.seek(0)
 
         filename = f"FundTrail_{ack_no}.pdf"
+        log_usage("download_fundtrail_pdf", filename=filename, ack_no=ack_no)
         return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name=filename)
 
     except Exception as e:
@@ -5470,6 +5590,18 @@ def audit_logs():
     f_user = sanitize_text(request.args.get("user", ""), 100)
     f_action = sanitize_text(request.args.get("action", ""), 100)
     f_ack = sanitize_text(request.args.get("ack", ""), 100)
+    # Date/time range filter — values come from <input type="datetime-local"> ("from"/"to").
+    f_from = sanitize_text(request.args.get("from", ""), 40)
+    f_to = sanitize_text(request.args.get("to", ""), 40)
+
+    def _parse_audit_dt(s):
+        for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(s, fmt)
+            except ValueError:
+                continue
+        return None
+
     q = UsageLog.query
     if f_user:
         q = q.filter(UsageLog.username.ilike(f"%{f_user}%"))
@@ -5477,6 +5609,12 @@ def audit_logs():
         q = q.filter(UsageLog.action.ilike(f"%{f_action}%"))
     if f_ack:
         q = q.filter(UsageLog.ack_no.ilike(f"%{f_ack}%"))
+    _dt_from = _parse_audit_dt(f_from) if f_from else None
+    _dt_to = _parse_audit_dt(f_to) if f_to else None
+    if _dt_from:
+        q = q.filter(UsageLog.timestamp >= _dt_from)
+    if _dt_to:
+        q = q.filter(UsageLog.timestamp <= _dt_to)
     total = q.count()
     logs = q.order_by(UsageLog.timestamp.desc()).offset((page - 1) * AUDIT_PAGE_SIZE).limit(AUDIT_PAGE_SIZE).all()
     pages = max((total + AUDIT_PAGE_SIZE - 1) // AUDIT_PAGE_SIZE, 1)
@@ -5490,6 +5628,8 @@ def audit_logs():
         f_user=f_user,
         f_action=f_action,
         f_ack=f_ack,
+        f_from=f_from,
+        f_to=f_to,
         actions=sorted(actions),
     )
 

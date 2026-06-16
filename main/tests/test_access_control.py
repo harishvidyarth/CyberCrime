@@ -229,6 +229,57 @@ with app.app_context():
         "old split file renamed to .migrated", os.path.exists(_poh_old + ".migrated") and not os.path.exists(_poh_old)
     )
 
+print("\n── Refund status survives a bank re-upload (bug-guard) ──")
+with app.app_context():
+    ufr = UploadedFile(filename="reup.xlsx", uploader="off_a")
+    db.session.add(ufr)
+    db.session.commit()
+    db.session.add(
+        Transaction(
+            ack_no="REUP-1", layer=1, from_account="111111111", to_account="900000001",
+            amount=5000.0, txn_id="TXR1", put_on_hold_txn_id="UTR-REUP-1", put_on_hold_amount=5000.0,
+            upload_id=ufr.id,
+        )
+    )
+    if not Complaint.query.filter_by(ack_no="REUP-1").first():
+        db.session.add(Complaint(ack_no="REUP-1", file_name="reup.xlsx", uploaded_by=A_ID, assigned_to=A_ID))
+    db.session.commit()
+
+# Officer A records a refund through the real route (persists to POHRefundDetails).
+r = a_c.post(
+    "/save_hold_refund",
+    json={"ack_no": "REUP-1", "hold_txn_id": "UTR-REUP-1",
+          "refund_status": "Refunded", "refund_amount": 5000.0, "court_order_date": "2026-06-01"},
+)
+check("officer can save refund status (200)", r.status_code == 200)
+with app.app_context():
+    _p = POHRefundDetails.query.filter_by(ack_no="REUP-1", txn_id="UTR-REUP-1").first()
+    check("refund status persisted to POHRefundDetails", bool(_p) and _p.refund_status == "Refunded")
+
+# Simulate the bank re-uploading a new Excel for the same ACK: the upload purges and
+# re-creates the Transaction rows with blank refund fields. The persistent store must
+# NOT be touched, so the previous refund status must survive and re-appear on reload.
+with app.app_context():
+    Transaction.query.filter_by(ack_no="REUP-1").delete()
+    db.session.commit()
+    ufr2 = UploadedFile(filename="reup_v2.xlsx", uploader="off_a")
+    db.session.add(ufr2)
+    db.session.commit()
+    db.session.add(
+        Transaction(
+            ack_no="REUP-1", layer=1, from_account="111111111", to_account="900000001",
+            amount=5000.0, txn_id="TXR1", put_on_hold_txn_id="UTR-REUP-1", put_on_hold_amount=5000.0,
+            refund_status=None, refund_amount=None, court_order_date=None, upload_id=ufr2.id,
+        )
+    )
+    db.session.commit()
+    _p2 = POHRefundDetails.query.filter_by(ack_no="REUP-1", txn_id="UTR-REUP-1").first()
+    check("POHRefundDetails survives the Transaction purge", bool(_p2) and _p2.refund_status == "Refunded")
+
+# End-to-end: reloading the graph restores the refund status onto the fresh rows.
+gd = a_c.get("/graph_data/REUP-1").get_data(as_text=True)
+check("re-uploaded case still reports 'Refunded' in graph data", "Refunded" in gd)
+
 print()
 if FAILS:
     print(f"❌ {len(FAILS)} CHECK(S) FAILED: {FAILS}")

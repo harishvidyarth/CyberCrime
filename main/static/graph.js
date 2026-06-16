@@ -513,6 +513,124 @@ function showHoldFilterMenu(button) {
   document.addEventListener('click', holdFilterDocHandler);
 }
 
+// ── Repeated accounts ──────────────────────────────────────────────────────
+// A "repeated account" is the SAME account number that appears as a node in TWO
+// OR MORE distinct positions of the fund trail — i.e. a mule / intermediary that
+// the money passes through more than once (across branches or layers). A normal
+// SPLIT (one account sending onward to several children) leaves that account as a
+// SINGLE node, so it is correctly NOT flagged here. Computed once per loaded tree
+// (the set never changes when nodes are merely expanded/collapsed).
+let repeatedAccounts = new Set();
+
+function computeRepeatedAccounts(root) {
+  const counts = new Map();
+  // Start below the root so the ACK/root node itself is never counted; every node
+  // visited from here is a real account (depth >= 1).
+  const stack = [];
+  if (root) {
+    if (root.children) stack.push(...root.children);
+    if (root._children) stack.push(...root._children);
+  }
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node) continue;
+    const name = node.data && node.data.name ? String(node.data.name).trim() : '';
+    if (name && name !== 'N/A' && name.toUpperCase() !== 'NA') {
+      counts.set(name, (counts.get(name) || 0) + 1);
+    }
+    if (node.children) for (const k of node.children) stack.push(k);
+    if (node._children) for (const k of node._children) stack.push(k);
+  }
+  const repeated = new Set();
+  counts.forEach((c, name) => { if (c >= 2) repeated.add(name); });
+  return repeated;
+}
+
+// Per-account detail for the Repeated Accounts list: how many positions an account
+// occupies and in which layers / banks. Same traversal/definition as the purple
+// marking, so the list and the marking are always consistent.
+function computeRepeatedAccountDetails(root) {
+  const map = new Map(); // name -> {count, layers:Set, banks:Set}
+  const stack = [];
+  if (root) {
+    if (root.children) stack.push(...root.children);
+    if (root._children) stack.push(...root._children);
+  }
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node) continue;
+    const d = node.data || {};
+    const name = d.name ? String(d.name).trim() : '';
+    if (name && name !== 'N/A' && name.toUpperCase() !== 'NA') {
+      let e = map.get(name);
+      if (!e) { e = { count: 0, layers: new Set(), banks: new Set() }; map.set(name, e); }
+      e.count += 1;
+      if (d.layer != null && d.layer !== '') e.layers.add(d.layer);
+      if (d.bank) e.banks.add(d.bank);
+    }
+    if (node.children) for (const k of node.children) stack.push(k);
+    if (node._children) for (const k of node._children) stack.push(k);
+  }
+  const rows = [];
+  map.forEach((e, name) => {
+    if (e.count >= 2) {
+      rows.push({
+        account: name,
+        count: e.count,
+        layers: [...e.layers].sort((a, b) => Number(a) - Number(b)),
+        banks: [...e.banks],
+      });
+    }
+  });
+  rows.sort((a, b) => b.count - a.count);
+  return rows;
+}
+
+// Button handler: open a list modal (like Put-on-Hold) of the repeated accounts.
+// It does NOT mass-expand/redraw the tree (which made nodes appear to "vanish");
+// the consistent purple marking stays as-is, and each row's Locate button expands
+// to that account on demand. Returns the count for the toast.
+function findRepeatedAccounts() {
+  if (!currentRoot) return 0;
+  repeatedAccounts = computeRepeatedAccounts(currentRoot); // keep marking in sync
+  const rows = computeRepeatedAccountDetails(currentRoot);
+
+  const tbody = document.getElementById('repeatTableBody');
+  const empty = document.getElementById('repeatEmpty');
+  const overlay = document.getElementById('repeatModalOverlay');
+  if (tbody) {
+    tbody.innerHTML = '';
+    rows.forEach((r, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        `<td style="padding:6px 10px;">${i + 1}</td>` +
+        `<td style="padding:6px 10px;font-family:monospace;">${escapeHtml(r.account)}</td>` +
+        `<td style="padding:6px 10px;">${escapeHtml(r.banks.join(', ') || '—')}</td>` +
+        `<td style="padding:6px 10px;text-align:center;">${r.count}</td>` +
+        `<td style="padding:6px 10px;">${escapeHtml(r.layers.join(', ') || '—')}</td>` +
+        `<td style="padding:6px 10px;"></td>`;
+      const btn = document.createElement('button');
+      btn.textContent = 'Locate';
+      btn.style.cssText =
+        'background:#7c3aed;color:#fff;border:none;padding:4px 12px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;';
+      btn.onclick = () => locateRepeatedAccount(r.account);
+      tr.lastElementChild.appendChild(btn);
+      tbody.appendChild(tr);
+    });
+  }
+  if (empty) empty.style.display = rows.length ? 'none' : 'block';
+  if (overlay) overlay.style.display = 'flex';
+  return rows.length;
+}
+
+// From a Repeated Accounts list row: close the modal, expand to that account and
+// highlight it (reuses the hold-account expand/highlight machinery).
+function locateRepeatedAccount(acc) {
+  const overlay = document.getElementById('repeatModalOverlay');
+  if (overlay) overlay.style.display = 'none';
+  if (typeof expandHoldAccount === 'function') expandHoldAccount(acc);
+}
+
 function findPathToAccount(accountNumber) {
   if (!currentRoot || !accountNumber) return null;
   const target = String(accountNumber).trim();
@@ -682,6 +800,9 @@ fetch(`/graph_data/${ackNo}`)
       child.data.victim_label = `Victim ${count++}`;
     });
     currentRoot = root;
+    // Flag mule/intermediary accounts that re-appear in the trail (computed once;
+    // stable across expand/collapse). The fill logic colours these nodes purple.
+    repeatedAccounts = computeRepeatedAccounts(root);
     populateBranchNames(root).then(() => {
       drawTree(root);
       setTimeout(() => drawTree(root), 80);
@@ -758,60 +879,75 @@ function toggleCollapse(d) {
  * When expanded, every non-burst node reveals its children.
  * When collapsed, we hide children for all non-root nodes.
  */
+// Guards a reveal animation so rapid re-clicks don't start two loops at once.
+let expandAllAnimating = false;
+
 function toggleExpandAllNodes() {
   if (!currentRoot) return false;
 
-  // Guard: expanding EVERY node on a huge case draws thousands of boxes at once
-  // and freezes the browser. Count first; if too many, warn instead of hanging.
-  function countAll(node) {
-    if (!node) return 0;
-    let total = 1;
-    if (!node.burst) {
-      const kids = node.children || node._children || [];
-      for (const k of kids) total += countAll(k);
-    }
-    return total;
-  }
-  const EXPAND_LIMIT = 400;
-  if (!expandAllActive) {
-    const total = countAll(currentRoot);
-    if (total > EXPAND_LIMIT) {
-      alert('This case has ' + total + ' accounts — expanding all at once would freeze the browser.\n\n' +
-            'Instead: click a node to open just that branch, or use the search box / Statewise Summary to navigate.');
-      return false;
-    }
-  }
-
   expandAllActive = !expandAllActive;
 
-  const applyState = (node, expand) => {
-    if (!node) return;
-
-    // Skip burst nodes to respect existing UX rule
-    if (node.depth > 0 && !node.burst) {
-      if (expand) {
-        if (node._children) node.children = node._children;
-      } else {
-        if (node.children) node._children = node.children;
-        node.children = null;
-      }
-    }
-
-    // Traverse using whichever children collection exists
-    const next = node.children || node._children || [];
-    next.forEach(child => applyState(child, expand));
-  };
-
-  applyState(currentRoot, expandAllActive);
-  drawTree(currentRoot);
-
-  // Update button title to reflect the opposite action
   const btn = document.getElementById('expandAllBtn');
   if (btn) {
     btn.title = expandAllActive ? 'Collapse All Nodes' : 'Expand All Nodes';
     btn.setAttribute('aria-label', btn.title);
   }
 
+  // ── COLLAPSE: cheap (fewer nodes to draw), do it in one pass. Also flips
+  //    expandAllActive=false, which signals any in-flight expand animation to stop.
+  if (!expandAllActive) {
+    const collapse = (node) => {
+      if (!node) return;
+      const kids = node.children || node._children || [];
+      kids.forEach(collapse);
+      if (node.children) {
+        node._children = node.children;
+        node.children = null;
+      }
+    };
+    (currentRoot.children || []).forEach(collapse);
+    drawTree(currentRoot);
+    return expandAllActive;
+  }
+
+  // ── EXPAND: reveal ONE depth-level per animation frame instead of opening the
+  //    whole tree synchronously (which froze the browser on large cases). Each pass
+  //    opens the shallowest still-collapsed nodes, redraws, then schedules the next
+  //    pass — so a big trail unfolds smoothly, layer by layer, and stays responsive.
+  if (expandAllAnimating) return expandAllActive;  // a reveal is already running
+  expandAllAnimating = true;
+
+  const revealNextLayer = () => {
+    if (!expandAllActive) { expandAllAnimating = false; return; }  // user collapsed mid-run
+
+    let openedAny = false;
+    const queue = [currentRoot];
+    while (queue.length) {
+      const node = queue.shift();
+      if (!node) continue;
+      // Respect the burst (20+ fan-out) rule — never auto-expand those.
+      if (node._children && !node.burst) {
+        node.children = node._children;
+        node._children = null;
+        openedAny = true;
+        // Its freshly revealed children are handled on the NEXT pass, so the
+        // tree grows one level at a time rather than all at once.
+        continue;
+      }
+      const kids = node.children || [];
+      for (const k of kids) queue.push(k);
+    }
+
+    drawTree(currentRoot);
+
+    if (openedAny) {
+      requestAnimationFrame(() => setTimeout(revealNextLayer, 60));
+    } else {
+      expandAllAnimating = false;  // nothing left to open
+    }
+  };
+
+  revealNextLayer();
   return expandAllActive;
 }
 
@@ -866,6 +1002,10 @@ function drawTree(root) {
       .attr('height', boxHeight)
       .attr('rx', 14)
       .attr('fill', d => {
+        // Mule/intermediary accounts that recur in the trail are marked purple so
+        // the IO can spot reuse at a glance (see computeRepeatedAccounts).
+        const acct = d.data && d.data.name ? String(d.data.name).trim() : '';
+        if (acct && repeatedAccounts.has(acct)) return '#7c3aed';
         const isLeafNode = !d.children && !d._children;
         if (isLeafNode && !d.burst) return '#15803d';
         return layerColors[d.data.layer] || '#ccc';
@@ -970,6 +1110,20 @@ function drawTree(root) {
           .style("font-size", "12px")
           .style("fill", "#000")
           .text(`Amt: ₹${amount}`);
+      }
+
+      // For Put-on-Hold accounts, show the refund status as plain text inside the box
+      // (single neutral colour — no colour-coding) so the IO sees it without drilling in.
+      if (d.data.hold_info) {
+        n.append("text")
+          .attr("class", "refund-text")
+          .attr("x", 0)
+          .attr("y", 54)
+          .attr("text-anchor", "middle")
+          .style("font-size", "11px")
+          .style("font-weight", "700")
+          .style("fill", "#1f2937")
+          .text(`Refund: ${d.data.hold_info.refund_status || 'Not Refunded'}`);
       }
 
     }
@@ -1089,6 +1243,10 @@ function drawTree(root) {
           html += `<strong>Put on hold Acc no:</strong> ${escapeHtml(d.data.name || 'N/A')}<br>`;
           html += `<strong>Put on hold by:</strong> ${escapeHtml(d.data.bank || 'N/A')}<br>`;
           html += `<strong>Put on hold Amount:</strong> ₹${escapeHtml(d.data.hold_info.amount)}<br>`;
+          html += `<strong>Refund Status:</strong> ${escapeHtml(d.data.hold_info.refund_status || 'Not Refunded')}<br>`;
+          if (d.data.hold_info.refund_amount != null && String(d.data.hold_info.refund_amount).trim() !== '') {
+            html += `<strong>Refund Amount:</strong> ₹${escapeHtml(d.data.hold_info.refund_amount)}<br>`;
+          }
           // Court/Refund fields styled similarly to the right-side modal; hidden until icon click
           html += `<div id="${formSectionId}" style="display:none; margin-top:12px; padding:10px 0; border-top:1px solid #e5e7eb;">`;
           html += `<div style="margin-bottom:8px;"><label style="font-weight:600; display:block; margin-bottom:4px;">Court Order Date:</label><input id="holdCourtDate" type="date" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px;"></div>`;
@@ -1342,7 +1500,11 @@ function drawTree(root) {
             `<div class="detail-row"><span class="label">Amount:</span> ₹${escapeHtml(d.data.amt || '0.0')}</div>` +
             `<div class="detail-row"><span class="label">Disputed:</span> ₹${escapeHtml(d.data.disputed || '0.0')}</div>`;
 
-          if (d.data.name && typeof window.openLetterModal === 'function' && !isViewer) {
+          // Only show the letter button where a letter is actually meaningful:
+          // a Put-on-Hold account (Layer-1 letters are generated from the toolbar's
+          // per-bank button). For ordinary accounts the button is hidden, so there's
+          // no empty-ZIP / "Bad Request" path.
+          if (d.data.name && d.data.hold_info && typeof window.openLetterModal === 'function' && !isViewer) {
             baseHtml += `
             <div style="text-align:center; margin-top:15px; margin-bottom: 5px;">
               <button class="generate-path-letters-btn" style="background:#10b981; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold; width:100%; box-shadow:0 2px 4px rgba(0,0,0,0.1);" data-account="${escapeHtml(d.data.name)}">

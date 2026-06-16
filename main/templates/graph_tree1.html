@@ -410,6 +410,15 @@
       color: #111827;
     }
 
+    /* Transient click feedback applied to ANY toolbar icon button (added by JS for
+       ~0.9s on click, then removed) so every button reacts the same way. */
+    .icon-btn.btn-flash {
+      background: #e0e7ff;
+      border-color: #6366f1;
+      transition: background .12s ease, border-color .12s ease;
+    }
+    .icon-btn.btn-flash svg { stroke: #4338ca; }
+
     .btn-back-header {
       display: inline-block;
       background-color: #007bff;
@@ -761,11 +770,13 @@
       <input id="headerSearch" class="search-input" type="text" placeholder="Search account number" list="accountList">
       <datalist id="accountList"></datalist>
       <button id="legendToggle" class="icon-btn" title="Show Legend" aria-label="Show Legend"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2z"/><path d="M22 4h-6a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"/></svg></button>
+      <a id="downloadExcelBtn" class="icon-btn" title="Download Case Excel" aria-label="Download Case Excel" href="{{ url_for('download_case_excel', ack_no=ack_no) }}" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:inherit;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></a>
       <button id="statewiseSummaryBtn" class="icon-btn state" title="Statewise Summary"
         aria-label="Statewise Summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="14"/><line x1="12" y1="20" x2="12" y2="8"/><line x1="18" y1="20" x2="18" y2="4"/></svg></button>
       <button id="expandAllBtn" class="icon-btn expand" title="Expand All Nodes"
         aria-label="Expand All Nodes"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
       <button id="putOnHoldBtn" class="icon-btn" title="Put on Hold" aria-label="Put on Hold"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>
+      <button id="repeatAccountsBtn" class="icon-btn" title="Find Repeated Accounts" aria-label="Find Repeated Accounts"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
       <button id="atmWithdrawalBtn" class="icon-btn" title="ATM Withdrawal" aria-label="ATM Withdrawal"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><path d="M6 15h2"/></svg></button>
       <button id="layer1LettersBtn" class="icon-btn" title="Generate Layer 1 Letters (Per Bank)"
         aria-label="Generate Layer 1 Letters (Per Bank)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="5 6 12 3 19 6"/><line x1="4" y1="10" x2="4" y2="21"/><line x1="20" y1="10" x2="20" y2="21"/><line x1="8" y1="14" x2="8" y2="17"/><line x1="12" y1="14" x2="12" y2="17"/><line x1="16" y1="14" x2="16" y2="17"/></svg></button>
@@ -833,6 +844,42 @@
       <h2>Statewise Summary - Ack No: {{ ack_no }}</h2>
       <div id="summaryContent">
         <p>Loading summary...</p>
+      </div>
+    </div>
+
+    <!-- Repeated Accounts Modal -->
+    <div id="repeatModalOverlay" class="hold-modal-overlay" aria-hidden="true">
+      <div class="hold-modal" role="dialog" aria-modal="true" aria-labelledby="repeatModalTitle">
+        <div class="hold-modal-header">
+          <div class="hold-modal-header-title">
+            <h3 id="repeatModalTitle" style="margin:0;">Repeated Accounts</h3>
+          </div>
+          <div class="hold-modal-header-actions">
+            <button id="closeRepeatModal" class="hold-modal-close" aria-label="Close">×</button>
+          </div>
+        </div>
+        <div style="padding:16px 20px;overflow:auto;">
+          <p style="margin:0 0 12px 0;color:#475569;font-size:13px;">
+            Accounts appearing in <b>more than one place</b> of the trail (possible mule reuse).
+            Click <b>Locate</b> to expand to an account and highlight it.
+          </p>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="background:#0a2e63;color:#fff;text-align:left;">
+                <th style="padding:8px 10px;">#</th>
+                <th style="padding:8px 10px;">Account</th>
+                <th style="padding:8px 10px;">Bank</th>
+                <th style="padding:8px 10px;text-align:center;">Times seen</th>
+                <th style="padding:8px 10px;">Layers</th>
+                <th style="padding:8px 10px;"></th>
+              </tr>
+            </thead>
+            <tbody id="repeatTableBody"></tbody>
+          </table>
+          <div id="repeatEmpty" style="display:none;padding:18px;text-align:center;color:#64748b;">
+            No repeated accounts found in this trail.
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1477,6 +1524,35 @@
       };
     }
 
+    // Repeated Accounts icon — finds mule/intermediary accounts that recur in the
+    // trail, reveals them, and marks them purple (see graph.js: findRepeatedAccounts).
+    const repeatAccountsBtn = document.getElementById("repeatAccountsBtn");
+    if (repeatAccountsBtn) {
+      repeatAccountsBtn.onclick = () => {
+        const n = (typeof findRepeatedAccounts === 'function') ? findRepeatedAccounts() : 0;
+        showIconName(n ? (n + " Repeated Account" + (n > 1 ? "s" : "")) : "No Repeated Accounts");
+      };
+    }
+
+    // Close wiring for the Repeated Accounts list modal.
+    const closeRepeatModalBtn = document.getElementById("closeRepeatModal");
+    const repeatOverlayEl = document.getElementById("repeatModalOverlay");
+    if (closeRepeatModalBtn && repeatOverlayEl) {
+      closeRepeatModalBtn.onclick = () => { repeatOverlayEl.style.display = "none"; };
+      repeatOverlayEl.addEventListener("click", (e) => {
+        if (e.target === repeatOverlayEl) repeatOverlayEl.style.display = "none";
+      });
+    }
+
+    // Consistent click feedback: briefly flash the active colour on ANY toolbar
+    // icon button when clicked (delegated, so every button behaves the same).
+    document.addEventListener("click", (e) => {
+      const b = e.target.closest && e.target.closest(".icon-btn");
+      if (!b) return;
+      b.classList.add("btn-flash");
+      setTimeout(() => b.classList.remove("btn-flash"), 900);
+    });
+
     // Hold modal header icons (letter generation / KYC details)
     const holdLetterBtn = document.getElementById("holdLetterBtn");
     if (holdLetterBtn) {
@@ -1705,10 +1781,16 @@
         });
 
         if (!res.ok) {
-          const errText = await res.text();
-          console.error('Failed to generate letters', res.statusText, errText);
-          alert(`Failed to generate letters: ${res.statusText}`);
-          throw new Error(res.statusText);
+          // Show the REAL backend message (e.g. invalid phone/email, no accounts) ONCE,
+          // then stop — don't throw, or the catch below would pop a second alert.
+          let errMsg = res.statusText || 'Request failed';
+          try {
+            const errData = await res.json();
+            errMsg = errData.error || errData.message || errMsg;
+          } catch (_) { /* response body wasn't JSON */ }
+          console.error('Failed to generate letters:', errMsg);
+          alert(errMsg);
+          return;
         }
 
         const blob = await res.blob();
@@ -1960,34 +2042,33 @@
 
     <!-- Header with close button -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-      <h3 style="margin: 0; font-size: 16px; font-weight: 600; color: #1d4ed8;">
-        📘 Fund Flow Graph Legend
+      <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #1d4ed8;">
+        📘 Fund Flow Graph — Legend
       </h3>
       <button id="closeLegendBtn"
         style="font-size: 20px; background: none; border: none; color: #9ca3af; cursor: pointer;">×</button>
     </div>
 
-    <!-- Section: Legend Items -->
+    <!-- Section: Node markers -->
+    <p style="margin: 0 0 10px 0; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: .04em; font-size: 12px;">Node markers</p>
     <ul style="padding-left: 20px; margin: 0;">
-      <!-- <li style="margin-bottom: 10px;"><strong>📥 Incoming:</strong> Received funds from multiple sources.</li> -->
-      <li style="margin-bottom: 10px;"><strong>🔁 Repeater:</strong> Transactions Between Accounts.</li>
-      <li style="margin-bottom: 10px;"><strong>🏧 ATM:</strong> ATM withdrawal involved.</li>
-      <li style="margin-bottom: 10px;"><strong>🎫 Cheque:</strong> Transaction via cheque.</li>
-      <li style="margin-bottom: 10px;"><strong>🔒 Hold:</strong> Amount currently on hold.</li>
-      <li style="margin-bottom: 10px;"><strong>💥 Burst:</strong> Sends to 20+ accounts (disabled expansion).</li>
-      <li style="margin-bottom: 10px;"><strong>🖨️ Print:</strong> Print the transection detials for the hold amount.
-      </li>
+      <li style="margin-bottom: 10px;"><strong>🔁 Repeater:</strong> Multiple transactions between the same two accounts.</li>
+      <li style="margin-bottom: 10px;"><strong>🏧 ATM:</strong> Funds withdrawn from this account via ATM.</li>
+      <li style="margin-bottom: 10px;"><strong>🎫 Cheque:</strong> Funds withdrawn from this account via cheque.</li>
+      <li style="margin-bottom: 10px;"><strong>🔒 Hold:</strong> Funds at this account are currently frozen (on hold).</li>
+      <li style="margin-bottom: 10px;"><strong>💥 Burst:</strong> Account forwards funds to 20+ accounts; auto-expansion is disabled for performance.</li>
+      <li style="margin-bottom: 10px;"><strong><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#7c3aed;vertical-align:middle;margin-right:2px;"></span> Repeated account:</strong> Same account recurs in 2+ places of the trail (possible mule). Use the Repeated Accounts button to find them.</li>
     </ul>
 
     <!-- Dashed Divider -->
     <hr style="margin: 16px 0; border: none; border-top: 1px dashed #d1d5db;">
 
-    <!-- Section: Interaction -->
-    <p style="margin: 0 0 8px 0; font-weight: 600; color: #374151;">💡 Interaction</p>
+    <!-- Section: Interactions -->
+    <p style="margin: 0 0 10px 0; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: .04em; font-size: 12px;">Interactions</p>
     <ul style="padding-left: 20px; margin: 0;">
-      <li style="margin-bottom: 8px;"><strong>🔘 Single Click:</strong> Expand or Collapse</li>
-      <li style="margin-bottom: 8px;"><strong>🟠 Double Click:</strong> View full KYC & Transaction</li>
-      <li style="margin-bottom: 4px;"><strong>🔘 Icon Click:</strong> View ATM/Cheque/Hold info</li>
+      <li style="margin-bottom: 8px;"><strong>Single click:</strong> Expand or collapse the account's onward transfers.</li>
+      <li style="margin-bottom: 8px;"><strong>Double click:</strong> Open the account's full KYC &amp; transaction details.</li>
+      <li style="margin-bottom: 4px;"><strong>Icon click:</strong> Open the ATM / Cheque / Hold details for that node.</li>
     </ul>
 
   </div>
