@@ -1912,13 +1912,14 @@ function downloadHoldGraphPdf(path, ackNo) {
   };
 
   // Send to backend
-  // Note: csrfToken must be available globally (typically defined in layout)
+  // Always send the CSRF token (fall back to the hidden form field if the global is unset).
+  const _csrf = (typeof csrfToken !== 'undefined' && csrfToken)
+    ? csrfToken
+    : ((document.querySelector('input[name="csrf_token"]') || {}).value || '');
   const headers = {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'X-CSRFToken': _csrf
   };
-  if (typeof csrfToken !== 'undefined') {
-    headers['X-CSRFToken'] = csrfToken;
-  }
 
   fetch('/download_fundtrail_pdf', {
     method: 'POST',

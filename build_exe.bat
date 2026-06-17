@@ -9,9 +9,13 @@ cd /d "%~dp0"
 
 echo Installing build dependencies (PyInstaller + app requirements)...
 python -m pip install --upgrade pip
-python -m pip install pyinstaller
-python -m pip install pywebview
+if %errorlevel% neq 0 exit /b %errorlevel%
+python -m pip install pyinstaller==6.11.1
+if %errorlevel% neq 0 exit /b %errorlevel%
+python -m pip install pywebview==5.1.0
+if %errorlevel% neq 0 exit /b %errorlevel%
 python -m pip install -r main\requirements.txt
+if %errorlevel% neq 0 exit /b %errorlevel%
 
 echo.
 echo Building FundTrail.exe (this can take a few minutes)...

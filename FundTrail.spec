@@ -36,6 +36,7 @@ for _pkg in (
         hiddenimports += collect_submodules(_pkg)
     except Exception:
         pass
+hiddenimports += ['ifsc_utils', 'models']  # local modules imported by app.py
 
 a = Analysis(
     ['run_exe.py'],
@@ -62,7 +63,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
-    console=True,  # keep a console so the officer sees the URL and any startup error
+    console=False,  # standalone windowed app (no console); creds shown via dialog
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,

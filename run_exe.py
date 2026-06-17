@@ -1,10 +1,9 @@
 """Standalone launcher for the FundTrail .exe (single local laptop, offline).
 
-This is the PyInstaller entry point. It:
-  * pins a PERSISTENT data directory NEXT TO the .exe so the SQLite database
-    survives restarts (the bundled _MEIPASS temp dir is wiped when the app exits),
-  * provides a stable per-machine SECRET_KEY (the app refuses to start without one),
-  * starts the Flask app and opens the browser.
+PyInstaller entry point. It pins a STABLE per-user data directory (so the SQLite
+database — and the login — persist across EXE rebuilds/moves), provides a stable
+per-machine SECRET_KEY, shows the first-login credentials in a dialog, and opens the
+app in a native standalone window (no browser tab, no console).
 
 NOT for shared / networked use — embedded SQLite is single-machine only.
 """
@@ -16,21 +15,46 @@ import threading
 import time
 import webbrowser
 
-# Folder the app runs from: the .exe's own directory when frozen, else this file's dir.
+_PORT = int(os.environ.get("PORT", "5050"))
+_URL = f"http://127.0.0.1:{_PORT}"
+
+
+def _default_data_dir():
+    """Stable per-user data dir, identical to app.py's resolver, so the EXE always
+    finds the same database regardless of where the executable lives."""
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+    return os.path.join(base, "FundTrail")
+
+
+def _msgbox(text, title="FundTrail"):
+    """Show a native dialog on Windows (the EXE has no console); print elsewhere."""
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(0, text, title, 0x40)  # MB_ICONINFORMATION
+            return
+        except Exception:
+            pass
+    print(f"{title}: {text}")
+
+
+_DATA_DIR = os.environ.get("FUNDTRAIL_DATA_DIR") or _default_data_dir()
+try:
+    os.makedirs(_DATA_DIR, exist_ok=True)
+except PermissionError:
+    _DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "FundTrail_data")
+    os.makedirs(_DATA_DIR, exist_ok=True)
+os.environ["FUNDTRAIL_DATA_DIR"] = _DATA_DIR
+
 if getattr(sys, "frozen", False):
-    _APP_DIR = os.path.dirname(sys.executable)
-    # Bundled python modules (app.py, models.py, ifsc_utils.py, ...) live under _MEIPASS.
     sys.path.insert(0, sys._MEIPASS)
 else:
-    _APP_DIR = os.path.dirname(os.path.abspath(__file__))
-    sys.path.insert(0, os.path.join(_APP_DIR, "main"))
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "main"))
 
-# Persistent data dir beside the exe (DB, INITIAL_CREDENTIALS.txt, logs, secret key).
-_DATA_DIR = os.path.join(_APP_DIR, "FundTrail_data")
-os.makedirs(_DATA_DIR, exist_ok=True)
-os.environ.setdefault("FUNDTRAIL_DATA_DIR", _DATA_DIR)
-
-# Stable per-machine SECRET_KEY, persisted alongside the data.
 if not os.environ.get("SECRET_KEY"):
     _key_file = os.path.join(_DATA_DIR, "secret.key")
     if os.path.exists(_key_file):
@@ -42,60 +66,48 @@ if not os.environ.get("SECRET_KEY"):
             _f.write(_k)
         os.environ["SECRET_KEY"] = _k
 
-# Local HTTP on a single laptop (no HTTPS reverse proxy in front).
 os.environ.setdefault("SESSION_COOKIE_INSECURE", "true")
-os.environ.setdefault("PORT", "5050")
+os.environ.setdefault("PORT", str(_PORT))
 
 import app as _app  # noqa: E402  builds the Flask app + seeds the DB at import time
 
-_PORT = int(os.environ.get("PORT", "5050"))
-_URL = f"http://127.0.0.1:{_PORT}"
-
 
 def _show_initial_credentials():
-    """Print the first-login credentials prominently so they're never a mystery.
-    They exist (in INITIAL_CREDENTIALS.txt) only until the password is changed."""
+    """Show the first-login credentials while they exist. The file is removed when the
+    user changes their password (app.py), so this stops appearing after first login."""
     cred_file = os.path.join(_DATA_DIR, "INITIAL_CREDENTIALS.txt")
-    if os.path.exists(cred_file):
-        try:
-            with open(cred_file, "r", encoding="utf-8") as f:
-                body = f.read().strip()
-            print("\n" + "=" * 64)
-            print("  FIRST-LOGIN CREDENTIALS  (you must change them on first login)")
-            print("=" * 64)
-            print(body)
-            print("=" * 64 + "\n")
-        except Exception:
-            pass
+    if not os.path.exists(cred_file):
+        return
+    try:
+        with open(cred_file, "r", encoding="utf-8") as f:
+            body = f.read().strip()
+    except OSError:
+        return
+    _msgbox(body, "FundTrail — first-login credentials (change them on first login)")
 
 
 def _run_server():
-    _app.app.run(host="127.0.0.1", port=_PORT, debug=False, use_reloader=False)
+    try:
+        _app.app.run(host="127.0.0.1", port=_PORT, debug=False, use_reloader=False)
+    except OSError as exc:
+        _msgbox(f"FundTrail could not start on port {_PORT}.\nIt may already be running.\n\n{exc}",
+                "FundTrail — startup error")
+        os._exit(1)
 
 
 if __name__ == "__main__":
-    print(f"FundTrail is starting at {_URL}")
-    print(f"All data is stored locally in: {_DATA_DIR}")
     _show_initial_credentials()
-
-    # Serve Flask in the background; the main thread drives the desktop window.
-    threading.Thread(target=_run_server, daemon=True).start()
-    time.sleep(1.5)  # let the server bind before the window loads
-
-    # Prefer a real STANDALONE desktop window (no browser tab) via pywebview's native
-    # OS webview. Fall back to the browser if pywebview / a system webview is missing.
+    server_thread = threading.Thread(target=_run_server, daemon=True)
+    server_thread.start()
+    time.sleep(1.5)
     try:
-        import webview  # pywebview
+        import webview  # pywebview — native standalone window
+
         webview.create_window("FundTrail", _URL, width=1280, height=820)
         webview.start()
-    except Exception as exc:
-        print(f"Desktop window unavailable ({exc}); opening in your browser instead.")
+    except Exception:
         try:
             webbrowser.open(_URL)
         except Exception:
             pass
-        try:
-            while True:
-                time.sleep(3600)  # keep the process (and server) alive
-        except KeyboardInterrupt:
-            pass
+        server_thread.join()  # keep process + server alive (no console to wait on)

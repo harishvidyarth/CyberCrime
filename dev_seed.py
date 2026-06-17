@@ -61,14 +61,18 @@ def reset_account(role, username, password):
         user = User(username=username, role=role)
         db.session.add(user)
     user.role = role
+    # Always re-apply the known dev password: clear stored history + current hash first
+    # so the reuse-prevention policy can't reject it on a re-seed.
     try:
-        user.set_password(password)
-        status = "created" if created else "reset"
-    except ValueError as exc:
-        if "recent passwords" in str(exc):
-            status = "unchanged"  # already on this dev password
-        else:
-            raise
+        from models import PasswordHistory
+
+        if user.id is not None:
+            PasswordHistory.query.filter_by(user_id=user.id).delete()
+    except Exception:
+        pass
+    user.password_hash = None
+    user.set_password(password)
+    status = "created" if created else "reset"
     # Dev convenience: no forced change, no lockout, no 2FA on seeded accounts.
     user.must_change_password = False
     user.failed_login_attempts = 0
