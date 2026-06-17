@@ -66,7 +66,9 @@ git clone git@github.com:harishvidyarth/CyberCrime.git && cd CyberCrime
 fundtrail.bat                          :: builds + starts -> http://127.0.0.1:5050
 ```
 
-Get your first admin / officer password (random, per-machine):
+First login — the **same on every machine**, and you're forced to change it
+immediately: **`admin` / `Admin@123456`** (and **`officer` / `Officer@123456`**).
+The exact values are also saved here:
 
 ```bash
 docker compose exec fundtrail cat /data/INITIAL_CREDENTIALS.txt
@@ -110,11 +112,10 @@ cd main && python scripts\create_user.py
 python app.py                              :: -> http://127.0.0.1:5050
 ```
 
-`create_user.py` **prints** the admin & officer passwords and **saves** them to
-`data/INITIAL_CREDENTIALS.txt` (git-ignored). They are random and unique to your
-machine — there is no shared default. **Lost them?** Just run `create_user.py` again;
-it safely resets both accounts (your `.env` is never overwritten). You're forced to
-set your own password on first login anyway.
+First login is the **same known default on every machine** — **`admin` / `Admin@123456`**
+(and **`officer` / `Officer@123456`**) — and you're **forced to change it on first
+login**. The values are also saved to `data/INITIAL_CREDENTIALS.txt`. **Locked out?**
+Run `create_user.py` again to reset both accounts (your `.env` is never overwritten).
 
 **Every time after that (nth time):**
 
@@ -130,9 +131,10 @@ known dev passwords — dev machines only; see [`CREDENTIALS.md`](CREDENTIALS.md
 > **Port note:** on macOS, port **5000** is used by AirPlay Receiver, so we default to
 > **5050** via the `PORT` variable in `.env`. Set it to any free port.
 >
-> **Why is there no fixed default password?** A password committed to the repo would
-> be a security hole. Instead a fresh **random** password is generated on *your*
-> machine and printed/saved as described above.
+> **First-login password:** the same known default (`admin` / `Admin@123456`,
+> `officer` / `Officer@123456`) is used on every fresh install so you're never locked
+> out after a clone — and you're **forced to change it on first login**. To use a
+> different seed, set `SEED_ADMIN_PASSWORD` / `SEED_OFFICER_PASSWORD` before first run.
 
 ## 3. Database — SQLite (no setup)
 

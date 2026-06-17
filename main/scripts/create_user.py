@@ -99,7 +99,13 @@ def main():
         db.create_all()
 
         for username, role in accounts:
-            pw = strong_password()
+            # Use the SAME known default as the app's first-run seed so every
+            # reset / clone gives a consistent login (forced change on first login).
+            # Override with SEED_ADMIN_PASSWORD / SEED_OFFICER_PASSWORD if desired.
+            if username == "admin":
+                pw = os.environ.get("SEED_ADMIN_PASSWORD", "Admin@123456")
+            else:
+                pw = os.environ.get("SEED_OFFICER_PASSWORD", "Officer@123456")
             user = User.query.filter_by(username=username).first()
             if user is None:
                 user = User(username=username, role=role)

@@ -4728,8 +4728,15 @@ with app.app_context():
     if User.query.count() == 0:
         # Generate random initial passwords that meet complexity requirements
         # uses the module-level generate_secure_password() defined earlier (de-duplicated)
-        admin_password = generate_secure_password()
-        officer_password = generate_secure_password()
+        # Fixed, KNOWN first-login credentials so the same login works on every fresh
+        # clone / exe / container — users are never locked out by a random per-machine
+        # password. must_change_password (set below) forces a change on first login, so
+        # this default never persists. Override via SEED_ADMIN_PASSWORD / SEED_OFFICER_
+        # PASSWORD if you want different seeds. NOTE: this is a deliberate trade-off vs
+        # the random-password hardening (pentest FT-002) — acceptable for this offline,
+        # single-machine tool because of the forced change on first login.
+        admin_password = os.environ.get("SEED_ADMIN_PASSWORD", "Admin@123456")
+        officer_password = os.environ.get("SEED_OFFICER_PASSWORD", "Officer@123456")
 
         admin = User(username="admin", role="Admin", is_superadmin=True)
         admin.set_password(admin_password)
