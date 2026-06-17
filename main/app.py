@@ -208,6 +208,39 @@ except Exception:
     pass
 
 
+def _default_data_dir():
+    """A stable, per-user data directory independent of where the repo/EXE lives, so
+    the database (and therefore the login) survives re-clones, folder moves and EXE
+    rebuilds. Overridden by FUNDTRAIL_DATA_DIR (Docker sets it to /data)."""
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    else:
+        base = os.environ.get("XDG_DATA_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share")
+    return os.path.join(base, "FundTrail")
+
+
+secure_base = os.environ.get("FUNDTRAIL_DATA_DIR") or _default_data_dir()
+os.makedirs(secure_base, exist_ok=True)
+
+# One-time migration: copy an existing legacy repo-local data/ into the stable dir so
+# pre-existing installs keep their database and login (only when not overridden).
+if not os.environ.get("FUNDTRAIL_DATA_DIR"):
+    _legacy_base = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data"))
+    if os.path.isdir(_legacy_base) and _legacy_base != secure_base:
+        import shutil
+
+        for _f in (
+            "fundtrail.db", "INITIAL_CREDENTIALS.txt",
+            "poh_refund_details.db", "kyc_details.db", "ifsc_state_cache.json",
+        ):
+            _src, _dst = os.path.join(_legacy_base, _f), os.path.join(secure_base, _f)
+            if os.path.exists(_src) and not os.path.exists(_dst):
+                try:
+                    shutil.copy2(_src, _dst)
+                except OSError:
+                    pass
+
+
 class StripServerHeaderMiddleware:
     def __init__(self, app):
         self.app = app
@@ -310,7 +343,7 @@ except ImportError:  # pragma: no cover
     pass
 
 
-migrate = Migrate(app, db)
+migrate = Migrate(app, db, directory=resource_path("migrations"))
 
 # Cache for IFSC to state mappings to avoid repeated API calls
 ifsc_cache = {}
@@ -437,7 +470,7 @@ LOCKOUT_MINUTES = 15
 # Feature B12: force a password change after N days (0 disables expiry). Users with
 # no recorded password age (pre-feature accounts) are not retroactively forced.
 PASSWORD_MAX_AGE_DAYS = int(os.environ.get("PASSWORD_MAX_AGE_DAYS", "90"))
-IFSC_CACHE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ifsc_state_cache.json")
+IFSC_CACHE_FILE = os.path.join(secure_base, "ifsc_state_cache.json")
 ifsc_api_cache = {}
 
 # 2FA replay prevention: tracks (user_id, code) pairs that have already been accepted
@@ -661,9 +694,6 @@ if not SECRET_KEY:
         "and add it to your .env file."
     )
 app.config["SECRET_KEY"] = SECRET_KEY
-secure_base = os.environ.get("FUNDTRAIL_DATA_DIR")
-if not secure_base:
-    secure_base = os.path.join(os.path.dirname(app.root_path), "data")
 _ensure_secure_dir(secure_base)
 primary_db_path = os.path.join(secure_base, "fundtrail.db")
 # Legacy per-feature SQLite files. POH/KYC data now lives in the main DB; these paths
@@ -676,6 +706,23 @@ db_url = os.environ.get("DATABASE_URL")
 if not db_url:
     db_url = f"sqlite:///{primary_db_path}"
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True, "pool_recycle": 1800}
+
+# Concurrency: enable SQLite WAL + a per-connection busy timeout so several officers
+# can read/write at once without "database is locked". (No-op for a MySQL DATABASE_URL.)
+if db_url.startswith("sqlite"):
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    @event.listens_for(Engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, _record):
+        try:
+            cur = dbapi_connection.cursor()
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA busy_timeout=5000")
+            cur.close()
+        except Exception:
+            pass
 # Single database: POHRefundDetails and KYCDetails are plain tables in the main DB now
 # (no SQLALCHEMY_BINDS, so no cross-DB syncing and one consistent source of truth).
 
@@ -700,7 +747,7 @@ app.config["SESSION_COOKIE_NAME"] = "session"
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
 app.config["SESSION_REFRESH_EACH_REQUEST"] = False
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["UPLOAD_FOLDER"] = "uploads"
+app.config["UPLOAD_FOLDER"] = os.path.join(secure_base, "uploads")
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
 # Hard ceiling on any incoming request body — stops an oversized/malicious POST from
@@ -912,42 +959,6 @@ def generate_secure_password(length=16):
             return password
 
 
-def initialize_secure_users():
-    """Initialize users with secure random passwords if they don't exist."""
-
-    # Check if any users exist to avoid re-initialization
-    if User.query.first():
-        return
-
-    logger.info("Initializing users with secure random passwords...")
-
-    users_to_create = [("admin", "Admin"), ("officer", "Investigative Officer")]
-
-    created_credentials = []
-
-    for username, role in users_to_create:
-        if not User.query.filter_by(username=username).first():
-            password = generate_secure_password()
-            user = User(username=username, role=role)
-            user.set_password(password)
-            user.must_change_password = True
-            db.session.add(user)
-            created_credentials.append((username, password))
-            logger.info(f"User '{username}' created.")
-
-    db.session.commit()
-
-    if created_credentials:
-        print("\n" + "=" * 60)
-        print("SECURITY NOTICE: INITIAL PASSWORDS GENERATED")
-        print("=" * 60)
-        for username, pwd in created_credentials:
-            print(f"User: {username:<15} Password: {pwd}")
-        print("=" * 60)
-        print("Please copy these credentials immediately. They will not be shown again.")
-        print("You will be required to change the password on first login.\n")
-
-
 def migrate_split_dbs_into_main():
     """One-time, idempotent consolidation: import POH/KYC rows from the old per-feature
     SQLite files (poh_refund_details.db / kyc_details.db) into the main DB now that those
@@ -1101,6 +1112,10 @@ def change_password():
                 current_user.must_change_password = False
                 db.session.commit()
                 log_usage("change_password")
+                try:
+                    os.remove(os.path.join(secure_base, "INITIAL_CREDENTIALS.txt"))
+                except OSError:
+                    pass
                 flash("Password changed successfully.", "success")
                 # Forced change → log out so they re-authenticate with new password
                 if forced:
@@ -1119,7 +1134,7 @@ def change_password():
 # Brute-force throttle: only count actual POST login attempts, NOT page views/refreshes.
 # The per-account lockout (MAX_LOGIN_ATTEMPTS fails -> LOCKOUT_MINUTES, below) is the
 # primary defence; this per-IP cap is a secondary guard.
-@limiter.limit("10 per minute", exempt_when=lambda: request.method != "POST")
+@limiter.limit("30 per minute", exempt_when=lambda: request.method != "POST")
 def login():
     """Authenticate a user.
 
