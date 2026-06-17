@@ -48,17 +48,54 @@ os.environ.setdefault("PORT", "5050")
 
 import app as _app  # noqa: E402  builds the Flask app + seeds the DB at import time
 
+_PORT = int(os.environ.get("PORT", "5050"))
+_URL = f"http://127.0.0.1:{_PORT}"
 
-def _open_browser():
-    time.sleep(1.5)
-    try:
-        webbrowser.open("http://127.0.0.1:5050")
-    except Exception:
-        pass
+
+def _show_initial_credentials():
+    """Print the first-login credentials prominently so they're never a mystery.
+    They exist (in INITIAL_CREDENTIALS.txt) only until the password is changed."""
+    cred_file = os.path.join(_DATA_DIR, "INITIAL_CREDENTIALS.txt")
+    if os.path.exists(cred_file):
+        try:
+            with open(cred_file, "r", encoding="utf-8") as f:
+                body = f.read().strip()
+            print("\n" + "=" * 64)
+            print("  FIRST-LOGIN CREDENTIALS  (you must change them on first login)")
+            print("=" * 64)
+            print(body)
+            print("=" * 64 + "\n")
+        except Exception:
+            pass
+
+
+def _run_server():
+    _app.app.run(host="127.0.0.1", port=_PORT, debug=False, use_reloader=False)
 
 
 if __name__ == "__main__":
-    print("FundTrail is starting — open http://127.0.0.1:5050 in your browser.")
+    print(f"FundTrail is starting at {_URL}")
     print(f"All data is stored locally in: {_DATA_DIR}")
-    threading.Thread(target=_open_browser, daemon=True).start()
-    _app.app.run(host="127.0.0.1", port=int(os.environ.get("PORT", "5050")), debug=False)
+    _show_initial_credentials()
+
+    # Serve Flask in the background; the main thread drives the desktop window.
+    threading.Thread(target=_run_server, daemon=True).start()
+    time.sleep(1.5)  # let the server bind before the window loads
+
+    # Prefer a real STANDALONE desktop window (no browser tab) via pywebview's native
+    # OS webview. Fall back to the browser if pywebview / a system webview is missing.
+    try:
+        import webview  # pywebview
+        webview.create_window("FundTrail", _URL, width=1280, height=820)
+        webview.start()
+    except Exception as exc:
+        print(f"Desktop window unavailable ({exc}); opening in your browser instead.")
+        try:
+            webbrowser.open(_URL)
+        except Exception:
+            pass
+        try:
+            while True:
+                time.sleep(3600)  # keep the process (and server) alive
+        except KeyboardInterrupt:
+            pass

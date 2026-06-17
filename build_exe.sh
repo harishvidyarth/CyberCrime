@@ -13,6 +13,7 @@ cd "$(dirname "$0")"
 echo "Installing build dependencies (PyInstaller + app requirements)..."
 python3 -m pip install --upgrade pip
 python3 -m pip install pyinstaller
+python3 -m pip install pywebview
 python3 -m pip install -r main/requirements.txt
 
 echo ""

@@ -10,6 +10,7 @@ cd /d "%~dp0"
 echo Installing build dependencies (PyInstaller + app requirements)...
 python -m pip install --upgrade pip
 python -m pip install pyinstaller
+python -m pip install pywebview
 python -m pip install -r main\requirements.txt
 
 echo.

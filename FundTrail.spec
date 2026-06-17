@@ -30,6 +30,7 @@ for _pkg in (
     'pandas', 'openpyxl', 'reportlab', 'xhtml2pdf', 'docx', 'svglib',
     'flask_sqlalchemy', 'flask_login', 'flask_wtf', 'flask_limiter',
     'flask_migrate', 'flask_compress', 'pyotp', 'qrcode', 'PIL', 'sqlalchemy',
+    'webview',  # pywebview — standalone desktop window for the .exe
 ):
     try:
         hiddenimports += collect_submodules(_pkg)
