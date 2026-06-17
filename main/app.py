@@ -1417,6 +1417,7 @@ def admin_dashboard():
         "active_cases": active_cases,
         "total_txns": db.session.query(func.count(Transaction.id)).scalar() or 0,
         "held_amount": db.session.query(func.sum(Transaction.put_on_hold_amount)).scalar() or 0.0,
+        "recovered_amount": db.session.query(func.sum(Transaction.refund_amount)).scalar() or 0.0,
     }
     recent_cases = _cases_q().order_by(Complaint.upload_time.desc()).limit(10).all()
     id_to_username = {u.id: u.username for u in User.query.with_entities(User.id, User.username).all()}

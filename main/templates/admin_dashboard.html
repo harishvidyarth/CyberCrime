@@ -47,8 +47,8 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="14"/><line x1="12" y1="20" x2="12" y2="8"/><line x1="18" y1="20" x2="18" y2="4"/></svg>
     </span>
     <div>
-      <div class="stat-value" data-countup="{{ stats.total_txns }}">{{ stats.total_txns }}</div>
-      <div class="stat-label">Total Transactions</div>
+      <div class="stat-value" data-amount="{{ stats.recovered_amount }}" title="₹{{ '{:,.2f}'.format(stats.recovered_amount) }}">₹{{ '{:,.2f}'.format(stats.recovered_amount) }}</div>
+      <div class="stat-label">Amount Recovered</div>
     </div>
   </div>
   <div class="stat-card">
@@ -56,7 +56,7 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
     </span>
     <div>
-      <div class="stat-value" data-countup="{{ '%.2f'|format(stats.held_amount) }}" data-prefix="₹">₹{{ '{:,.2f}'.format(stats.held_amount) }}</div>
+      <div class="stat-value" data-amount="{{ stats.held_amount }}" title="₹{{ '{:,.2f}'.format(stats.held_amount) }}">₹{{ '{:,.2f}'.format(stats.held_amount) }}</div>
       <div class="stat-label">Total Amount Held</div>
     </div>
   </div>
@@ -142,4 +142,23 @@
     {% endif %}
   </section>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ csp_nonce }}">
+// Abbreviate large rupee amounts so they never overflow the KPI box
+// (e.g. "₹68.86 L", "₹1.25 Cr"); the exact value stays in the title (hover/tap).
+(function () {
+  function fmtINShort(n) {
+    n = Number(n) || 0;
+    if (n >= 1e7) return '₹' + (n / 1e7).toFixed(2).replace(/\.?0+$/, '') + ' Cr';
+    if (n >= 1e5) return '₹' + (n / 1e5).toFixed(2).replace(/\.?0+$/, '') + ' L';
+    return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  }
+  document.querySelectorAll('.stat-value[data-amount]').forEach(function (el) {
+    var v = parseFloat(el.getAttribute('data-amount'));
+    if (!isNaN(v)) el.textContent = fmtINShort(v);
+  });
+})();
+</script>
 {% endblock %}
