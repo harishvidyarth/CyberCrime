@@ -71,7 +71,7 @@
                     form="form-{{ officer.username }}"
                     formaction="{{ url_for('delete_officer') }}"
                     formmethod="POST"
-                    onclick="return confirm('Are you sure you want to delete this officer?')">Delete</button>
+                    data-confirm="Are you sure you want to delete this officer?">Delete</button>
           </div>
         </td>
       </tr>

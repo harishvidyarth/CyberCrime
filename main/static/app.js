@@ -196,4 +196,16 @@
                       (form.getAttribute('data-busy-button') || 'Working…');
     });
   });
+
+  /* ── data-confirm: CSP-safe replacement for inline onsubmit/onclick confirm() ── */
+  document.querySelectorAll('form[data-confirm]').forEach(function (form) {
+    form.addEventListener('submit', function (e) {
+      if (!window.confirm(form.getAttribute('data-confirm'))) e.preventDefault();
+    });
+  });
+  document.querySelectorAll('[data-confirm]:not(form)').forEach(function (el) {
+    el.addEventListener('click', function (e) {
+      if (!window.confirm(el.getAttribute('data-confirm'))) e.preventDefault();
+    });
+  });
 })();
