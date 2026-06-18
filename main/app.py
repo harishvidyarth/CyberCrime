@@ -1679,6 +1679,11 @@ def upload_excel():
         flash("That file is not a valid .xlsx workbook and was rejected.", "danger")
         return redirect("/index")
 
+    # Any failure while parsing below would otherwise leave the saved working copy
+    # orphaned in UPLOAD_FOLDER (an untracked, attacker-supplied blob). Track whether
+    # the upload was actually persisted so the finally-block can delete it otherwise.
+    upload_persisted = False
+    xls = None
     try:
         # ✅ Step 2: Read Excel and extract acknowledgment numbers
 
@@ -1773,6 +1778,7 @@ def upload_excel():
         )
         db.session.add(uploaded_file)
         db.session.commit()
+        upload_persisted = True  # from here the disk copy is the legit download source
         log_usage("upload_excel", filename=filename)
 
         # ✅ Step 5: Process and insert transactions
@@ -2244,6 +2250,22 @@ def upload_excel():
         db.session.rollback()
         logger.error(f"Failed to process Excel: {e}", exc_info=True)
         flash("Failed to process Excel file. Please check the file format and try again.", "danger")
+    finally:
+        # Close the workbook handle (Windows won't delete an open file) and purge the
+        # orphaned working copy whenever the upload did not complete — so an
+        # unsupported / unparseable file never lingers in UPLOAD_FOLDER.
+        if xls is not None:
+            try:
+                xls.close()
+            except Exception:
+                pass
+        if not upload_persisted:
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    logger.info("Removed orphaned upload (not persisted): %s", filename)
+            except OSError as exc:
+                logger.warning("Could not remove orphaned upload %s: %s", filename, exc)
 
     return redirect("/index")
 

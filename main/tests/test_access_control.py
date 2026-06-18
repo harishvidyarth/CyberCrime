@@ -280,6 +280,29 @@ with app.app_context():
 gd = a_c.get("/graph_data/REUP-1").get_data(as_text=True)
 check("re-uploaded case still reports 'Refunded' in graph data", "Refunded" in gd)
 
+print("\n── Unsupported upload leaves no orphaned file (security) ──")
+import io as _io, zipfile as _zip
+
+_UPLOAD = app.config["UPLOAD_FOLDER"]
+os.makedirs(_UPLOAD, exist_ok=True)
+# A real ZIP (passes the .xlsx extension + 'PK' magic-byte gate) but NOT a workbook,
+# so parsing fails. The saved working copy must be deleted, not left in UPLOAD_FOLDER.
+_buf = _io.BytesIO()
+with _zip.ZipFile(_buf, "w") as _z:
+    _z.writestr("hello.txt", "not a workbook")
+_buf.seek(0)
+_before = set(os.listdir(_UPLOAD))
+_r = a_c.post(
+    "/upload_excel",
+    data={"excel_file": (_buf, "not_real.xlsx")},
+    content_type="multipart/form-data",
+)
+_added = [f for f in (set(os.listdir(_UPLOAD)) - _before) if "not_real" in f]
+check("bad upload is rejected (redirect, not 200 OK page)", _r.status_code in (301, 302))
+check("no orphaned file left in UPLOAD_FOLDER", not _added)
+with app.app_context():
+    check("no UploadedFile row for the rejected file", UploadedFile.query.filter_by(filename="not_real.xlsx").first() is None)
+
 print()
 if FAILS:
     print(f"❌ {len(FAILS)} CHECK(S) FAILED: {FAILS}")
