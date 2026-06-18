@@ -1197,8 +1197,8 @@
 
       const bodyHtml = allValues.map(val => `
         <label>
-          <input type="checkbox" value="${String(val).replace(/"/g, '&quot;')}" ${selected.has(val) ? 'checked' : ''}>
-          <span>${val}</span>
+          <input type="checkbox" value="${escHtml(val)}" ${selected.has(val) ? 'checked' : ''}>
+          <span>${escHtml(val)}</span>
         </label>
       `).join('');
 
@@ -1854,6 +1854,15 @@
       }
     }
 
+    // Escape user-derived values (account/bank names, state, etc.) before they
+    // are interpolated into innerHTML strings, so malicious uploaded data can't
+    // inject markup. Structural HTML in the templates below stays unescaped.
+    function escHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
     // Function to display the summary in the panel
     function displaySummary(data) {
       const summaryContent = document.getElementById('summaryContent');
@@ -1875,7 +1884,7 @@
               <tbody>
           `;
         data.forEach(stateData => {
-          const stateName = stateData.state || 'Unknown';
+          const stateName = escHtml(stateData.state || 'Unknown');
           const txns = Number(stateData.total_transactions || 0).toLocaleString('en-IN');
           const amt = `₹${Number(stateData.total_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
           html += `
@@ -1925,8 +1934,9 @@
         const transactions = data.transactions || [];
         const totalCount = data.total_count || 0;
 
-        let html = `<button onclick="displaySummary([]); fetchStatewiseSummary();" style="margin-bottom:10px; background:#6b7280; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">← Back to States</button>`;
-        html += `<h3>All Transactions in ${state} (${totalCount} transactions)</h3>`;
+        const stateSafe = escHtml(state);
+        let html = `<button type="button" class="back-to-states" style="margin-bottom:10px; background:#6b7280; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">← Back to States</button>`;
+        html += `<h3>All Transactions in ${stateSafe} (${totalCount} transactions)</h3>`;
         if (transactions.length === 0) {
           html += '<p>No transaction details available for this state.</p>';
         } else {
@@ -1951,14 +1961,14 @@
             const atmIndicator = transaction.is_atm ? 'ATM' : '';
             html += `
               <tr style="${rowStyle}">
-                  <td style="border:1px solid #e5e7eb; padding:8px; text-align:center;">${transaction.transaction_type || 'N/A'}</td>
-                <td style="border:1px solid #e5e7eb; padding:8px;">${transaction.account_name || 'N/A'}</td>
-                <td style="border:1px solid #e5e7eb; padding:8px;">${transaction.bank_name || 'Unknown'}</td>
-                <td style="border:1px solid #e5e7eb; padding:8px;">${transaction.ifsc_code || 'N/A'}</td>
-                <td style="border:1px solid #e5e7eb; padding:8px;">${transaction.layer || 'N/A'}</td>
+                  <td style="border:1px solid #e5e7eb; padding:8px; text-align:center;">${escHtml(transaction.transaction_type || 'N/A')}</td>
+                <td style="border:1px solid #e5e7eb; padding:8px;">${escHtml(transaction.account_name || 'N/A')}</td>
+                <td style="border:1px solid #e5e7eb; padding:8px;">${escHtml(transaction.bank_name || 'Unknown')}</td>
+                <td style="border:1px solid #e5e7eb; padding:8px;">${escHtml(transaction.ifsc_code || 'N/A')}</td>
+                <td style="border:1px solid #e5e7eb; padding:8px;">${escHtml(transaction.layer || 'N/A')}</td>
                 <td style="border:1px solid #e5e7eb; padding:8px;">₹${Number(transaction.amount || 0).toLocaleString('en-IN')}</td>
-                <td style="border:1px solid #e5e7eb; padding:8px;">${transaction.date || 'N/A'}</td>
-                <td style="border:1px solid #e5e7eb; padding:8px;">${transaction.transaction_id || 'N/A'}</td>
+                <td style="border:1px solid #e5e7eb; padding:8px;">${escHtml(transaction.date || 'N/A')}</td>
+                <td style="border:1px solid #e5e7eb; padding:8px;">${escHtml(transaction.transaction_id || 'N/A')}</td>
               </tr>
             `;
           });
@@ -1972,15 +1982,22 @@
             const totalPages = Math.ceil(totalCount / 50);
             html += `<div style="margin-top:10px; text-align:center;">`;
             for (let page = 1; page <= Math.min(totalPages, 5); page++) {
-              html += `<button onclick="loadPage(${page})" style="margin:0 5px; padding:5px 10px; border:1px solid #d1d5db; background:white; cursor:pointer;">${page}</button>`;
+              html += `<button type="button" class="page-btn" data-page="${page}" style="margin:0 5px; padding:5px 10px; border:1px solid #d1d5db; background:white; cursor:pointer;">${page}</button>`;
             }
             if (totalPages > 5) {
-              html += `... <button onclick="loadPage(${totalPages})" style="margin:0 5px; padding:5px 10px; border:1px solid #d1d5db; background:white; cursor:pointer;">${totalPages}</button>`;
+              html += `... <button type="button" class="page-btn" data-page="${totalPages}" style="margin:0 5px; padding:5px 10px; border:1px solid #d1d5db; background:white; cursor:pointer;">${totalPages}</button>`;
             }
             html += `</div>`;
           }
         }
         summaryContent.innerHTML = html;
+        // CSP-safe wiring for the dynamically-inserted controls (inline on* won't
+        // run under the nonce CSP). Back button + pagination.
+        const backBtn = summaryContent.querySelector('.back-to-states');
+        if (backBtn) backBtn.addEventListener('click', () => { displaySummary([]); fetchStatewiseSummary(); });
+        summaryContent.querySelectorAll('.page-btn').forEach(btn => {
+          btn.addEventListener('click', () => loadPage(parseInt(btn.dataset.page, 10)));
+        });
       } catch (error) {
         console.error('Error fetching transaction details:', error);
         summaryContent.innerHTML = '<p>Error loading transaction details. Please try again.</p>';
@@ -2003,13 +2020,13 @@
         if (tbody) {
           tbody.innerHTML = transactions.map(transaction => `
             <tr>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${transaction.account_name || 'N/A'}</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${transaction.bank_name || 'Unknown'}</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">₹${transaction.amount || '0.0'}</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${transaction.ifsc_code || 'N/A'}</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${transaction.date || 'N/A'}</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${transaction.transaction_id || 'N/A'}</td>
-              <td style="border:1px solid #e5e7eb; padding:8px;">${transaction.transaction_type || 'N/A'}</td>
+              <td style="border:1px solid #e5e7eb; padding:8px;">${escHtml(transaction.account_name || 'N/A')}</td>
+              <td style="border:1px solid #e5e7eb; padding:8px;">${escHtml(transaction.bank_name || 'Unknown')}</td>
+              <td style="border:1px solid #e5e7eb; padding:8px;">₹${escHtml(transaction.amount || '0.0')}</td>
+              <td style="border:1px solid #e5e7eb; padding:8px;">${escHtml(transaction.ifsc_code || 'N/A')}</td>
+              <td style="border:1px solid #e5e7eb; padding:8px;">${escHtml(transaction.date || 'N/A')}</td>
+              <td style="border:1px solid #e5e7eb; padding:8px;">${escHtml(transaction.transaction_id || 'N/A')}</td>
+              <td style="border:1px solid #e5e7eb; padding:8px;">${escHtml(transaction.transaction_type || 'N/A')}</td>
             </tr>
           `).join('');
         }
