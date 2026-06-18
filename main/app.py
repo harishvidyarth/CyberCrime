@@ -21,64 +21,71 @@ Run locally with `python app.py`, or in production with
 `gunicorn --preload "app:app"` (see Dockerfile).
 """
 
+import secrets
+import string
+import time
+from functools import wraps
+
+from dotenv import load_dotenv
 from flask import (
     Flask,
+    abort,
+    flash,
+    g,
+    jsonify,
+    redirect,
     render_template,
     request,
-    redirect,
+    send_file,
+    send_from_directory,
     session,
     url_for,
-    flash,
-    send_file,
-    jsonify,
-    abort,
-    send_from_directory,
-    g,
 )
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
-from functools import wraps
-from dotenv import load_dotenv
-import secrets
-import time
-import string
 
 load_dotenv()
-from urllib.parse import urlparse
-from collections import defaultdict
-import os
-import io
-import base64
-import json
-import zipfile
 import contextlib
+import io
+import json
+import os
+import zipfile
+from collections import defaultdict
+from urllib.parse import urlparse
 
 if os.name == "nt":
     import msvcrt
 else:
     import fcntl
+from datetime import datetime, timedelta, timezone
+
+import pandas as pd  # pyright: ignore[reportMissingImports]
+import pymysql  # pyright: ignore[reportMissingModuleSource]
+from flask_login import (  # pyright: ignore[reportMissingImports]
+    LoginManager,
+    current_user,
+    login_required,
+    login_user,
+    logout_user,
+)
+from flask_migrate import Migrate  # pyright: ignore[reportMissingModuleSource]
+from flask_wtf.csrf import CSRFError, CSRFProtect
 from models import (
-    db,
-    User,
+    CASE_STATUSES,
+    CaseNote,
+    Complaint,
+    KYCDetails,
+    POHRefundDetails,
     Transaction,
     UploadedFile,
-    Complaint,
     UsageLog,
-    POHRefundDetails,
-    KYCDetails,
-    CaseNote,
-    CASE_STATUSES,
+    User,
+    db,
 )
-import pandas as pd  # pyright: ignore[reportMissingImports]
-from werkzeug.security import check_password_hash, generate_password_hash
-from flask_login import login_required, LoginManager, login_user, logout_user, current_user  # pyright: ignore[reportMissingImports]
-from flask_wtf.csrf import CSRFProtect, CSRFError
-from datetime import timezone, timedelta, datetime
-from sqlalchemy import func, desc, inspect, text, or_
+from sqlalchemy import desc, func, inspect, or_, text
 from sqlalchemy.orm import defer
-from flask_migrate import Migrate  # pyright: ignore[reportMissingModuleSource]
-import pymysql  # pyright: ignore[reportMissingModuleSource]
+from werkzeug.security import check_password_hash, generate_password_hash
 
 # Only patch pymysql as MySQLdb when actually using MySQL. The default path is
 # SQLite, which needs no patch. (DATABASE_URL is loaded by load_dotenv() above.)
@@ -87,7 +94,7 @@ if os.environ.get("DATABASE_URL", "").startswith("mysql"):
 import concurrent.futures
 import re
 
-# Feature B9: TOTP two-factor auth. Optional — the app runs fine without pyotp,
+# TOTP two-factor auth. Optional — the app runs fine without pyotp,
 # 2FA setup is simply unavailable until it is installed.
 try:
     import pyotp
@@ -98,21 +105,22 @@ try:
     import qrcode
 except ImportError:  # pragma: no cover
     qrcode = None
-from decimal import Decimal, InvalidOperation
-import requests
-import sys
 import logging
+import sys
+from decimal import Decimal, InvalidOperation
 from logging.handlers import RotatingFileHandler
-from xhtml2pdf import pisa
+
+import requests
 from docx import Document
-from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
+from docx.shared import Pt
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
 
 # ReportLab imports for PDF generation
 from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib import colors
+from xhtml2pdf import pisa
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -137,12 +145,13 @@ handler.setLevel(logging.INFO)
 
 
 class RequestIdFilter(logging.Filter):
-    """Feature F28: stamp every log record with the current request's ID so one
+    """Stamp every log record with the current request's ID so one
     request's entries can be traced end-to-end. '-' outside a request context."""
 
     def filter(self, record):
         try:
-            from flask import g as _g, has_request_context
+            from flask import g as _g
+            from flask import has_request_context
 
             record.request_id = getattr(_g, "request_id", "-") if has_request_context() else "-"
         except Exception:
@@ -151,7 +160,7 @@ class RequestIdFilter(logging.Filter):
 
 
 class JsonLogFormatter(logging.Formatter):
-    """Feature F28: machine-parseable one-JSON-object-per-line log format.
+    """Machine-parseable one-JSON-object-per-line log format.
     Enabled with LOG_FORMAT=json in .env; default stays human-readable."""
 
     def format(self, record):
@@ -175,7 +184,7 @@ handler.addFilter(RequestIdFilter())
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
-# Feature F29: dedicated alert log for 500s — a small, high-signal file an admin
+# Dedicated alert log for 500s — a small, high-signal file an admin
 # (or a watcher script / mail hook) can monitor instead of grepping app.log.
 alert_handler = RotatingFileHandler(os.path.join(log_dir, "alerts.log"), maxBytes=1000000, backupCount=2)
 alert_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
@@ -272,7 +281,7 @@ limiter = Limiter(
 
 @app.before_request
 def generate_csp_nonce():
-    """Per-request setup: CSP nonce + request ID (Feature F28)."""
+    """Per-request setup: CSP nonce + request ID."""
     g.csp_nonce = secrets.token_hex(16)
     g.request_id = secrets.token_hex(8)
 
@@ -314,7 +323,7 @@ def set_security_headers(response):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
 
-    # Remove Server header to prevent version disclosure (FT-09)
+    # Remove Server header to prevent version disclosure
     response.headers.pop("Server", None)
 
     if request.path.startswith("/static"):
@@ -322,7 +331,7 @@ def set_security_headers(response):
         # for a day instead of re-downloading the ~2MB vendored JS every page.
         response.headers.setdefault("Cache-Control", "public, max-age=86400")
     else:
-        # Prevent caching of sensitive pages (FT-012)
+        # Prevent caching of sensitive pages
         if "Cache-Control" not in response.headers:
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private, max-age=0"
         response.headers["Pragma"] = "no-cache"
@@ -333,7 +342,7 @@ def set_security_headers(response):
 
 csrf = CSRFProtect(app)
 
-# Feature D20: transparently gzip HTML/JSON/JS responses. Optional dependency —
+# Transparently gzip HTML/JSON/JS responses. Optional dependency —
 # the app runs uncompressed if flask_compress is missing.
 try:
     from flask_compress import Compress
@@ -467,7 +476,7 @@ MAX_WORKERS = 10
 # Login brute-force policy (Fix: magic numbers -> named constants).
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
-# Feature B12: force a password change after N days (0 disables expiry). Users with
+# Force a password change after N days (0 disables expiry). Users with
 # no recorded password age (pre-feature accounts) are not retroactively forced.
 PASSWORD_MAX_AGE_DAYS = int(os.environ.get("PASSWORD_MAX_AGE_DAYS", "90"))
 IFSC_CACHE_FILE = os.path.join(secure_base, "ifsc_state_cache.json")
@@ -476,6 +485,7 @@ ifsc_api_cache = {}
 # 2FA replay prevention: tracks (user_id, code) pairs that have already been accepted
 # within their 30-second window. Each entry expires after 90 s (3 windows) then is pruned.
 import threading as _threading
+
 _USED_TOTP: dict = {}
 _USED_TOTP_LOCK = _threading.Lock()
 MAX_2FA_ATTEMPTS = 3          # failed TOTP tries before aborting the pending session
@@ -682,7 +692,7 @@ def _ensure_secure_file(path):
             pass
 
 
-# FT-006 (Weak/Hardcoded Secret Key): the key MUST come from the environment.
+# The SECRET_KEY MUST come from the environment (no weak/hardcoded fallback).
 # There is deliberately NO hardcoded fallback — the app refuses to start without
 # a real secret. This restores the behaviour verified in the Feb-2026 security
 # retest. Do NOT re-add a fallback string here (that was the regression we fixed).
@@ -727,7 +737,7 @@ if db_url.startswith("sqlite"):
 # (no SQLALCHEMY_BINDS, so no cross-DB syncing and one consistent source of truth).
 
 # Secure session cookie configuration.
-# FT-010: the Secure flag MUST be True in production (HTTPS). But over plain http
+# The Secure flag MUST be True in production (HTTPS). But over plain http
 # (local dev / offline http://127.0.0.1) browsers never send a Secure cookie, which
 # silently breaks login. So we default to True (secure) and allow an explicit,
 # documented opt-out for local development only.
@@ -1174,7 +1184,7 @@ def login():
             user.account_locked_until = None
             prev_login = user.last_login_at
             user.last_login_at = datetime.now(timezone.utc)
-            # Feature B12: password expiry — force a change when the password is too old.
+            # Password expiry — force a change when the password is too old.
             if PASSWORD_MAX_AGE_DAYS and user.password_changed_at:
                 changed = (
                     user.password_changed_at.replace(tzinfo=timezone.utc)
@@ -1188,7 +1198,7 @@ def login():
             # Session-fixation hygiene: never carry pre-auth session state past login.
             session.clear()
 
-            # Feature B9: users with 2FA enabled must enter a TOTP code first.
+            # Users with 2FA enabled must enter a TOTP code first.
             if user.totp_secret and pyotp is not None:
                 session["pending_2fa_user_id"] = user.id
                 session["pending_2fa_role"] = role
@@ -1218,7 +1228,7 @@ def _establish_session(user, role, prev_login):
     login_user(user)
     session["username"] = user.username
     session["role"] = role
-    # Feature B13: surface the PREVIOUS login time so users can spot misuse.
+    # Surface the PREVIOUS login time so users can spot misuse.
     if prev_login:
         session["prev_login"] = prev_login.strftime("%d %b %Y, %H:%M UTC")
     log_usage("login")
@@ -1235,7 +1245,7 @@ def _establish_session(user, role, prev_login):
 @app.route("/verify_2fa", methods=["GET", "POST"])
 @limiter.limit("10 per minute", exempt_when=lambda: request.method != "POST")
 def verify_2fa():
-    """Feature B9: second login step for users with TOTP enabled."""
+    """Second login step for users with TOTP enabled."""
     uid = session.get("pending_2fa_user_id")
     if not uid or pyotp is None:
         return redirect(url_for("login"))
@@ -1272,7 +1282,7 @@ def verify_2fa():
 @app.route("/setup_2fa", methods=["GET", "POST"])
 @login_required
 def setup_2fa():
-    """Feature B9: enable TOTP 2FA for the logged-in user (authenticator app)."""
+    """Enable TOTP 2FA for the logged-in user (authenticator app)."""
     if pyotp is None:
         flash("Two-factor support is not installed on this machine (pip install pyotp).", "warning")
         return redirect(url_for("role_home"))
@@ -1325,7 +1335,7 @@ def setup_2fa():
 @app.route("/disable_2fa", methods=["POST"])
 @login_required
 def disable_2fa():
-    """Feature B9: turn TOTP off for the logged-in user (requires current password)."""
+    """Turn TOTP off for the logged-in user (requires current password)."""
     if not current_user.check_password(request.form.get("password", "")):
         flash("Password incorrect — 2FA unchanged.", "danger")
         return redirect(url_for("setup_2fa"))
@@ -2978,7 +2988,7 @@ def statewise_summary(ack_no):
                 db.session.commit()
 
         # Now use database aggregation for efficiency
-        from sqlalchemy import func, distinct
+        from sqlalchemy import distinct, func
 
         state_summaries = (
             db.session.query(
@@ -4743,7 +4753,7 @@ with app.app_context():
     if User.query.count() == 0:
         # Generate random initial passwords that meet complexity requirements
         # uses the module-level generate_secure_password() defined earlier (de-duplicated)
-        # Random per-machine first-login passwords (keeps the FT-002 hardening). They are
+        # Random per-machine first-login passwords (keeps the random-password hardening). They are
         # printed below AND saved to INITIAL_CREDENTIALS.txt so they're always easy to
         # find, and must be changed on first login.
         admin_password = generate_secure_password()
@@ -4825,7 +4835,7 @@ def forbidden(error):
 @app.errorhandler(500)
 def internal_error(error):
     logger.error("Internal server error", exc_info=True)
-    # Feature F29: mirror into alerts.log so failures are noticed, not buried.
+    # Mirror into alerts.log so failures are noticed, not buried.
     try:
         alert_logger.error(
             f"500 on {request.method} {request.path} "
@@ -5290,7 +5300,7 @@ def my_analytics():
 
 
 # ═════════════════════════════════════════════════════════════════
-#  Enterprise feature routes (Phase 2 upgrade)
+#  Enterprise feature routes
 # ═════════════════════════════════════════════════════════════════
 
 APP_VERSION = "2.0.0"
@@ -5315,7 +5325,7 @@ def _accessible_ack_nos():
 
 @app.route("/healthz")
 def healthz():
-    """Feature F26: unauthenticated liveness/readiness probe for monitors."""
+    """Unauthenticated liveness/readiness probe for monitors."""
     db_ok = True
     try:
         db.session.execute(text("SELECT 1"))
@@ -5330,7 +5340,7 @@ def healthz():
 @app.route("/search")
 @login_required
 def global_search():
-    """Feature A2: find any ACK / account / transaction ID / bank across the
+    """Find any ACK / account / transaction ID / bank across the
     cases the current user is allowed to see."""
     q = sanitize_text(request.args.get("q", ""), 80)
     results = {"cases": [], "transactions": []}
@@ -5362,7 +5372,7 @@ def global_search():
 @login_required
 @admin_required
 def repeat_accounts():
-    """Feature A3: mule-account detection — beneficiary accounts that appear in
+    """Mule-account detection — beneficiary accounts that appear in
     more than one distinct case."""
     rows = (
         db.session.query(
@@ -5404,7 +5414,7 @@ def repeat_accounts():
 @app.route("/update_case_status", methods=["POST"])
 @login_required
 def update_case_status():
-    """Feature A1: move a case through its workflow (Open / Under Investigation /
+    """Move a case through its workflow (Open / Under Investigation /
     Closed). Allowed for the admin and the case's own officer."""
     ack_no = sanitize_text(request.form.get("ack_no", ""), 100)
     status = request.form.get("status", "").strip()
@@ -5426,7 +5436,7 @@ def update_case_status():
 @app.route("/case_notes/<ack_no>", methods=["POST"])
 @login_required
 def add_case_note(ack_no):
-    """Feature A4: append a dated investigation note to a case."""
+    """Append a dated investigation note to a case."""
     check_case_access(ack_no)
     note = sanitize_text(request.form.get("note", ""), 2000)
     if not note:
@@ -5442,7 +5452,7 @@ def add_case_note(ack_no):
 @app.route("/case_timeline/<ack_no>")
 @login_required
 def case_timeline(ack_no):
-    """Feature A4: chronological case diary — notes + recorded actions."""
+    """Chronological case diary — notes + recorded actions."""
     check_case_access(ack_no)
     ack = str(ack_no).strip()
     complaint = Complaint.query.filter_by(ack_no=ack).first()
@@ -5456,7 +5466,7 @@ def case_timeline(ack_no):
 @app.route("/download_letters_zip/<ack_no>")
 @login_required
 def download_letters_zip(ack_no):
-    """Feature A5: download every generated letter for a case as one ZIP."""
+    """Download every generated letter for a case as one ZIP."""
     check_case_access(ack_no)
     ack = secure_filename(str(ack_no).strip())
     base_dir = os.path.join(app.root_path, "generated_letters", ack)
@@ -5475,7 +5485,7 @@ def download_letters_zip(ack_no):
 
 
 def _analytics_export_frames(uploader=None):
-    """Build the DataFrames for the Excel export (Feature A6). When `uploader`
+    """Build the DataFrames for the Excel export. When `uploader`
     is set, restrict to that officer's uploads (officer self-export)."""
     txn_q = db.session.query(
         Transaction.ack_no,
@@ -5538,21 +5548,21 @@ def _send_analytics_xlsx(uploader=None, label="analytics"):
 @login_required
 @admin_required
 def export_analytics_xlsx():
-    """Feature A6: admin-wide analytics export to Excel."""
+    """Admin-wide analytics export to Excel."""
     return _send_analytics_xlsx(label="all_cases")
 
 
 @app.route("/export_my_analytics_xlsx")
 @login_required
 def export_my_analytics_xlsx():
-    """Feature A6: officer's own analytics export to Excel."""
+    """Officer's own analytics export to Excel."""
     return _send_analytics_xlsx(uploader=session.get("username"), label="my_cases")
 
 
 @app.route("/refund_dashboard")
 @login_required
 def refund_dashboard():
-    """Feature A7: per-case put-on-hold vs refunded amounts — the unit's
+    """Per-case put-on-hold vs refunded amounts — the unit's
     headline recovery metric in one view."""
     allowed = _accessible_ack_nos()
     q = (
@@ -5604,7 +5614,7 @@ AUDIT_PAGE_SIZE = 50
 @login_required
 @admin_required
 def audit_logs():
-    """Feature B10: searchable, paginated viewer over the UsageLog audit trail."""
+    """Searchable, paginated viewer over the UsageLog audit trail."""
     page = max(request.args.get("page", 1, type=int), 1)
     f_user = sanitize_text(request.args.get("user", ""), 100)
     f_action = sanitize_text(request.args.get("action", ""), 100)
@@ -5657,7 +5667,7 @@ def audit_logs():
 @login_required
 @admin_required
 def admin_metrics():
-    """Feature F27: management metrics — uploads/week, case status mix,
+    """Management metrics — uploads/week, case status mix,
     officer activity, and the hold-vs-refund recovery rate."""
     now = datetime.now(timezone.utc)
     weeks = []
@@ -5690,7 +5700,7 @@ def admin_metrics():
 @app.route("/help")
 @login_required
 def help_page():
-    """Feature C18: built-in workflow guide for new officers."""
+    """Built-in workflow guide for new officers."""
     return render_template("help.html")
 
 
