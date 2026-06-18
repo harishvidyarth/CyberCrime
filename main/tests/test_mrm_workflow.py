@@ -21,8 +21,8 @@ os.environ.setdefault("SECRET_KEY", secrets.token_hex(32))
 os.environ.setdefault("SESSION_COOKIE_INSECURE", "true")
 
 with contextlib.redirect_stdout(open(os.devnull, "w")):
-    from app import app, ensure_mrm_backfill, MRM_STEPS, MRM_REFUND_STEP, MRM_COURT_STEP
-    from models import db, User, UploadedFile, Transaction, Complaint, POHRefundDetails, MRMTracking
+    from app import app, ensure_mrm_backfill, MRM_STEPS, MRM_REFUND_STEP
+    from models import db, User, UploadedFile, Transaction, Complaint, POHRefundDetails, MRMTracking, MRMStatusLog
 
 app.config["WTF_CSRF_ENABLED"] = False
 app.config["SESSION_COOKIE_SECURE"] = False
@@ -130,12 +130,21 @@ with app.app_context():
     m = MRMTracking.query.filter_by(ack_no="CASE-MRM", txn_id="HOLD-1").first()
     check("MRM step6 dated + amount", bool(m) and bool(m.step6) and m.refund_amount == 5000.0)
 
+print("\n── Audit trail (who / what / when) ──")
+with app.app_context():
+    logs = MRMStatusLog.query.filter_by(ack_no="CASE-MRM", txn_id="HOLD-1").all()
+    check("one audit row per completed stage (6)", len(logs) == 6)
+    check("audit records who performed each stage", all(g.performed_by == "off_a" for g in logs))
+    refund_log = MRMStatusLog.query.filter_by(ack_no="CASE-MRM", txn_id="HOLD-1", step=MRM_REFUND_STEP).first()
+    check("refund audit row carries type + amount", bool(refund_log) and refund_log.refund_type == "FULL" and refund_log.refund_amount == 5000.0)
+
 print("\n── Read-only timeline + hold payload ──")
 tl = admin_c.get("/mrm_timeline/CASE-MRM/HOLD-1")
 check("admin GET /mrm_timeline -> 200", tl.status_code == 200)
 tldata = json.loads(tl.get_data(as_text=True))
 check("timeline reports latest_step 6", tldata.get("latest_step") == MRM_REFUND_STEP)
 check("timeline has 7 steps", len(tldata.get("steps", [])) == len(MRM_STEPS))
+check("timeline includes audit trail", len(tldata.get("audit", [])) == 6)
 check("non-owner B GET /mrm_timeline -> 403", b_c.get("/mrm_timeline/CASE-MRM/HOLD-1").status_code == 403)
 
 poh_resp = a_c.get("/put_on_hold_transactions/CASE-MRM")
@@ -170,7 +179,6 @@ with app.app_context():
     m = MRMTracking.query.filter_by(ack_no="CASE-MRM", txn_id="HOLD-LEGACY").first()
     check("backfill created an MRM row", m is not None)
     check("backfill step1 = hold date", bool(m) and m.step1 == "2026-05-01")
-    check("backfill court_order_date -> step5", bool(m) and getattr(m, f"step{MRM_COURT_STEP}") == "2026-05-20")
     check("backfill Partially Refunded -> step6 PARTIAL", bool(m) and bool(m.step6) and m.refund_type == "PARTIAL")
     check("backfill carried refund amount", bool(m) and m.refund_amount == 1200.0)
     # Idempotent: a second pass must not duplicate or overwrite.

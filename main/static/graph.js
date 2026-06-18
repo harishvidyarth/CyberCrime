@@ -128,7 +128,7 @@ async function openHoldPopup() {
   // Viewer: make hold modal read-only
   if (isViewer && holdModalOverlay) {
     holdModalOverlay.querySelectorAll('input, select, textarea').forEach(el => el.disabled = true);
-    const saveBtn = holdModalOverlay.querySelector('button[type="submit"], button#saveHoldExtraBtn');
+    const saveBtn = holdModalOverlay.querySelector('button[type="submit"]');
     if (saveBtn) saveBtn.style.display = 'none';
   }
 }
@@ -1247,15 +1247,12 @@ function drawTree(root) {
           if (d.data.hold_info.refund_amount != null && String(d.data.hold_info.refund_amount).trim() !== '') {
             html += `<strong>Refund Amount:</strong> ₹${escapeHtml(d.data.hold_info.refund_amount)}<br>`;
           }
-          // Court/Refund fields styled similarly to the right-side modal; hidden until icon click
+          // Status of MRM (Money Restoration Module): the 7-stage sequential
+          // workflow + audit timeline, loaded from the server. Hidden until the
+          // doc icon is clicked. Replaces the old single court-date/refund form.
           html += `<div id="${formSectionId}" style="display:none; margin-top:12px; padding:10px 0; border-top:1px solid #e5e7eb;">`;
-          html += `<div style="margin-bottom:8px;"><label style="font-weight:600; display:block; margin-bottom:4px;">Court Order Date:</label><input id="holdCourtDate" type="date" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px;"></div>`;
-          html += `<div style="margin-bottom:8px;"><label style="font-weight:600; display:block; margin-bottom:4px;">Status of Refund:</label><select id="holdRefundStatus" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px;"><option value="Refunded">Refunded</option><option value="Partially Refunded">Partially Refunded</option><option value="Not Refunded">Not Refunded</option></select></div>`;
-          html += `<div style="margin-bottom:8px;"><label style="font-weight:600; display:block; margin-bottom:4px;">Amount Refund:</label><input id="holdRefundAmount" type="text" inputmode="decimal" placeholder="₹" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px;"></div>`;
-          html += `<div style="display:flex; gap:8px; margin-top:4px;">`;
-          html += `<button id="editHoldExtraBtn" type="button" style="flex:1; background:#6b7280; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-weight:600;">Edit</button>`;
-          html += `<button id="saveHoldExtraBtn" style="flex:1; background:#2563eb; color:white; border:none; padding:10px 16px; border-radius:8px; cursor:pointer; font-weight:600;">Save</button>`;
-          html += `</div>`;
+          html += `<div style="font-weight:700; margin-bottom:8px;">Status of MRM</div>`;
+          html += `<div id="mrmContainer" style="font-size:13px;">Loading MRM status…</div>`;
           html += `</div>`;
           // Add PDF button
           html += `<br><button id="downloadHoldGraphPdfBtn" style="background:#10b981; color:white; border:none; padding:8px 16px; border-radius:4px; cursor:pointer;">🖨️ Download Fundtrail</button>`;
@@ -1264,116 +1261,114 @@ function drawTree(root) {
 
           const formSection = document.getElementById(formSectionId);
           const toggleBtn = document.getElementById(toggleBtnId);
-          const courtInput = document.getElementById('holdCourtDate');
-          const statusSelect = document.getElementById('holdRefundStatus');
-          const amountInput = document.getElementById('holdRefundAmount');
-          const saveHoldBtn = document.getElementById('saveHoldExtraBtn');
-          const editHoldBtn = document.getElementById('editHoldExtraBtn');
-
+          const mrmContainer = document.getElementById('mrmContainer');
           const holdInfo = d.data.hold_info || {};
+          const holdTxnId = holdInfo.txn_id;
 
-          // Prefill existing values if already saved
-          if (courtInput && holdInfo.court_order_date) {
-            courtInput.value = holdInfo.court_order_date;
-          }
-          if (statusSelect && holdInfo.refund_status) {
-            statusSelect.value = holdInfo.refund_status;
-          }
-          if (amountInput && holdInfo.refund_amount != null) {
-            const amtNum = Number(holdInfo.refund_amount) || 0;
-            amountInput.dataset.rawValue = String(amtNum);
-            amountInput.value = amtNum.toLocaleString('en-IN');
-          }
-
-          // Format amount with commas as user types (Indian locale)
-          function attachAmountFormatter(inputEl) {
-            if (!inputEl) return;
-            inputEl.addEventListener('input', () => {
-              const cleaned = inputEl.value.replace(/[^\d.]/g, '').replace(/,/g, '');
-              if (!cleaned) {
-                inputEl.dataset.rawValue = '';
-                inputEl.value = '';
-                return;
-              }
-              const num = Number(cleaned);
-              if (!Number.isFinite(num)) {
-                return;
-              }
-              inputEl.dataset.rawValue = String(num);
-              inputEl.value = num.toLocaleString('en-IN');
-            });
-          }
-
-          attachAmountFormatter(amountInput);
-
-          // Viewer: disable hold form inputs and hide save/edit buttons
-          if (isViewer) {
-            [courtInput, statusSelect, amountInput].forEach(el => { if (el) el.disabled = true; });
-            if (saveHoldBtn) saveHoldBtn.style.display = 'none';
-            if (editHoldBtn) editHoldBtn.style.display = 'none';
-          }
-
-          // Edit button: allow enabling the input boxes when not a viewer
-          if (editHoldBtn && !isViewer) {
-            editHoldBtn.onclick = () => {
-              [courtInput, statusSelect, amountInput].forEach(el => {
-                if (el) el.disabled = false;
-              });
-            };
-          }
-
+          // Doc icon toggles the MRM section; (re)load its state each time it opens.
           if (toggleBtn && formSection) {
             toggleBtn.onclick = () => {
               const isHidden = formSection.style.display === 'none' || formSection.style.display === '';
               formSection.style.display = isHidden ? 'block' : 'none';
               toggleBtn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+              if (isHidden) loadMrm();
             };
           }
 
-          // Save court / refund details
-          if (saveHoldBtn && !isViewer) {
-            saveHoldBtn.onclick = () => {
-              const rawAmt = amountInput ? (amountInput.dataset.rawValue || amountInput.value.replace(/,/g, '').replace(/[^\d.]/g, '')) : '';
-              const amtVal = rawAmt ? Number(rawAmt) : null;
+          // ── Status of MRM (Money Restoration Module): 7-stage sequential workflow ──
+          function loadMrm() {
+            if (!mrmContainer || !holdTxnId) {
+              if (mrmContainer) mrmContainer.textContent = 'MRM is unavailable for this transaction.';
+              return;
+            }
+            fetch(`/mrm_timeline/${encodeURIComponent(ackNo)}/${encodeURIComponent(holdTxnId)}`)
+              .then(r => (r.ok ? r.json() : Promise.reject()))
+              .then(renderMrm)
+              .catch(() => { mrmContainer.textContent = 'Failed to load MRM status.'; });
+          }
 
-              const payload = {
-                ack_no: ackNo,
-                hold_txn_id: holdInfo.txn_id,
-                court_order_date: courtInput ? courtInput.value : null,
-                refund_status: statusSelect ? statusSelect.value : null,
-                refund_amount: amtVal,
-              };
+          function renderMrm(mrm) {
+            const steps = mrm.steps || [];
+            let html = '<ol style="list-style:none; margin:0; padding:0;">';
+            steps.forEach(s => {
+              const isNext = s.index === mrm.next_step;
+              const mark = s.done
+                ? '<span style="color:#10b981; font-weight:700;">✓</span>'
+                : (isNext ? '<span style="color:#2563eb;">●</span>' : '<span style="color:#cbd5e1;">○</span>');
+              const color = s.done ? '#0f172a' : (isNext ? '#0f172a' : '#94a3b8');
+              const meta = s.done
+                ? `<div style="color:#6b7280; font-size:11.5px; margin-left:20px;">Completed: ${escapeHtml(s.date)}</div>`
+                : '';
+              html += `<li style="padding:5px 0; border-bottom:1px solid #f1f5f9;">
+                <div style="display:flex; gap:8px; align-items:center;">${mark}
+                  <span style="font-weight:${s.done ? 600 : 500}; color:${color};">${s.index}. ${escapeHtml(s.label)}</span></div>${meta}</li>`;
+            });
+            html += '</ol>';
 
-              fetch('/save_hold_refund', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'X-CSRFToken': csrfToken
-                },
-                body: JSON.stringify(payload),
-              })
-                .then(res => res.json().then(data => ({ ok: res.ok, data })))
-                .then(({ ok, data }) => {
-                  if (!ok || data.status !== 'success') {
-                    alert(data.message || 'Failed to save refund details.');
-                    return;
-                  }
+            if (mrm.refund_type) {
+              const label = mrm.refund_type === 'FULL' ? 'Fully Refunded' : 'Partially Refunded';
+              html += `<div style="margin-top:8px; font-size:12.5px;"><b>Refund:</b> ${escapeHtml(label)} — ₹${Number(mrm.refund_amount || 0).toLocaleString('en-IN')}</div>`;
+            }
 
-                  // Update in-memory data so it reflects without reload
-                  d.data.hold_info.court_order_date = payload.court_order_date;
-                  d.data.hold_info.refund_status = payload.refund_status;
+            if (!isViewer && mrm.next_step) {
+              const isRefundStage = mrm.next_step === mrm.refund_step;
+              html += `<div style="margin-top:10px; padding-top:8px; border-top:1px dashed #e5e7eb;">`;
+              html += `<label style="font-weight:600; display:block; margin-bottom:4px;">Next: ${escapeHtml(mrm.next_label)}</label>`;
+              html += `<label style="font-size:11.5px; color:#6b7280;">Date of completion</label>`;
+              html += `<input id="mrmStageDate" type="date" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;">`;
+              if (isRefundStage) {
+                html += `<label style="font-size:11.5px; color:#6b7280;">Refund type</label>`;
+                html += `<select id="mrmRefundType" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;"><option value="FULL">Fully Refunded</option><option value="PARTIAL">Partially Refunded</option></select>`;
+                html += `<label style="font-size:11.5px; color:#6b7280;">Amount refunded (₹)</label>`;
+                html += `<input id="mrmRefundAmount" type="text" inputmode="decimal" placeholder="₹" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;">`;
+              }
+              html += `<button id="mrmSaveBtn" type="button" style="width:100%; background:#2563eb; color:white; border:none; padding:9px 16px; border-radius:8px; cursor:pointer; font-weight:600;">Save Status</button>`;
+              html += `</div>`;
+            } else if (!mrm.next_step) {
+              html += `<div style="margin-top:10px; color:#10b981; font-weight:600;">✓ MRM workflow complete.</div>`;
+            }
+
+            if (Array.isArray(mrm.audit) && mrm.audit.length) {
+              html += `<div style="margin-top:10px; padding-top:8px; border-top:1px solid #e5e7eb;"><div style="font-weight:600; margin-bottom:4px;">Audit trail</div>`;
+              mrm.audit.forEach(a => {
+                html += `<div style="font-size:11.5px; color:#475569; margin-bottom:3px;">${a.step}. ${escapeHtml(a.label)} — ${escapeHtml(a.date_completed)} · by ${escapeHtml(a.performed_by || '—')} <span style="color:#94a3b8;">(${escapeHtml(a.recorded_at)})</span></div>`;
+              });
+              html += `</div>`;
+            }
+
+            mrmContainer.innerHTML = html;
+            const saveBtn = document.getElementById('mrmSaveBtn');
+            if (saveBtn) saveBtn.onclick = () => saveMrm(mrm.next_step, mrm.next_step === mrm.refund_step);
+          }
+
+          function saveMrm(step, isRefundStage) {
+            const dateEl = document.getElementById('mrmStageDate');
+            const dateVal = dateEl ? dateEl.value : '';
+            if (!dateVal) { alert('Please enter the date of completion for this stage.'); return; }
+            const payload = { ack_no: ackNo, hold_txn_id: holdTxnId, step: step, date: dateVal };
+            if (isRefundStage) {
+              const typeEl = document.getElementById('mrmRefundType');
+              const amtEl = document.getElementById('mrmRefundAmount');
+              payload.refund_type = typeEl ? typeEl.value : '';
+              const rawAmt = amtEl ? amtEl.value.replace(/[^\d.]/g, '') : '';
+              if (!rawAmt) { alert('Please enter the refunded amount.'); return; }
+              payload.refund_amount = Number(rawAmt);
+            }
+            fetch('/save_mrm_status', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+              body: JSON.stringify(payload),
+            })
+              .then(res => res.json().then(data => ({ ok: res.ok, data })))
+              .then(({ ok, data }) => {
+                if (!ok || data.status !== 'success') { alert(data.message || 'Failed to save MRM status.'); return; }
+                if (isRefundStage) {
+                  d.data.hold_info.refund_status = payload.refund_type === 'FULL' ? 'Refunded' : 'Partially Refunded';
                   d.data.hold_info.refund_amount = payload.refund_amount;
-
-                  [courtInput, statusSelect, amountInput].forEach(el => {
-                    if (el) el.disabled = true;
-                  });
-
-                  alert('Refund details saved successfully.');
-                })
-                .catch(() => {
-                  alert('Failed to save refund details.');
-                });
-            };
+                }
+                renderMrm(data.mrm);
+              })
+              .catch(() => alert('Failed to save MRM status.'));
           }
 
           // Attach click

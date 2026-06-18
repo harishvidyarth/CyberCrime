@@ -106,14 +106,15 @@ class POHRefundDetails(db.Model):
 
 
 class MRMTracking(db.Model):
-    """Money-Recovery-Management progress for a single put-on-hold transaction.
+    """Money Restoration Module (MRM) progress for one put-on-hold transaction.
 
-    Each of step1..step7 stores the date (yyyy-mm-dd string, blank/NULL = not yet
-    reached) on which that workflow stage was completed. Stages are sequential:
-    step N can only be dated once step N-1 is dated. Step 6 is the refund credit,
-    so it additionally carries refund_type (FULL / PARTIAL) and refund_amount.
-    Keyed by (ack_no, txn_id) — txn_id is the put_on_hold_txn_id — so the record
-    survives a bank-sheet re-upload, exactly like POHRefundDetails.
+    The current snapshot: each of step1..step7 stores the completion date
+    (yyyy-mm-dd string, blank/NULL = stage not yet reached) of that workflow stage.
+    Stages are strictly sequential — step N can only be dated once step N-1 is dated.
+    Step 6 ("Amount Refunded to Victim") additionally carries refund_type
+    (FULL / PARTIAL) and refund_amount. Keyed by (ack_no, txn_id), where txn_id is
+    the put_on_hold_txn_id, so the record survives a bank-sheet re-upload, exactly
+    like POHRefundDetails. The full who/what/when history lives in MRMStatusLog.
     """
 
     id = db.Column(db.Integer, primary_key=True)
@@ -131,6 +132,25 @@ class MRMTracking(db.Model):
     updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
 
     __table_args__ = (db.UniqueConstraint("ack_no", "txn_id", name="uq_mrm_tracking"),)
+
+
+class MRMStatusLog(db.Model):
+    """Immutable audit trail of every MRM stage completion — one row per stage
+    recorded, capturing WHAT stage, on WHICH completion date, by WHOM, and WHEN it
+    was entered. Lets us reconstruct the full timeline of an MRM case for reporting.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    ack_no = db.Column(db.String(100), index=True)
+    txn_id = db.Column(db.String(100), index=True)  # put_on_hold_txn_id
+    step = db.Column(db.Integer)  # 1..7
+    step_label = db.Column(db.String(120))  # human-readable stage name
+    date_completed = db.Column(db.String(20))  # officer-entered completion date
+    refund_type = db.Column(db.String(10))  # FULL / PARTIAL (only on the refund stage)
+    refund_amount = db.Column(db.Float)
+    performed_by = db.Column(db.String(100))  # username who recorded it
+    performed_role = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=utc_now)  # server time the entry was made
 
 
 class KYCDetails(db.Model):
