@@ -54,11 +54,11 @@
 {% if logs %}
 <div class="table-wrap">
   <table class="ds-table">
-    <thead><tr><th>Time (UTC)</th><th>User</th><th>Role</th><th>Action</th><th>ACK No</th><th>File / Detail</th></tr></thead>
+    <thead><tr><th>Time (IST)</th><th>User</th><th>Role</th><th>Action</th><th>ACK No</th><th>File / Detail</th></tr></thead>
     <tbody>
       {% for log in logs %}
       <tr>
-        <td class="mono">{{ log.timestamp.strftime('%d %b %Y %H:%M:%S') if log.timestamp else '—' }}</td>
+        <td class="mono">{{ log.timestamp | ist('%d %b %Y %H:%M:%S') or '—' }}</td>
         <td>{{ log.username or '—' }}</td>
         <td><span class="badge badge-neutral">{{ log.role or '—' }}</span></td>
         <td class="font-semibold">{{ log.action }}</td>

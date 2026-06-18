@@ -19,7 +19,7 @@
         {% set st = complaint.status or 'Open' %}
         <span class="badge {{ 'badge-closed' if st == 'Closed' else 'badge-progress' if st == 'Under Investigation' else 'badge-open' }}">{{ st }}</span>
         {% if complaint.file_name %} · {{ complaint.file_name }}{% endif %}
-        {% if complaint.upload_time %} · registered {{ complaint.upload_time.strftime('%d %b %Y') }}{% endif %}
+        {% if complaint.upload_time %} · registered {{ complaint.upload_time | ist('%d %b %Y') }}{% endif %}
       {% else %}
         No complaint record (legacy data)
       {% endif %}
@@ -50,7 +50,7 @@
       {% for n in notes %}
       <li>
         <div>{{ n.note }}</div>
-        <div class="tl-time">{{ n.author }} · {{ n.created_at.strftime('%d %b %Y, %H:%M') if n.created_at else '' }} UTC</div>
+        <div class="tl-time">{{ n.author }} · {{ n.created_at | ist('%d %b %Y, %H:%M') }} IST</div>
       </li>
       {% endfor %}
     </ul>
@@ -68,7 +68,7 @@
       <li>
         <div class="font-semibold">{{ e.action.replace('_', ' ')|title }}</div>
         <div class="text-secondary">{{ e.username }}{% if e.filename %} — {{ e.filename }}{% endif %}</div>
-        <div class="tl-time">{{ e.timestamp.strftime('%d %b %Y, %H:%M') if e.timestamp else '' }} UTC</div>
+        <div class="tl-time">{{ e.timestamp | ist('%d %b %Y, %H:%M') }} IST</div>
       </li>
       {% endfor %}
     </ul>

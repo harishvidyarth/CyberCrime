@@ -54,7 +54,7 @@
         </td>
         <td class="truncate">{{ complaint.filename }}</td>
         <td>{{ complaint.uploader }}</td>
-        <td>{{ complaint.upload_time.strftime("%d/%m/%Y %H:%M") if complaint.upload_time else '—' }}</td>
+        <td>{{ complaint.upload_time | ist('%d/%m/%Y %H:%M') or '—' }}</td>
         <td>
           {% if complaint.ack_nos %}
           <form method="POST" action="{{ url_for('assign_case') }}" class="flex items-center gap-2 wrap">

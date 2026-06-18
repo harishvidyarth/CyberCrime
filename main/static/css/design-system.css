@@ -273,7 +273,10 @@ body.nav-collapsed #navCollapse svg { transform: scaleX(-1); }
 .stat-icon.success { background: var(--color-success-light); color: var(--color-success); }
 .stat-icon.warning { background: var(--color-warning-light); color: var(--color-warning); }
 .stat-icon.danger  { background: var(--color-danger-light);  color: var(--color-danger); }
-.stat-value { font-size: var(--text-3xl); line-height: var(--leading-3xl); font-weight: var(--font-bold); }
+/* min-width:0 lets the text column shrink inside the flex card so long ₹ values
+   wrap/scale instead of overflowing the card edge. */
+.stat-card > div { min-width: 0; }
+.stat-value { font-size: var(--text-3xl); line-height: var(--leading-3xl); font-weight: var(--font-bold); overflow-wrap: anywhere; }
 .stat-label { font-size: var(--text-sm); color: var(--color-text-secondary); }
 
 /* ─── DATA TABLES ───────────────────────────────────────────── */

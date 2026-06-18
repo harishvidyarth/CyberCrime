@@ -114,7 +114,7 @@
               {% set st = c.status or 'Open' %}
               <span class="badge {{ 'badge-closed' if st == 'Closed' else 'badge-progress' if st == 'Under Investigation' else 'badge-open' }}">{{ st }}</span>
             </td>
-            <td>{{ c.upload_time.strftime('%d %b %Y') if c.upload_time else '—' }}</td>
+            <td>{{ c.upload_time | ist('%d %b %Y') or '—' }}</td>
             <td><a href="{{ url_for('case_timeline', ack_no=c.ack_no) }}">Timeline</a></td>
           </tr>
           {% endfor %}
@@ -139,7 +139,7 @@
       <li>
         <div class="font-semibold">{{ a.action.replace('_', ' ')|title }}</div>
         <div class="text-secondary">{{ a.ack_no or a.filename or '' }}</div>
-        <div class="tl-time">{{ a.timestamp.strftime('%d %b %Y, %H:%M') if a.timestamp else '' }} UTC</div>
+        <div class="tl-time">{{ a.timestamp | ist('%d %b %Y, %H:%M') }} IST</div>
       </li>
       {% endfor %}
     </ul>

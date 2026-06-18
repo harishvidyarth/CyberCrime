@@ -857,6 +857,26 @@ MRM_REFUND_STEP = 6  # 1-based index of the "Amount Refunded to Victim" stage
 ALLOWED_REFUND_TYPES = {"FULL", "PARTIAL"}
 
 
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def to_ist(dt):
+    """Convert a stored timestamp to IST. Stored datetimes are UTC (utc_now); SQLite
+    hands them back naive, so assume UTC when tzinfo is missing. Returns None on None."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(IST)
+
+
+@app.template_filter("ist")
+def _ist_filter(dt, fmt="%d %b %Y, %H:%M"):
+    """Jinja filter: render a UTC datetime in IST, e.g. {{ log.timestamp | ist }}."""
+    d = to_ist(dt)
+    return d.strftime(fmt) if d else ""
+
+
 def ordinal(n):
     try:
         n = int(n)
@@ -1318,7 +1338,7 @@ def _establish_session(user, role, prev_login):
     session["role"] = role
     # Surface the PREVIOUS login time so users can spot misuse.
     if prev_login:
-        session["prev_login"] = prev_login.strftime("%d %b %Y, %H:%M UTC")
+        session["prev_login"] = to_ist(prev_login).strftime("%d %b %Y, %H:%M IST")
     log_usage("login")
 
     if getattr(user, "must_change_password", False):
@@ -3536,7 +3556,7 @@ def _mrm_to_dict(row, ack_no=None, txn_id=None):
                 "refund_amount": g.refund_amount,
                 "performed_by": g.performed_by or "",
                 "performed_role": g.performed_role or "",
-                "recorded_at": g.created_at.strftime("%Y-%m-%d %H:%M") if g.created_at else "",
+                "recorded_at": (to_ist(g.created_at).strftime("%Y-%m-%d %H:%M") + " IST") if g.created_at else "",
             }
             for g in logs
         ]
@@ -4563,7 +4583,7 @@ def manage_files():
                 "id": f.id,
                 "filename": f.filename,
                 "uploader": f.uploader or "—",
-                "upload_time": f.upload_time.strftime("%d %b %Y, %H:%M") if f.upload_time else "—",
+                "upload_time": (to_ist(f.upload_time).strftime("%d %b %Y, %H:%M") if f.upload_time else "—"),
                 "txn_count": len(txns),
                 "ack_nos": ack_nos,
                 "total_amt": total_amt,
@@ -4687,7 +4707,7 @@ def view_analytics():
             {
                 "filename": f.filename,
                 "uploader": f.uploader or "—",
-                "upload_time": f.upload_time.strftime("%d %b %Y, %H:%M") if f.upload_time else "—",
+                "upload_time": (to_ist(f.upload_time).strftime("%d %b %Y, %H:%M") if f.upload_time else "—"),
                 "txn_count": len(txns),
                 "ack_count": len(ack_nos),
                 "total_amt": fa,
@@ -5515,7 +5535,7 @@ def my_analytics():
             {
                 "id": f.id,
                 "filename": f.filename,
-                "upload_time": f.upload_time.strftime("%d %b %Y, %H:%M") if f.upload_time else "—",
+                "upload_time": (to_ist(f.upload_time).strftime("%d %b %Y, %H:%M") if f.upload_time else "—"),
                 "txn_count": len(ftxns),
                 "ack_nos": ack_nos,
                 "total_amt": fa,
