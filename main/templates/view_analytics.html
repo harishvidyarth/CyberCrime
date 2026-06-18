@@ -1,185 +1,60 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Analytics — FundTrail Admin</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-<script nonce="{{ csp_nonce }}">(function(){var t=localStorage.getItem('ft-theme');if(t)document.documentElement.setAttribute('data-theme',t)})()</script>
-<style>
-:root{
-  --navy:#0a2e63;--gold:#f5b301;--brand:#2451d6;--ink:#0f172a;
-  --muted:#64748b;--line:#e2e8f0;--bg:#f1f5f9;--white:#fff;
-  --red:#ef4444;--green:#10b981;--orange:#f59e0b;--purple:#8b5cf6;
-  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-}
-/* Dark palette unified with design-system.css tokens so this page matches the rest
-   of the app (e.g. Repeat Accounts) in dark mode — same surfaces, text and borders. */
-[data-theme="dark"]{
-  --navy:#1e3a5f;--brand:#5b8def;--ink:#f9fafb;
-  --muted:#9ca3af;--line:#374151;--bg:#1f2937;--white:#111827;
-  --red:#f87171;--green:#34d399;--orange:#fbbf24;--purple:#a78bfa;
-}
-[data-theme="dark"] body{background:var(--bg);color:var(--ink)}
-[data-theme="dark"] .header{background:#0b1322}
-[data-theme="dark"] .header-btn.secondary{background:#1f2937;color:#e2e8f0;border:1px solid var(--line)}
-[data-theme="dark"] tbody tr:hover td{background:#1f2937}
-[data-theme="dark"] table{background:var(--white)}
-[data-theme="dark"] td{color:var(--ink)}
-[data-theme="dark"] .kpi-val{color:var(--ink)}
-[data-theme="dark"] .section-head h2{color:var(--ink)}
-[data-theme="dark"] .amt-cell{color:#93c5fd}
-[data-theme="dark"] .section-head .badge{background:#1e40af;color:#bfdbfe}
-[data-theme="dark"] .hold-pill{background:#7f1d1d;color:#fca5a5}
-[data-theme="dark"] .bar-wrap{background:#374151}
-[data-theme="dark"] .dl-link{color:#93c5fd}
-*{box-sizing:border-box}
-body{margin:0;font-family:var(--font);background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
-.header{background:var(--navy);color:#fff;padding:18px 32px;display:flex;align-items:center;gap:14px;border-bottom:3px solid var(--gold)}
-.header img{width:42px;border-radius:8px;background:#fff;padding:4px}
-.header h1{margin:0;font-size:20px;font-weight:700}
-.header small{color:#c7d6f0;font-size:13px}
-.header-actions{margin-left:auto;display:flex;align-items:center;gap:10px}
-.header-btn{display:inline-flex;align-items:center;gap:7px;font-family:var(--font);
-  font-weight:600;font-size:13px;padding:9px 16px;border-radius:9px;
-  text-decoration:none;transition:filter .15s,box-shadow .15s;cursor:pointer;border:none}
-.header-btn.secondary{background:#fff;color:var(--navy)}
-.header-btn.secondary:hover{filter:brightness(.96)}
-.header-btn.primary{background:var(--brand);color:#fff;box-shadow:0 4px 14px -4px rgba(36,81,214,.5)}
-.header-btn.primary:hover{filter:brightness(1.08)}
-.content{padding:28px 32px 48px}
+{% extends "_layout.html" %}
+{% block title %}Analytics{% endblock %}
 
-/* ── KPI cards ── */
-.kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin-bottom:32px}
-.kpi{background:var(--white);border-radius:14px;border:1px solid var(--line);padding:18px 20px;
-  box-shadow:0 4px 16px rgba(10,46,99,.06);position:relative;overflow:hidden}
-.kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:2px}
-.kpi.blue::before{background:var(--brand)} .kpi.green::before{background:var(--green)}
-.kpi.red::before{background:var(--red)}   .kpi.orange::before{background:var(--orange)}
-.kpi.purple::before{background:var(--purple)} .kpi.navy::before{background:var(--navy)}
-.kpi-val{font-size:18px;font-weight:800;color:var(--navy);line-height:1.2;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
-.kpi-lbl{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;margin-top:5px;letter-spacing:.4px}
+{% block breadcrumbs %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('admin_dashboard') }}">Dashboard</a><span class="sep">›</span>
+  <span class="current">Analytics</span>
+</nav>
+{% endblock %}
 
-/* ── Section headers ── */
-.section{margin-bottom:32px}
-.section-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
-.section-head h2{margin:0;font-size:17px;font-weight:700;color:var(--navy)}
-.section-head .badge{background:#dbeafe;color:#1e40af;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px}
-
-/* ── Tables ── */
-table{width:100%;border-collapse:collapse;background:var(--white);border-radius:12px;overflow:hidden;
-  box-shadow:0 4px 12px rgba(10,46,99,.06);border:1px solid var(--line)}
-thead tr{background:var(--navy)}
-th{padding:11px 14px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#fff;text-align:left}
-td{padding:10px 14px;font-size:13px;border-bottom:1px solid var(--line)}
-tbody tr:last-child td{border-bottom:none}
-tbody tr:hover td{background:#f8fafc}
-.num{text-align:right;font-variant-numeric:tabular-nums}
-.amt-cell{font-weight:700;color:var(--navy);text-align:right}
-.hold-pill{display:inline-block;background:#fee2e2;color:#991b1b;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px}
-.bar-wrap{background:#f1f5f9;border-radius:4px;height:8px;overflow:hidden;min-width:80px}
-.bar{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--brand),#6366f1)}
-
-/* ── Two-col grid ── */
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px}
-@media(max-width:860px){.two-col{grid-template-columns:1fr}}
-.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}
-@media(max-width:1100px){.three-col{grid-template-columns:1fr 1fr}}
-@media(max-width:600px){.three-col{grid-template-columns:1fr}}
-
-.dl-link{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--brand);text-decoration:none;font-weight:600}
-.dl-link:hover{text-decoration:underline}
-</style>
-</head>
-<body>
-<div class="header">
-  <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="TN Police logo">
+{% block content %}
+<header class="page-header">
   <div>
     <h1>Analytics Dashboard</h1>
-    <small>All data from uploaded Excel files — Tamil Nadu Cyber Crime Wing</small>
+    <div class="sub">All data from uploaded Excel files — Tamil Nadu Cyber Crime Wing</div>
   </div>
-  <div class="header-actions">
-    {# Feature A6: one-click Excel export of all case/transaction analytics #}
-    <a href="{{ url_for('export_analytics_xlsx') }}" class="header-btn secondary">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      Export to Excel
-    </a>
-    <a href="{{ url_for('admin_dashboard') }}" class="header-btn primary">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
-      Dashboard
-    </a>
+  <a href="{{ url_for('export_analytics_xlsx') }}" class="btn btn-secondary">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="width:15px;height:15px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    Export to Excel
+  </a>
+</header>
+
+<div class="stat-grid mb-6">
+  {% set kpis = [
+    ('primary', '📁', total_files, 'Uploaded Files', false),
+    ('primary', '📄', total_txns, 'Total Transactions', false),
+    ('primary', '💰', total_amount, 'Total Amount Traced', true),
+    ('warning', '⚠️', disputed_amt, 'Disputed Amount', true),
+    ('danger', '🔒', hold_amt, 'Total On-Hold Amount', true),
+    ('danger', '🔒', hold_count, 'On-Hold Transactions', false),
+    ('success', '🏦', unique_accts, 'Unique Accounts', false),
+    ('primary', '🏛️', unique_banks, 'Unique Banks', false),
+    ('success', '🗺️', unique_states, 'States Involved', false),
+    ('primary', '📊', max_layer, 'Max Fund Trail Depth', false),
+    ('primary', '👮', active_officers, 'Active Officers', false),
+    ('warning', '🏧', atm_count, 'ATM Withdrawals', false),
+    ('warning', '🎫', cheque_count, 'Cheque Withdrawals', false)
+  ] %}
+  {% for color, icon, value, label, is_cur in kpis %}
+  <div class="stat-card">
+    <span class="stat-icon {{ color }}" aria-hidden="true">{{ icon }}</span>
+    <div>
+      <div class="stat-value" data-countup="{{ value|round(0)|int if is_cur else value }}"{% if is_cur %} data-prefix="₹"{% endif %}>{{ ('₹' ~ '{:,.0f}'.format(value)) if is_cur else value }}</div>
+      <div class="stat-label">{{ label }}</div>
+    </div>
   </div>
+  {% endfor %}
 </div>
 
-<div class="content">
-
-  <!-- ── KPI Grid ── -->
-  <div class="kpi-grid">
-    <div class="kpi blue">
-      <div class="kpi-val" data-raw="{{ total_files }}">{{ total_files }}</div>
-      <div class="kpi-lbl">📁 Uploaded Files</div>
-    </div>
-    <div class="kpi blue">
-      <div class="kpi-val" data-raw="{{ total_txns }}">{{ total_txns }}</div>
-      <div class="kpi-lbl">📄 Total Transactions</div>
-    </div>
-    <div class="kpi navy">
-      <div class="kpi-val" data-currency data-raw="{{ total_amount }}">₹{{ '%.2f'|format(total_amount) }}</div>
-      <div class="kpi-lbl">💰 Total Amount Traced</div>
-    </div>
-    <div class="kpi orange">
-      <div class="kpi-val" data-currency data-raw="{{ disputed_amt }}">₹{{ '%.2f'|format(disputed_amt) }}</div>
-      <div class="kpi-lbl">⚠️ Disputed Amount</div>
-    </div>
-    <div class="kpi red">
-      <div class="kpi-val" data-currency data-raw="{{ hold_amt }}">₹{{ '%.2f'|format(hold_amt) }}</div>
-      <div class="kpi-lbl">🔒 Total On-Hold Amount</div>
-    </div>
-    <div class="kpi red">
-      <div class="kpi-val" data-raw="{{ hold_count }}">{{ hold_count }}</div>
-      <div class="kpi-lbl">🔒 On-Hold Transactions</div>
-    </div>
-    <div class="kpi green">
-      <div class="kpi-val" data-raw="{{ unique_accts }}">{{ unique_accts }}</div>
-      <div class="kpi-lbl">🏦 Unique Accounts</div>
-    </div>
-    <div class="kpi purple">
-      <div class="kpi-val" data-raw="{{ unique_banks }}">{{ unique_banks }}</div>
-      <div class="kpi-lbl">🏛️ Unique Banks</div>
-    </div>
-    <div class="kpi green">
-      <div class="kpi-val" data-raw="{{ unique_states }}">{{ unique_states }}</div>
-      <div class="kpi-lbl">🗺️ States Involved</div>
-    </div>
-    <div class="kpi navy">
-      <div class="kpi-val" data-raw="{{ max_layer }}">{{ max_layer }}</div>
-      <div class="kpi-lbl">📊 Max Fund Trail Depth</div>
-    </div>
-    <div class="kpi purple">
-      <div class="kpi-val" data-raw="{{ active_officers }}">{{ active_officers }}</div>
-      <div class="kpi-lbl">👮 Active Officers</div>
-    </div>
-    <div class="kpi orange">
-      <div class="kpi-val" data-raw="{{ atm_count }}">{{ atm_count }}</div>
-      <div class="kpi-lbl">🏧 ATM Withdrawals</div>
-    </div>
-    <div class="kpi orange">
-      <div class="kpi-val" data-raw="{{ cheque_count }}">{{ cheque_count }}</div>
-      <div class="kpi-lbl">🎫 Cheque Withdrawals</div>
-    </div>
+<section class="ds-card mb-6">
+  <div class="card-header">
+    <h2 class="card-title">📁 Per-File Breakdown</h2>
+    <span class="badge badge-neutral">{{ file_rows|length }} files</span>
+    <a href="{{ url_for('manage_files') }}" class="btn btn-ghost btn-sm" style="margin-left:auto">Manage Files (Download / Delete) →</a>
   </div>
-
-  <!-- ── Per-file breakdown ── -->
-  <div class="section">
-    <div class="section-head">
-      <h2>📁 Per-File Breakdown</h2>
-      <span class="badge">{{ file_rows|length }} files</span>
-      <a href="{{ url_for('manage_files') }}" class="dl-link" style="margin-left:auto;">
-        Manage Files (Download / Delete) →
-      </a>
-    </div>
-    <table>
+  <div class="table-wrap">
+    <table class="ds-table">
       <thead><tr>
         <th>#</th><th>Filename</th><th>Officer</th><th>Upload Date</th>
         <th class="num">Txns</th><th class="num">ACKs</th>
@@ -190,71 +65,77 @@ tbody tr:hover td{background:#f8fafc}
         {% for f in file_rows %}
         <tr>
           <td>{{ loop.index }}</td>
-          <td style="font-weight:600;color:var(--ink);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.filename }}</td>
+          <td class="font-semibold" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.filename }}</td>
           <td>{{ f.uploader }}</td>
           <td>{{ f.upload_time }}</td>
           <td class="num">{{ f.txn_count }}</td>
           <td class="num">{{ f.ack_count }}</td>
-          <td class="amt-cell">₹{{ '{:,.0f}'.format(f.total_amt) }}</td>
-          <td class="amt-cell" style="color:var(--orange)">₹{{ '{:,.0f}'.format(f.disputed_amt) }}</td>
-          <td class="amt-cell" style="color:var(--red)">₹{{ '{:,.0f}'.format(f.hold_amt) }}</td>
-          <td class="num">{% if f.hold_count %}<span class="hold-pill">{{ f.hold_count }}</span>{% else %}—{% endif %}</td>
+          <td class="num">₹{{ '{:,.0f}'.format(f.total_amt) }}</td>
+          <td class="num">₹{{ '{:,.0f}'.format(f.disputed_amt) }}</td>
+          <td class="num">₹{{ '{:,.0f}'.format(f.hold_amt) }}</td>
+          <td class="num">{% if f.hold_count %}<span class="badge badge-flagged">{{ f.hold_count }}</span>{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+</section>
 
-  <!-- ── Layer-wise + Bank-wise ── -->
-  <div class="two-col">
-    <div class="section">
-      <div class="section-head"><h2>📊 Layer-wise Distribution</h2></div>
-      <table>
+<div class="grid-2 mb-6">
+  <section class="ds-card">
+    <div class="card-header"><h2 class="card-title">📊 Layer-wise Distribution</h2></div>
+    <div class="table-wrap">
+      <table class="ds-table">
         <thead><tr><th>Layer</th><th class="num">Transactions</th><th class="num">Total Amount</th><th>% of Total</th></tr></thead>
         <tbody>
           {% set total_txns_safe = total_txns if total_txns > 0 else 1 %}
           {% for layer, cnt, amt in layer_dist %}
           <tr>
-            <td style="font-weight:600">Layer {{ layer }}</td>
+            <td class="font-semibold">Layer {{ layer }}</td>
             <td class="num">{{ cnt }}</td>
-            <td class="amt-cell">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
+            <td class="num">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
             <td>
-              <div class="bar-wrap"><div class="bar" style="width:{{ [(cnt * 100 // total_txns_safe), 100]|min }}%"></div></div>
-              <small style="color:var(--muted)">{{ '%.1f'|format(cnt * 100 / total_txns_safe) }}%</small>
+              <div class="flex items-center gap-2">
+                <span class="progress-bar" style="width:80px"><span style="width:{{ [(cnt * 100 // total_txns_safe), 100]|min }}%"></span></span>
+                <span class="text-xs text-muted">{{ '%.1f'|format(cnt * 100 / total_txns_safe) }}%</span>
+              </div>
             </td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+  </section>
 
-    <div class="section">
-      <div class="section-head"><h2>🏛️ Top Banks by Volume</h2></div>
-      <table>
+  <section class="ds-card">
+    <div class="card-header"><h2 class="card-title">🏛️ Top Banks by Volume</h2></div>
+    <div class="table-wrap">
+      <table class="ds-table">
         <thead><tr><th>Bank</th><th class="num">Txns</th><th class="num">Total Amount</th></tr></thead>
         <tbody>
           {% for bank, cnt, amt in top_banks %}
           <tr>
-            <td style="font-weight:500;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ bank or '—' }}</td>
+            <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ bank or '—' }}</td>
             <td class="num">{{ cnt }}</td>
-            <td class="amt-cell">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
+            <td class="num">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-  </div>
+  </section>
+</div>
 
-  <!-- ── IFSC + State ── -->
-  <div class="two-col">
-    <div class="section">
-      <div class="section-head"><h2>🔢 Top IFSC Codes</h2></div>
-      <table>
+<div class="grid-2 mb-6">
+  <section class="ds-card">
+    <div class="card-header"><h2 class="card-title">🔢 Top IFSC Codes</h2></div>
+    <div class="table-wrap">
+      <table class="ds-table">
         <thead><tr><th>IFSC</th><th>Bank</th><th class="num">Frequency</th></tr></thead>
         <tbody>
           {% for ifsc, bank, cnt in top_ifsc %}
           <tr>
-            <td style="font-family:monospace;font-size:12px;font-weight:600">{{ ifsc or '—' }}</td>
+            <td class="mono font-semibold">{{ ifsc or '—' }}</td>
             <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ bank or '—' }}</td>
             <td class="num">{{ cnt }}</td>
           </tr>
@@ -262,69 +143,48 @@ tbody tr:hover td{background:#f8fafc}
         </tbody>
       </table>
     </div>
+  </section>
 
-    <div class="section">
-      <div class="section-head"><h2>🗺️ State-wise Distribution</h2></div>
-      <table>
+  <section class="ds-card">
+    <div class="card-header"><h2 class="card-title">🗺️ State-wise Distribution</h2></div>
+    <div class="table-wrap">
+      <table class="ds-table">
         <thead><tr><th>State</th><th class="num">Txns</th><th class="num">Total Amount</th></tr></thead>
         <tbody>
           {% for state, cnt, amt in state_dist %}
           <tr>
-            <td style="font-weight:500">{{ state or 'Unknown' }}</td>
+            <td>{{ state or 'Unknown' }}</td>
             <td class="num">{{ cnt }}</td>
-            <td class="amt-cell">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
+            <td class="num">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-  </div>
+  </section>
+</div>
 
-  <!-- ── Officer stats ── -->
-  <div class="section">
-    <div class="section-head">
-      <h2>👮 Officer Upload Activity</h2>
-      <a href="{{ url_for('download_logs') }}" class="dl-link" style="margin-left:auto;">
-        📥 Download usage logs
-      </a>
-    </div>
-    <table>
+<section class="ds-card">
+  <div class="card-header">
+    <h2 class="card-title">👮 Officer Upload Activity</h2>
+    <a href="{{ url_for('download_logs') }}" class="btn btn-ghost btn-sm" style="margin-left:auto">📥 Download usage logs</a>
+  </div>
+  <div class="table-wrap">
+    <table class="ds-table">
       <thead><tr><th>#</th><th>Username</th><th>Full Name</th><th class="num">Files Uploaded</th></tr></thead>
       <tbody>
         {% for uname, name, cnt in officer_stats %}
         <tr>
           <td>{{ loop.index }}</td>
-          <td style="font-weight:600">{{ uname }}</td>
+          <td class="font-semibold">{{ uname }}</td>
           <td>{{ name or '—' }}</td>
           <td class="num">{{ cnt }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px">No officer upload data yet</td></tr>
+        <tr><td colspan="4" class="text-muted" style="padding:24px;text-align:center">No officer upload data yet</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-
-</div><!-- /content -->
-
-<script nonce="{{ csp_nonce }}">
-// Format all numbers in Indian locale
-(function () {
-  function fmtIN(n, currency) {
-    if (isNaN(n)) return;
-    if (currency) {
-      const s = Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits:2, maximumFractionDigits:2 });
-      return '₹' + s;
-    }
-    return n.toLocaleString('en-IN', { maximumFractionDigits:0 });
-  }
-  document.querySelectorAll('.kpi-val').forEach(el => {
-    const raw = parseFloat(el.dataset.raw || el.textContent.replace(/[^0-9.]/g, ''));
-    const isCurrency = el.hasAttribute('data-currency');
-    const fmt = fmtIN(raw, isCurrency);
-    if (fmt) el.textContent = fmt;
-  });
-})();
-</script>
-</body>
-</html>
+</section>
+{% endblock %}
