@@ -76,6 +76,7 @@ from models import (
     CaseNote,
     Complaint,
     KYCDetails,
+    MRMTracking,
     POHRefundDetails,
     Transaction,
     UploadedFile,
@@ -838,6 +839,22 @@ def validate_court_order_date(value):
 # Mirrors the fixed <select> options in static/graph.js (blank = clear the field).
 ALLOWED_REFUND_STATUSES = {"", "Refunded", "Partially Refunded", "Not Refunded"}
 
+# 7-step Money-Recovery-Management workflow. Order is significant: a step can only
+# be dated once the previous one is dated. Step 6 (1-based) is the refund credit and
+# carries refund_type (FULL/PARTIAL) + amount. Labels surface in the graph timeline.
+MRM_STEPS = [
+    "Transaction Put on Hold",
+    "Notice Issued to Bank / Nodal Officer",
+    "Bank Confirmation Received",
+    "Application Filed in Court",
+    "Court Order Received",
+    "Refund Credited",
+    "Case Closed",
+]
+MRM_REFUND_STEP = 6  # 1-based index of the refund-credit step
+MRM_COURT_STEP = 5  # court_order_date backfills here (nearest step)
+ALLOWED_REFUND_TYPES = {"FULL", "PARTIAL"}
+
 
 def ordinal(n):
     try:
@@ -918,6 +935,7 @@ def ensure_transaction_columns():
         "court_order_date": "VARCHAR(20)",
         "refund_status": "VARCHAR(50)",
         "refund_amount": "FLOAT",
+        "refund_type": "VARCHAR(10)",
         "kyc_name": "VARCHAR(120)",
         "kyc_aadhar": "VARCHAR(20)",
         "kyc_mobile": "VARCHAR(20)",
@@ -953,6 +971,78 @@ def ensure_complaint_columns():
         # Multi-admin isolation (added in v2.1): which admin group owns this case.
         "owner_admin_id": "INT NULL",
     })
+
+
+def ensure_mrm_backfill():
+    """Seed MRMTracking from pre-existing refund/court data. Idempotent: only
+    creates a row for a (ack_no, txn_id) that has none yet, so officer edits made
+    through /save_mrm_status are never overwritten on a later startup.
+
+    Mapping (per the migration spec):
+      put_on_hold_date      -> step1 (Transaction Put on Hold)
+      court_order_date      -> step5 (Court Order Received) — the nearest step
+      refund_status Refunded         -> step6 dated, refund_type FULL  + amount
+      refund_status Partially Refunded -> step6 dated, refund_type PARTIAL + amount
+    """
+    try:
+        inspector = inspect(db.engine)
+        if "mrm_tracking" not in inspector.get_table_names():
+            db.create_all()
+    except Exception as exc:
+        logger.warning(f"ensure_mrm_backfill: table check failed: {exc}")
+        return
+
+    def _refund_date(poh):
+        if poh and poh.updated_at:
+            return poh.updated_at.strftime("%Y-%m-%d")
+        return datetime.now().strftime("%Y-%m-%d")
+
+    try:
+        existing = {
+            (m.ack_no, m.txn_id)
+            for m in MRMTracking.query.with_entities(MRMTracking.ack_no, MRMTracking.txn_id).all()
+        }
+        poh_map = {(p.ack_no, p.txn_id): p for p in POHRefundDetails.query.all()}
+        hold_txns = Transaction.query.filter(Transaction.put_on_hold_txn_id.isnot(None)).all()
+        created = 0
+        for t in hold_txns:
+            key = (t.ack_no, t.put_on_hold_txn_id)
+            if None in key or key in existing:
+                continue
+            poh = poh_map.get(key)
+            court_date = (poh.court_order_date if poh else None) or t.court_order_date
+            ref_status = (poh.refund_status if poh else None) or t.refund_status
+            ref_amount = poh.refund_amount if (poh and poh.refund_amount is not None) else t.refund_amount
+
+            row = MRMTracking(ack_no=t.ack_no, txn_id=t.put_on_hold_txn_id)
+            if t.put_on_hold_date:
+                row.step1 = str(t.put_on_hold_date)
+            if court_date:
+                setattr(row, f"step{MRM_COURT_STEP}", str(court_date))
+            if ref_status == "Refunded":
+                setattr(row, f"step{MRM_REFUND_STEP}", str(court_date or _refund_date(poh)))
+                row.refund_type = "FULL"
+                row.refund_amount = ref_amount
+                t.refund_type = "FULL"
+            elif ref_status == "Partially Refunded":
+                setattr(row, f"step{MRM_REFUND_STEP}", str(court_date or _refund_date(poh)))
+                row.refund_type = "PARTIAL"
+                row.refund_amount = ref_amount
+                t.refund_type = "PARTIAL"
+
+            if any(getattr(row, f"step{i}") for i in range(1, len(MRM_STEPS) + 1)):
+                db.session.add(row)
+                existing.add(key)
+                created += 1
+        if created:
+            db.session.commit()
+            logger.info(f"MRM backfill: created {created} tracking row(s) from existing refund/court data")
+    except Exception as exc:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        logger.warning(f"ensure_mrm_backfill failed: {exc}")
 
 
 def generate_secure_password(length=16):
@@ -1056,6 +1146,7 @@ with app.app_context():
     ensure_user_columns()
     ensure_complaint_columns()
     ensure_usage_log_table()
+    ensure_mrm_backfill()
 
 
 VIEW_ONLY_ROLES = set()  # Viewer (read-only) role removed — only Admin & Investigative Officer
@@ -3131,6 +3222,13 @@ def put_on_hold_transactions(ack_no):
         except Exception as e:
             logger.error(f"Error fetching POH details in put_on_hold_transactions: {e}")
 
+        # MRM 7-step progress, keyed by put_on_hold_txn_id (additive to legacy fields).
+        mrm_map = {}
+        try:
+            mrm_map = {m.txn_id: m for m in MRMTracking.query.filter_by(ack_no=ack_no.strip()).all()}
+        except Exception as e:
+            logger.error(f"Error fetching MRM details in put_on_hold_transactions: {e}")
+
         response = []
         for t in hold_txns:
             # Fetch branch info on backend to avoid N+1 frontend calls
@@ -3154,6 +3252,9 @@ def put_on_hold_transactions(ack_no):
                     "court_order_date": court_date,
                     "refund_status": ref_status,
                     "refund_amount": ref_amount,
+                    # txn_id lets the frontend address this hold row for MRM saves.
+                    "hold_txn_id": t.put_on_hold_txn_id,
+                    "mrm": _mrm_to_dict(mrm_map.get(t.put_on_hold_txn_id)),
                 }
             )
 
@@ -3376,6 +3477,130 @@ def save_hold_refund():
     except Exception as e:
         logger.error(f"Error in save_hold_refund: {e}", exc_info=True)
         return jsonify({"status": "error", "message": "Internal error while saving. See server log."}), 500
+
+
+def _mrm_to_dict(row):
+    """Serialise an MRMTracking row (or None) into the shape the graph timeline and
+    the read-only modal consume: per-step label/date/done plus the refund info and
+    the latest completed step."""
+    steps = []
+    latest = 0
+    for i, label in enumerate(MRM_STEPS, start=1):
+        date = getattr(row, f"step{i}") if row else None
+        done = bool(date)
+        if done:
+            latest = i
+        steps.append({"index": i, "label": label, "date": date or "", "done": done})
+    return {
+        "steps": steps,
+        "latest_step": latest,
+        "latest_label": MRM_STEPS[latest - 1] if latest else "",
+        "refund_step": MRM_REFUND_STEP,
+        "refund_type": (row.refund_type if row else None) or "",
+        "refund_amount": (row.refund_amount if row else None),
+    }
+
+
+@app.route("/save_mrm_status", methods=["POST"])
+@login_required
+def save_mrm_status():
+    """Record one step of the 7-step MRM workflow for a put-on-hold transaction.
+
+    Enforces: sequential progress (step N needs step N-1 dated; step1 always allowed),
+    set-once (a dated step cannot be changed), and that the refund step carries a
+    refund_type (FULL/PARTIAL) and a positive amount. The refund step is mirrored
+    into Transaction + POHRefundDetails so the refund dashboard and legacy graph
+    fields reflect the same figure.
+    """
+    if session.get("role") in VIEW_ONLY_ROLES:
+        return jsonify({"status": "error", "message": "View-only users cannot edit MRM status"}), 403
+
+    data = request.get_json(silent=True) or {}
+    ack_no = (data.get("ack_no") or "").strip()
+    hold_txn_id = (data.get("hold_txn_id") or "").strip()
+    if not ack_no or not hold_txn_id:
+        return jsonify({"status": "error", "message": "Missing required identifiers"}), 400
+
+    check_case_access(ack_no)
+
+    try:
+        step = int(data.get("step"))
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "Invalid step"}), 400
+    if step < 1 or step > len(MRM_STEPS):
+        return jsonify({"status": "error", "message": "Step out of range"}), 400
+
+    date = sanitize_text(data.get("date"), 20)
+    if not date or not validate_court_order_date(date):
+        return jsonify({"status": "error", "message": "A valid date is required for this step."}), 400
+
+    refund_type = (data.get("refund_type") or "").strip().upper()
+    refund_amount = None
+    if step == MRM_REFUND_STEP:
+        if refund_type not in ALLOWED_REFUND_TYPES:
+            return jsonify({"status": "error", "message": "Refund type (FULL/PARTIAL) is required."}), 400
+        try:
+            refund_amount = float(data.get("refund_amount"))
+        except (TypeError, ValueError):
+            return jsonify({"status": "error", "message": "A valid refund amount is required."}), 400
+        if refund_amount <= 0:
+            return jsonify({"status": "error", "message": "Refund amount must be greater than zero."}), 400
+
+    try:
+        txn = Transaction.query.filter_by(ack_no=ack_no, put_on_hold_txn_id=hold_txn_id).first()
+        if not txn:
+            return jsonify({"status": "error", "message": "Put-on-hold transaction not found"}), 404
+
+        row = MRMTracking.query.filter_by(ack_no=ack_no, txn_id=hold_txn_id).first()
+        if not row:
+            row = MRMTracking(ack_no=ack_no, txn_id=hold_txn_id)
+            db.session.add(row)
+
+        # Set-once: never overwrite a step that already has a date.
+        if getattr(row, f"step{step}"):
+            return jsonify({"status": "error", "message": f"Step {step} is already recorded."}), 409
+        # Sequential: every step except the first needs its predecessor dated.
+        if step > 1 and not getattr(row, f"step{step - 1}"):
+            return jsonify({"status": "error", "message": f"Complete step {step - 1} before step {step}."}), 409
+
+        setattr(row, f"step{step}", date)
+
+        if step == MRM_REFUND_STEP:
+            row.refund_type = refund_type
+            row.refund_amount = refund_amount
+            # Mirror into the durable refund stores so existing views stay correct.
+            txn.refund_type = refund_type
+            txn.refund_amount = refund_amount
+            txn.refund_status = "Refunded" if refund_type == "FULL" else "Partially Refunded"
+            txn.court_order_date = txn.court_order_date or getattr(row, f"step{MRM_COURT_STEP}") or None
+            poh = POHRefundDetails.query.filter_by(ack_no=ack_no, txn_id=hold_txn_id).first()
+            if not poh:
+                poh = POHRefundDetails(ack_no=ack_no, txn_id=hold_txn_id)
+                db.session.add(poh)
+            poh.court_order_date = txn.court_order_date
+            poh.refund_status = txn.refund_status
+            poh.refund_amount = refund_amount
+
+        db.session.commit()
+        log_usage("save_mrm_status", filename=f"step={step} ({MRM_STEPS[step - 1]})", ack_no=ack_no)
+        return jsonify({"status": "success", "mrm": _mrm_to_dict(row)})
+    except Exception as e:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        logger.error(f"Error in save_mrm_status: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": "Internal error while saving MRM status."}), 500
+
+
+@app.route("/mrm_timeline/<ack_no>/<txn_id>")
+@login_required
+def mrm_timeline(ack_no, txn_id):
+    """Read-only MRM timeline for one put-on-hold transaction (Admin + IO).
+    Access is gated to the case owner/assignee via check_case_access."""
+    check_case_access(ack_no)
+    row = MRMTracking.query.filter_by(ack_no=ack_no.strip(), txn_id=txn_id.strip()).first()
+    return jsonify(_mrm_to_dict(row))
 
 
 def format_indian_currency(amount):
@@ -5715,6 +5940,7 @@ if __name__ == "__main__":
         ensure_transaction_columns()
         ensure_user_columns()
         ensure_complaint_columns()
+        ensure_mrm_backfill()
 
     # Use environment variable to control debug mode
     debug_mode = os.environ.get("FLASK_DEBUG", "False").lower() == "true"

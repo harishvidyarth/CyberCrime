@@ -71,6 +71,7 @@ class Transaction(db.Model):
     court_order_date = db.Column(db.String(20))
     refund_status = db.Column(db.String(50))
     refund_amount = db.Column(db.Float)
+    refund_type = db.Column(db.String(10))  # FULL / PARTIAL (mirrors MRMTracking step6)
 
     # KYC details captured against the transaction
     kyc_name = db.Column(db.String(120))
@@ -102,6 +103,34 @@ class POHRefundDetails(db.Model):
     updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
 
     __table_args__ = (db.UniqueConstraint("ack_no", "txn_id", name="uq_poh_refund_details"),)
+
+
+class MRMTracking(db.Model):
+    """Money-Recovery-Management progress for a single put-on-hold transaction.
+
+    Each of step1..step7 stores the date (yyyy-mm-dd string, blank/NULL = not yet
+    reached) on which that workflow stage was completed. Stages are sequential:
+    step N can only be dated once step N-1 is dated. Step 6 is the refund credit,
+    so it additionally carries refund_type (FULL / PARTIAL) and refund_amount.
+    Keyed by (ack_no, txn_id) — txn_id is the put_on_hold_txn_id — so the record
+    survives a bank-sheet re-upload, exactly like POHRefundDetails.
+    """
+
+    id = db.Column(db.Integer, primary_key=True)
+    ack_no = db.Column(db.String(100), index=True)
+    txn_id = db.Column(db.String(100), index=True)  # put_on_hold_txn_id
+    step1 = db.Column(db.String(20))
+    step2 = db.Column(db.String(20))
+    step3 = db.Column(db.String(20))
+    step4 = db.Column(db.String(20))
+    step5 = db.Column(db.String(20))
+    step6 = db.Column(db.String(20))
+    step7 = db.Column(db.String(20))
+    refund_type = db.Column(db.String(10))  # FULL / PARTIAL (set with step6)
+    refund_amount = db.Column(db.Float)
+    updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+
+    __table_args__ = (db.UniqueConstraint("ack_no", "txn_id", name="uq_mrm_tracking"),)
 
 
 class KYCDetails(db.Model):
