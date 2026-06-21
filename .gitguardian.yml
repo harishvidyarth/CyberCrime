@@ -1,0 +1,7 @@
+excluded-paths:
+  - old_files/
+  - fundtrail/
+  - main/IFSC_CODES.pkl
+  - main/static/
+  - main/migrations/
+  - "*.pyc"

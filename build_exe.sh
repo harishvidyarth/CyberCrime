@@ -24,7 +24,9 @@ echo ""
 if [ -f "dist/FundTrail" ]; then
     echo "============================================================"
     echo "  Done -> dist/FundTrail   (run it on this same OS)"
-    echo "  Data persists in dist/FundTrail_data next to the binary."
+    echo "  Data persists in the per-user app data folder:"
+    echo "    macOS/Linux: \$XDG_DATA_HOME/FundTrail or ~/.local/share/FundTrail"
+    echo "  It survives rebuilds and app moves."
     echo "============================================================"
 else
     echo "Build did NOT produce dist/FundTrail — scroll up for the error."

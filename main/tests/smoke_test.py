@@ -14,6 +14,7 @@ sys.path.insert(0, MAIN)
 os.environ["FUNDTRAIL_DATA_DIR"] = tempfile.mkdtemp(prefix="ft_smoke_")
 
 with contextlib.redirect_stdout(open(os.devnull, "w")):
+    import app as app_module
     from app import app, sanitize_text
     from models import db, User
 
@@ -50,11 +51,15 @@ with app.app_context():
     for uname, role, pw in [
         ("admin", "Admin", "AdminPass@2026!"),
         ("officer", "Investigative Officer", "OfficerPass@2026!"),
+        ("reset_user", "Investigative Officer", "ResetPass@2026!"),
     ]:
         u = User.query.filter_by(username=uname).first() or User(username=uname, role=role)
         if u.id is None:
             db.session.add(u)
         u.role = role
+        if uname == "reset_user":
+            u.email = "reset@example.gov"
+            u.totp_secret = "JBSWY3DPEHPK3PXP"
         u.set_password(pw)
         u.must_change_password = False
         u.failed_login_attempts = 0
@@ -141,6 +146,46 @@ check("missing CSRF -> friendly page", "Session Expired" in r.get_data(as_text=T
 r = admin.get("/no-such-route-xyz")
 check("404 page renders", r.status_code == 404 and "Return to Home" in r.get_data(as_text=True))
 check("logout -> /login", "/login" in loc(admin.get("/logout")))
+
+print("\n── Password reset email fallback ──")
+sent_links = []
+
+
+def fake_send_password_reset(_to_email, reset_link):
+    sent_links.append(reset_link)
+
+
+app_module.send_password_reset = fake_send_password_reset
+reset_client = app.test_client()
+tok = csrf(reset_client.get("/forgot_password").get_data(as_text=True))
+r = reset_client.post("/forgot_password", data={"username": "reset_user", "csrf_token": tok})
+check("reset user with TOTP reaches verify step", r.status_code == 200 and "Authentication code" in r.get_data(as_text=True))
+r = reset_client.post("/forgot_password", data={"code": "000000", "csrf_token": tok})
+check("bad TOTP keeps email fallback available", r.status_code == 200 and "Email reset" in r.get_data(as_text=True))
+r = reset_client.post(
+    "/forgot_password",
+    data={"reset_method": "email", "email": "wrong@example.gov", "csrf_token": tok},
+)
+check("wrong reset email does not send", r.status_code == 200 and not sent_links)
+r = reset_client.post(
+    "/forgot_password",
+    data={"reset_method": "email", "email": "reset@example.gov", "csrf_token": tok},
+)
+check("matching reset email sends link", r.status_code == 200 and len(sent_links) == 1)
+reset_path = sent_links[0].split("http://localhost", 1)[-1]
+r = reset_client.get(reset_path)
+reset_tok = csrf(r.get_data(as_text=True))
+check("valid reset token renders password form", r.status_code == 200 and reset_tok)
+r = reset_client.post(
+    reset_path,
+    data={"password": "ResetPass@2027!", "confirm_password": "ResetPass@2027!", "csrf_token": reset_tok},
+)
+check("valid reset token changes password", "/login" in loc(r))
+check("reset token cannot be reused", reset_client.get(reset_path).status_code in (301, 302))
+check("invalid reset token redirects", reset_client.get("/reset_password/not-a-token").status_code in (301, 302))
+with app.app_context():
+    reset_user = User.query.filter_by(username="reset_user").first()
+    check("new reset password works", reset_user.check_password("ResetPass@2027!"))
 
 print("\n── Security hardening (Phase 5) ──")
 check("MAX_CONTENT_LENGTH set (request-size cap)", bool(app.config.get("MAX_CONTENT_LENGTH")))

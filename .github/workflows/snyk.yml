@@ -1,0 +1,36 @@
+name: Snyk
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  snyk:
+    runs-on: ubuntu-latest
+    env:
+      SNYK_TOKEN: "${{ secrets.SNYK_TOKEN }}"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          cd main
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Snyk security scan
+        run: |
+          cd main
+          if [ -z "$SNYK_TOKEN" ]; then
+            echo "SNYK_TOKEN is not set"
+            exit 1
+          fi
+          npm install -g snyk
+          snyk test --severity-threshold=high

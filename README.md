@@ -134,6 +134,24 @@ known dev passwords — dev machines only; see [`CREDENTIALS.md`](CREDENTIALS.md
 > committed password would be a security hole) and **shown to you** — Docker:
 > `docker compose exec fundtrail cat /data/INITIAL_CREDENTIALS.txt`; plain Python / .exe:
 > printed on first run and saved to `data/INITIAL_CREDENTIALS.txt`. Forced change on first login.
+> In the packaged Windows app, data lives in `%LOCALAPPDATA%\FundTrail` so rebuilds
+> and installer upgrades keep the same database and login. If an older build created
+> `FundTrail_data` beside the EXE, the launcher migrates it on first run.
+
+## Windows EXE / Installer
+
+On Windows, run:
+
+```bat
+build_exe.bat
+```
+
+The script installs Python package requirements into the build Python, creates
+`dist\FundTrail.exe`, then builds `dist\FundTrail_Setup.exe` with Inno Setup. If
+Inno Setup is missing, the script tries to install it with `winget`.
+
+The installed app does not require Python on the target machine; PyInstaller bundles
+the runtime dependencies into the EXE.
 
 ## 3. Database — SQLite (no setup)
 
@@ -215,6 +233,8 @@ python tests/test_access_control.py   # per-officer isolation, validators
 
 Both suites are dependency-free, use a throwaway temp database, and run in CI on
 every push. Run them **before and after every change**.
+
+Enable CodeFactor via GitHub Marketplace (one-click app install).
 
 ---
 More: [`docs/HOW_IT_WORKS.md`](docs/HOW_IT_WORKS.md) (workflow & mental model) ·

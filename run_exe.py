@@ -11,6 +11,7 @@ NOT for shared / networked use — embedded SQLite is single-machine only.
 import os
 import sys
 import secrets
+import shutil
 import threading
 import time
 import webbrowser
@@ -46,8 +47,33 @@ _DATA_DIR = os.environ.get("FUNDTRAIL_DATA_DIR") or _default_data_dir()
 try:
     os.makedirs(_DATA_DIR, exist_ok=True)
 except PermissionError:
-    _DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "FundTrail_data")
+    _DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "FundTrail")
     os.makedirs(_DATA_DIR, exist_ok=True)
+
+if getattr(sys, "frozen", False):
+    _APP_DIR = os.path.dirname(sys.executable)
+else:
+    _APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+_LEGACY_DATA_DIR = os.path.join(_APP_DIR, "FundTrail_data")
+_PRIMARY_DB = os.path.join(_DATA_DIR, "fundtrail.db")
+if not os.path.exists(_PRIMARY_DB) and os.path.isdir(_LEGACY_DATA_DIR) and os.path.abspath(_LEGACY_DATA_DIR) != os.path.abspath(_DATA_DIR):
+    try:
+        for _name in os.listdir(_LEGACY_DATA_DIR):
+            _src = os.path.join(_LEGACY_DATA_DIR, _name)
+            _dst = os.path.join(_DATA_DIR, _name)
+            if os.path.exists(_dst):
+                continue
+            if os.path.isdir(_src):
+                shutil.copytree(_src, _dst)
+            else:
+                shutil.copy2(_src, _dst)
+    except OSError as exc:
+        _msgbox(
+            f"FundTrail could not migrate old data from:\n{_LEGACY_DATA_DIR}\n\n"
+            f"The app will continue using:\n{_DATA_DIR}\n\n{exc}",
+            "FundTrail — data migration warning",
+        )
 os.environ["FUNDTRAIL_DATA_DIR"] = _DATA_DIR
 
 if getattr(sys, "frozen", False):

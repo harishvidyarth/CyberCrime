@@ -1,5 +1,7 @@
 ; Inno Setup script for FundTrail. Compile on Windows with Inno Setup (ISCC.exe)
 ; AFTER building dist\FundTrail.exe via build_exe.bat. Produces dist\FundTrail_Setup.exe.
+; The PyInstaller EXE already bundles Python and application dependencies.
+; Runtime data is stored per user in %LOCALAPPDATA%\FundTrail, not in Program Files.
 
 [Setup]
 AppName=FundTrail
@@ -16,6 +18,7 @@ Source: "dist\FundTrail.exe"; DestDir: "{app}"
 
 [Icons]
 Name: "{group}\FundTrail"; Filename: "{app}\FundTrail.exe"
+Name: "{group}\Uninstall FundTrail"; Filename: "{uninstallexe}"
 Name: "{commondesktop}\FundTrail"; Filename: "{app}\FundTrail.exe"; Tasks: desktopicon
 
 [Tasks]

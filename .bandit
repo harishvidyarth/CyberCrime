@@ -1,0 +1,3 @@
+[bandit]
+exclude = main/static,main/migrations
+skips = B101,B105,B106,B107,B110,B301,B403,B404,B603

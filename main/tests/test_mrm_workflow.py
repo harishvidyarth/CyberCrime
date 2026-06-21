@@ -58,7 +58,8 @@ with app.app_context():
         if u.id is None:
             db.session.add(u)
         u.role = role
-        u.set_password(pw)
+        if not u.password_hash or not u.check_password(pw):
+            u.set_password(pw)
         u.must_change_password = False
         u.failed_login_attempts = 0
         u.account_locked_until = None

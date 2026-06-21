@@ -62,6 +62,7 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd  # pyright: ignore[reportMissingImports]
 import pymysql  # pyright: ignore[reportMissingModuleSource]
+from email_utils import send_integration_test_email, send_password_reset
 from flask_login import (  # pyright: ignore[reportMissingImports]
     LoginManager,
     current_user,
@@ -71,6 +72,7 @@ from flask_login import (  # pyright: ignore[reportMissingImports]
 )
 from flask_migrate import Migrate  # pyright: ignore[reportMissingModuleSource]
 from flask_wtf.csrf import CSRFError, CSRFProtect
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from models import (
     CASE_STATUSES,
     CaseNote,
@@ -129,15 +131,23 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # log file location
-if os.name == "nt":
+if os.environ.get("FUNDTRAIL_DATA_DIR"):
+    log_dir = os.path.join(os.environ["FUNDTRAIL_DATA_DIR"], "logs")
+elif os.name == "nt":
     log_dir = os.path.join(os.environ.get("APPDATA"), "FundTrailTool")
 else:
     log_dir = os.path.join(os.path.expanduser("~"), ".fundtrailtool")
 
-os.makedirs(log_dir, exist_ok=True)
-log_file_path = os.path.join(log_dir, "app.log")
+try:
+    os.makedirs(log_dir, exist_ok=True)
+except OSError:
+    log_dir = None
+log_file_path = os.path.join(log_dir, "app.log") if log_dir else None
 
-handler = RotatingFileHandler(log_file_path, maxBytes=10000000, backupCount=5)
+try:
+    handler = RotatingFileHandler(log_file_path, maxBytes=10000000, backupCount=5)
+except (OSError, PermissionError):
+    handler = logging.StreamHandler()
 handler.setLevel(logging.INFO)
 
 
@@ -188,7 +198,10 @@ logger.addHandler(handler)
 
 # Dedicated alert log for 500s — a small, high-signal file an admin
 # (or a watcher script / mail hook) can monitor instead of grepping app.log.
-alert_handler = RotatingFileHandler(os.path.join(log_dir, "alerts.log"), maxBytes=1000000, backupCount=2)
+try:
+    alert_handler = RotatingFileHandler(os.path.join(log_dir, "alerts.log"), maxBytes=1000000, backupCount=2)
+except (TypeError, OSError, PermissionError):
+    alert_handler = logging.StreamHandler()
 alert_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
 alert_logger = logging.getLogger("fundtrail.alerts")
 alert_logger.addHandler(alert_handler)
@@ -206,6 +219,46 @@ def resource_path(relative_path):
     else:
         base_path = os.path.dirname(os.path.abspath(__file__))  # normal run
     return os.path.join(base_path, relative_path)
+
+
+def _env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_float(name, default):
+    value = os.environ.get(name)
+    if value is None or value == "":
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        logger.warning("Invalid %s=%r; using %s", name, value, default)
+        return default
+
+
+try:
+    import sentry_sdk
+    from sentry_sdk.integrations.flask import FlaskIntegration
+
+    if os.environ.get("SENTRY_DSN"):
+        sentry_sdk.init(
+            dsn=os.environ["SENTRY_DSN"],
+            integrations=[FlaskIntegration()],
+            environment=os.environ.get("SENTRY_ENVIRONMENT", "development"),
+            release=os.environ.get("SENTRY_RELEASE", globals().get("APP_VERSION")),
+            send_default_pii=_env_bool("SENTRY_SEND_DEFAULT_PII", False),
+            enable_logs=_env_bool("SENTRY_ENABLE_LOGS", True),
+            traces_sample_rate=_env_float("SENTRY_TRACES_SAMPLE_RATE", 0.1),
+            profile_session_sample_rate=_env_float("SENTRY_PROFILE_SESSION_SAMPLE_RATE", 0.0),
+            profile_lifecycle=os.environ.get("SENTRY_PROFILE_LIFECYCLE", "trace"),
+        )
+except ImportError:  # pragma: no cover
+    pass
+except TypeError as exc:  # pragma: no cover - older SDK compatibility
+    logger.warning("Sentry SDK option not supported by installed version: %s", exc)
 
 
 app = Flask(__name__, template_folder=resource_path("templates"), static_folder=resource_path("static"))
@@ -769,6 +822,44 @@ app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 25 MB
 
 db.init_app(app)
 
+PASSWORD_RESET_MAX_AGE = 1800
+
+
+def _password_reset_serializer():
+    return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="fundtrail-password-reset")
+
+
+def _password_reset_version(user):
+    if not user or not user.password_changed_at:
+        return ""
+    changed = user.password_changed_at.replace(tzinfo=timezone.utc) if user.password_changed_at.tzinfo is None else user.password_changed_at
+    return changed.isoformat()
+
+
+def _make_password_reset_token(user):
+    return _password_reset_serializer().dumps({"uid": user.id, "pw": _password_reset_version(user)})
+
+
+def _load_password_reset_user(token):
+    data = _password_reset_serializer().loads(token, max_age=PASSWORD_RESET_MAX_AGE)
+    user = User.query.get(data.get("uid"))
+    if not user or data.get("pw") != _password_reset_version(user):
+        raise BadSignature("stale password reset token")
+    return user
+
+
+def _send_password_reset_if_email_matches(user, submitted_email):
+    submitted = (submitted_email or "").strip().lower()
+    stored = (user.email or "").strip().lower() if user else ""
+    if user and stored and submitted and submitted == stored:
+        token = _make_password_reset_token(user)
+        link = url_for("reset_password", token=token, _external=True)
+        try:
+            send_password_reset(user.email, link)
+            app.logger.info("Password reset email requested for user id %s", user.id)
+        except Exception as exc:
+            app.logger.warning("Password reset email send failed for user id %s: %s", user.id, exc)
+
 
 def ensure_usage_log_table():
     inspector = inspect(db.engine)
@@ -1063,15 +1154,21 @@ def ensure_mrm_backfill():
 
 
 def generate_secure_password(length=16):
-    """Generate a secure random password."""
-    alphabet = string.ascii_letters + string.digits + '!@#$%^&*(),.?":{}|<>'
+    """Generate a secure random first-login password.
+
+    Keep the symbol set copy-safe for users reading it from a dialog or console.
+    The password policy accepts more symbols, but quotes/brackets are easy to
+    mistype and were causing first-login confusion in the packaged EXE.
+    """
+    safe_symbols = "!@#$%&*?"
+    alphabet = string.ascii_letters + string.digits + safe_symbols
     while True:
         password = "".join(secrets.choice(alphabet) for i in range(length))
         if (
             any(c.islower() for c in password)
             and any(c.isupper() for c in password)
             and any(c.isdigit() for c in password)
-            and any(c in '!@#$%^&*(),.?":{}|<>' for c in password)
+            and any(c in safe_symbols for c in password)
         ):
             return password
 
@@ -1095,7 +1192,8 @@ def migrate_split_dbs_into_main():
             conn = sqlite3.connect(old_path)
             conn.row_factory = sqlite3.Row
             try:
-                rows = conn.execute(f"SELECT * FROM {table}").fetchall()
+                # `table` is selected from a fixed allowlist above, not user input.
+                rows = conn.execute(f"SELECT * FROM {table}").fetchall()  # nosec B608
             except sqlite3.OperationalError:
                 rows = []  # table missing in the old file
             finally:
@@ -1191,7 +1289,7 @@ def role_home():
     return redirect(url_for("index"))
 
 
-ALLOWED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0"}
+ALLOWED_HOSTS = {"localhost", "127.0.0.1"}
 
 
 def is_safe_url(target):
@@ -1456,8 +1554,7 @@ def disable_2fa():
 
 @app.route("/forgot_password", methods=["GET", "POST"])
 def forgot_password():
-    """Self-service password reset using TOTP as the trusted factor.
-    Officers without 2FA must ask an admin to reset their password."""
+    """Self-service password reset using TOTP or a validated account email."""
     if current_user.is_authenticated:
         return redirect(url_for("role_home"))
 
@@ -1473,11 +1570,13 @@ def forgot_password():
     if step == 1:
         username = request.form.get("username", "").strip()
         user = User.query.filter_by(username=username).first()
-        if not user or not user.totp_secret or pyotp is None:
+        if not user:
             return render_template("forgot_password.html", step=1, no_2fa=True)
         session["fp_uid"] = user.id
         session["fp_step"] = 2
-        return render_template("forgot_password.html", step=2)
+        if user.totp_secret and pyotp is not None:
+            return render_template("forgot_password.html", step=2, email_fallback=True)
+        return render_template("forgot_password.html", step=2, email_required=True)
 
     # Step 2: verify TOTP
     if step == 2:
@@ -1485,12 +1584,20 @@ def forgot_password():
         user = User.query.get(uid) if uid else None
         if not user:
             return redirect(url_for("forgot_password"))
+        if request.form.get("reset_method") == "email":
+            _send_password_reset_if_email_matches(user, request.form.get("email", ""))
+            return render_template("forgot_password.html", step=2, email_required=not bool(user.totp_secret and pyotp), email_sent=True)
         code = request.form.get("code", "").strip().replace(" ", "")
         if pyotp and user.totp_secret and pyotp.TOTP(user.totp_secret).verify(code, valid_window=1):
             session["fp_step"] = 3
             session["fp_verified"] = True
             return render_template("forgot_password.html", step=3)
-        return render_template("forgot_password.html", step=2, error="Invalid code — check your authenticator app and try again.")
+        return render_template(
+            "forgot_password.html",
+            step=2,
+            error="Invalid code — check your authenticator app and try again.",
+            email_fallback=True,
+        )
 
     # Step 3: set new password
     if step == 3:
@@ -1517,6 +1624,37 @@ def forgot_password():
             return render_template("forgot_password.html", step=3, error=str(exc))
 
     return redirect(url_for("forgot_password"))
+
+
+@app.route("/reset_password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    if current_user.is_authenticated:
+        return redirect(url_for("role_home"))
+    try:
+        user = _load_password_reset_user(token)
+    except SignatureExpired:
+        flash("Password reset link expired. Request a new one.", "danger")
+        return redirect(url_for("forgot_password"))
+    except BadSignature:
+        flash("Password reset link is invalid. Request a new one.", "danger")
+        return redirect(url_for("forgot_password"))
+
+    if request.method == "GET":
+        return render_template("forgot_password.html", step=3, reset_token=token)
+
+    new_pw = request.form.get("password", "")
+    confirm_pw = request.form.get("confirm_password", "")
+    if new_pw != confirm_pw:
+        return render_template("forgot_password.html", step=3, reset_token=token, error="Passwords do not match.")
+    try:
+        user.set_password(new_pw)
+        user.must_change_password = False
+        db.session.commit()
+        log_usage("self_service_pw_reset_email")
+        flash("Password reset successfully. Please sign in with your new password.", "success")
+        return redirect(url_for("login"))
+    except ValueError as exc:
+        return render_template("forgot_password.html", step=3, reset_token=token, error=str(exc))
 
 
 @app.route("/logout", methods=["GET", "POST"])
@@ -5625,6 +5763,17 @@ def _accessible_ack_nos():
     return {r[0] for r in rows}
 
 
+def _integration_test_routes_enabled():
+    return os.environ.get("ENABLE_INTEGRATION_TEST_ROUTES", "").lower() == "true"
+
+
+def _require_integration_test_token():
+    expected = os.environ.get("INTEGRATION_TEST_TOKEN", "")
+    provided = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    if not expected or not secrets.compare_digest(provided, expected):
+        abort(404)
+
+
 # ---------------------------------------------------------------------------
 # 13. Routes: search, case workflow & health
 # ---------------------------------------------------------------------------
@@ -5642,6 +5791,32 @@ def healthz():
     return jsonify(
         {"status": "ok" if db_ok else "degraded", "db": "ok" if db_ok else "error", "version": APP_VERSION}
     ), status
+
+
+@app.route("/__integration_test/sentry", methods=["POST"])
+@csrf.exempt
+def integration_test_sentry():
+    """Disabled-by-default probe that intentionally raises for Sentry validation."""
+    if not _integration_test_routes_enabled():
+        abort(404)
+    _require_integration_test_token()
+    raise RuntimeError("FundTrail Sentry integration test exception")
+
+
+@app.route("/__integration_test/resend", methods=["POST"])
+@csrf.exempt
+def integration_test_resend():
+    """Disabled-by-default probe that sends one test email through Resend."""
+    if not _integration_test_routes_enabled():
+        abort(404)
+    _require_integration_test_token()
+    to_email = os.environ.get("RESEND_TEST_TO", "").strip()
+    if not to_email:
+        return jsonify({"status": "skipped", "reason": "RESEND_TEST_TO is not configured"}), 400
+    result = send_integration_test_email(to_email)
+    if result is None:
+        return jsonify({"status": "skipped", "reason": "RESEND_API_KEY or resend package is not configured"}), 400
+    return jsonify({"status": "sent", "to": to_email})
 
 
 @app.route("/search")

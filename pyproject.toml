@@ -20,6 +20,13 @@ ignore = [
 testpaths = ["main/tests"]
 python_files = ["test_*.py", "pytest_*.py"]
 
+[tool.coverage.run]
+source = ["main"]
+omit = ["main/migrations/*", "main/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = ["if __name__ == .__main__.:"]
+
 [tool.ruff.lint.per-file-ignores]
 # app.py interleaves imports with config on purpose (load_dotenv before model
 # imports, conditional msvcrt/fcntl); tests set sys.path before importing app.
