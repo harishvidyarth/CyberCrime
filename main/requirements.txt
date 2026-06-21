@@ -17,7 +17,7 @@ urllib3==2.7.0            # transitive (requests); pinned for PYSEC-2026-141/142
 pillow==12.2.0            # transitive (xhtml2pdf/reportlab); pinned for 6 CVEs
 Flask-WTF==1.2.2
 Flask-Limiter==3.11.0
-Flask-Compress==1.18      # gzip responses (Feature D20)
+Flask-Compress==1.24      # gzip responses (Feature D20)
 pyotp==2.9.0              # TOTP two-factor auth (Feature B9)
 qrcode==8.0               # QR code generation for 2FA setup page (Pillow already required)
 pytest-cov==7.0.0         # coverage reporting in CI
