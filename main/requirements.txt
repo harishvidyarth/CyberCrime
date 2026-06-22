@@ -9,7 +9,7 @@ pandas==2.3.3
 Flask-Login==0.6.3
 Flask-Migrate==4.1.0
 PyMySQL==1.2.0
-cryptography==48.0.1
+cryptography==49.0.0
 openpyxl==3.1.5
 requests==2.34.2          # >=2.33 fixes GHSA-gc5v-m9x4-r6x2
 python-dotenv==1.2.2      # >=1.2.2 fixes GHSA-mf9w-mj56-hr94
