@@ -682,6 +682,38 @@ function expandHoldAccount(accountNumber) {
   highlightHoldNode(accountNumber);
 }
 
+// Auto-expand the ancestor path of every Put-On-Hold node so hold accounts are
+// visible immediately after load, WITHOUT fully expanding the tree. Reuses the
+// existing collapsed-child model (_children) and d3's persistent .parent refs.
+// Guarded: any failure degrades to the default collapsed view (graph still loads).
+function expandHoldPaths(root) {
+  try {
+    if (!root) return;
+    // Walk the whole hierarchy (including collapsed _children) to find hold nodes.
+    const stack = [root];
+    const holdNodes = [];
+    while (stack.length) {
+      const n = stack.pop();
+      if (n.data && n.data.hold_info) holdNodes.push(n);
+      if (n.children) stack.push(...n.children);
+      if (n._children) stack.push(...n._children);
+    }
+    // For each hold node, expand only its ancestor chain (not its own subtree).
+    holdNodes.forEach(h => {
+      let n = h.parent;
+      while (n) {
+        if (n._children) {
+          n.children = n._children;
+          n._children = null;
+        }
+        n = n.parent;
+      }
+    });
+  } catch (e) {
+    console.error('expandHoldPaths failed; falling back to default expansion', e);
+  }
+}
+
 function cleanTreeData(root) {
   // Remove children with null or undefined accounts recursively (keep empty strings, "N/A", or "NA" as valid placeholders)
   if (!root || !root.children) return;
@@ -795,6 +827,10 @@ fetch(`/graph_data/${ackNo}`)
         d.children = null;
       }
     });
+    // Smart auto-expansion: reveal every Put-On-Hold account by expanding only the
+    // branches that lead to one (the rest stay collapsed). Manual collapse/expand
+    // and hold-highlighting behaviour are unaffected.
+    expandHoldPaths(root);
     let count = 1;
     root.children?.forEach(child => {
       child.data.victim_label = `Victim ${count++}`;
