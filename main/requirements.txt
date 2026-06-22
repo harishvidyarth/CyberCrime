@@ -22,7 +22,7 @@ pyotp==2.9.0              # TOTP two-factor auth (Feature B9)
 qrcode==8.0               # QR code generation for 2FA setup page (Pillow already required)
 pytest-cov==7.0.0         # coverage reporting in CI
 sentry-sdk[flask]==2.47.0 # optional error/performance telemetry when SENTRY_DSN is set
-resend==2.21.0            # password reset email delivery
+resend==2.32.2            # password reset email delivery
 
 # Two PDF tools, kept on purpose (Phase 6, item 24): xhtml2pdf renders the HTML letter
 # templates; reportlab draws the data-visual reports (fund-trail, analytics). Migrating
