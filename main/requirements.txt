@@ -20,7 +20,7 @@ Flask-Limiter==3.11.0
 Flask-Compress==1.24      # gzip responses (Feature D20)
 pyotp==2.9.0              # TOTP two-factor auth (Feature B9)
 qrcode==8.0               # QR code generation for 2FA setup page (Pillow already required)
-pytest-cov==7.0.0         # coverage reporting in CI
+pytest-cov==7.1.0         # coverage reporting in CI
 sentry-sdk[flask]==2.47.0 # optional error/performance telemetry when SENTRY_DSN is set
 resend==2.32.2            # password reset email delivery
 
