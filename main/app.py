@@ -484,6 +484,12 @@ def get_state(ifsc):
     return "Unknown"
 
 
+def _safe_log(value):
+    """Strip CR/LF from user-controlled values before logging them, to prevent
+    log forging / injection (SonarCloud pythonsecurity:S5145)."""
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 def check_case_access(ack_no):
     """
     Verifies if the current user has access to the case identified by ack_no.
@@ -505,7 +511,7 @@ def check_case_access(ack_no):
             return
         logger.warning(
             "Unauthorized cross-group access attempt to %s by admin %s",
-            ack_no, current_user.username,
+            _safe_log(ack_no), current_user.username,
         )
         abort(403)
 
@@ -516,7 +522,7 @@ def check_case_access(ack_no):
         return
 
     logger.warning(
-        "Unauthorized access attempt to %s by officer %s", ack_no, current_user.username
+        "Unauthorized access attempt to %s by officer %s", _safe_log(ack_no), current_user.username
     )
     abort(403)
 
@@ -3437,7 +3443,7 @@ def put_on_hold_transactions(ack_no):
 
         return jsonify(response)
     except Exception as e:
-        logger.error(f"Error fetching hold transactions for {ack_no}: {e}")
+        logger.error(f"Error fetching hold transactions for {_safe_log(ack_no)}: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
 
@@ -3580,7 +3586,7 @@ def save_kyc():
 
         db.session.commit()
         log_usage("save_kyc", ack_no=(txn.ack_no if txn else None))
-        logger.info(f"KYC Save Request processed for txn_id: {txn_id}")
+        logger.info(f"KYC Save Request processed for txn_id: {_safe_log(txn_id)}")
         return jsonify({"status": "success"})
     except Exception as e:
         logger.error(f"Error saving KYC: {e}")
@@ -3629,7 +3635,7 @@ def save_hold_refund():
         try:
             txn.refund_amount = float(refund_amount_raw) if refund_amount_raw not in (None, "") else None
         except (TypeError, ValueError):
-            logger.error(f"Invalid refund amount: {refund_amount_raw}")
+            logger.error(f"Invalid refund amount: {_safe_log(refund_amount_raw)}")
             return jsonify({"status": "error", "message": "Invalid refund amount"}), 400
 
         # Update or Create POHRefundDetails for persistence
