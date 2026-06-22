@@ -479,7 +479,7 @@ def get_state(ifsc):
             ifsc_cache[ifsc] = state
             return state
     except Exception as e:
-        logger.error(f"Error fetching state for IFSC from excel {ifsc}: {e}")
+        logger.exception(f"Error fetching state for IFSC from excel {ifsc}: {e}")
     ifsc_cache[ifsc] = "Unknown"
     return "Unknown"
 
@@ -576,7 +576,7 @@ def load_ifsc_cache():
                 ifsc_api_cache = json.load(f)
             logger.info(f"Loaded {len(ifsc_api_cache)} entries from IFSC cache.")
         except Exception as e:
-            logger.error(f"Error loading IFSC cache: {e}")
+            logger.exception(f"Error loading IFSC cache: {e}")
             ifsc_api_cache = {}
     else:
         ifsc_api_cache = {}
@@ -588,7 +588,7 @@ def save_ifsc_cache():
             json.dump(ifsc_api_cache, f)
         logger.info(f"Saved {len(ifsc_api_cache)} entries to IFSC cache.")
     except Exception as e:
-        logger.error(f"Error saving IFSC cache: {e}")
+        logger.exception(f"Error saving IFSC cache: {e}")
 
 
 # Initialize cache
@@ -615,7 +615,7 @@ def get_state_from_api(ifsc_code):
             ifsc_api_cache[ifsc_code] = local_state
             return local_state
     except Exception as e:
-        logger.error(f"Error fetching state from local utils for {ifsc_code}: {e}")
+        logger.exception(f"Error fetching state from local utils for {ifsc_code}: {e}")
 
     try:
         # Use only trusted API endpoint
@@ -630,11 +630,11 @@ def get_state_from_api(ifsc_code):
         else:
             return "Unknown"
     except Exception as e:
-        logger.error(f"Error fetching state for {ifsc_code}: {e}")
+        logger.exception(f"Error fetching state for {ifsc_code}: {e}")
         return "Unknown"
 
 
-@app.route("/ifsc_info/<ifsc>")
+@app.route("/ifsc_info/<ifsc>", methods=["GET"])
 @login_required
 def ifsc_info(ifsc):
     try:
@@ -643,7 +643,7 @@ def ifsc_info(ifsc):
         info = get_ifsc_info(ifsc) or {}
         return jsonify(info)
     except Exception as e:
-        logger.error(f"Error returning IFSC info for {ifsc}: {e}")
+        logger.exception(f"Error returning IFSC info for {ifsc}: {e}")
         return jsonify({}), 500
 
 
@@ -893,7 +893,7 @@ def log_usage(action, filename=None, ack_no=None):
             db.session.rollback()
         except Exception:
             pass
-        logger.error(f"UsageLog error: {e}")
+        logger.exception(f"UsageLog error: {e}")
 
 
 def validate_account_number(account):
@@ -1219,7 +1219,7 @@ def migrate_split_dbs_into_main():
                 logger.info(f"Consolidated {imported} row(s) from {os.path.basename(old_path)} into main DB.")
         except Exception as exc:
             db.session.rollback()
-            logger.error(f"DB consolidation for {old_path} failed: {exc}")
+            logger.exception(f"DB consolidation for {old_path} failed: {exc}")
 
 
 def backfill_complaints():
@@ -1259,7 +1259,7 @@ def backfill_complaints():
             logger.info(f"Backfilled {created} complaint row(s) for pre-existing uploads.")
     except Exception as e:
         db.session.rollback()
-        logger.error(f"backfill_complaints failed: {e}")
+        logger.exception(f"backfill_complaints failed: {e}")
 
 
 with app.app_context():
@@ -1278,12 +1278,12 @@ VIEW_ONLY_ROLES = set()  # Viewer (read-only) role removed — only Admin & Inve
 # ---------------------------------------------------------------------------
 
 
-@app.route("/")
+@app.route("/", methods=["GET"])
 def home():
     return redirect("/login")
 
 
-@app.route("/home")
+@app.route("/home", methods=["GET"])
 def role_home():
     """Single 'Home' entry point. Always sends a user to THEIR OWN dashboard, so an
     admin never lands on the officer dashboard (and vice-versa). Generic 'Return to
@@ -1678,7 +1678,7 @@ def logout():
 # ---------------------------------------------------------------------------
 
 
-@app.route("/admin_dashboard")
+@app.route("/admin_dashboard", methods=["GET"])
 def admin_dashboard():
     """Admin home. Redirects (not 403) for non-admins — preserved historical
     behaviour that navigation and the smoke tests rely on."""
@@ -1709,7 +1709,7 @@ def admin_dashboard():
     )
 
 
-@app.route("/index")
+@app.route("/index", methods=["GET"])
 def index():
     """Officer dashboard: KPI stat cards, recent cases, activity feed, upload."""
     if "username" not in session:
@@ -1816,7 +1816,7 @@ def upload_excel():
             try:
                 Transaction.query.filter_by(upload_id=existing_file.id).delete()
             except Exception as e:
-                logger.error(f"Error deleting associated transactions for file {filename}: {e}")
+                logger.exception(f"Error deleting associated transactions for file {filename}: {e}")
 
             # Delete database record
             db.session.delete(existing_file)
@@ -1868,7 +1868,7 @@ def upload_excel():
         try:
             xls = pd.ExcelFile(file_path, engine="openpyxl")
         except Exception as e:
-            logger.error(f"Error reading Excel file: {str(e)}", exc_info=True)
+            logger.exception(f"Error reading Excel file: {str(e)}", exc_info=True)
             flash("Error reading Excel file. Please ensure it is a valid .xlsx file.", "error")
             return redirect("/index")
 
@@ -2403,7 +2403,7 @@ def upload_excel():
             db.session.commit()
         except Exception as _ce:
             db.session.rollback()
-            logger.error(f"Failed to register complaint rows for upload {filename}: {_ce}")
+            logger.exception(f"Failed to register complaint rows for upload {filename}: {_ce}")
 
         logger.info(
             f"[UPLOAD] Txn ID extraction summary: Found={txn_id_counts['found']}, Missing={txn_id_counts['missing']}"
@@ -2412,7 +2412,7 @@ def upload_excel():
 
     except Exception as e:
         db.session.rollback()
-        logger.error(f"Failed to process Excel: {e}", exc_info=True)
+        logger.exception(f"Failed to process Excel: {e}", exc_info=True)
         flash("Failed to process Excel file. Please check the file format and try again.", "danger")
     finally:
         # Close the workbook handle (Windows won't delete an open file) and purge the
@@ -2434,7 +2434,7 @@ def upload_excel():
     return redirect("/index")
 
 
-@app.route("/download/<filename>")
+@app.route("/download/<filename>", methods=["GET"])
 @login_required
 def download_file(filename):
     # Sanitize filename
@@ -2468,7 +2468,7 @@ def download_file(filename):
 # ---------------------------------------------------------------------------
 
 
-@app.route("/view_graph")
+@app.route("/view_graph", methods=["GET"])
 @login_required
 def view_graph():
     ack_no = request.args.get("ack_no")
@@ -2484,11 +2484,11 @@ def view_graph():
         fname = fname_row[0] if fname_row else None
         log_usage("view_graph", filename=fname, ack_no=ack_no)
     except Exception as e:
-        logger.error(f"UsageLog view_graph error: {e}")
+        logger.exception(f"UsageLog view_graph error: {e}")
     return redirect(url_for("graph_tree1", ack_no=ack_no))
 
 
-@app.route("/graph/<ack_no>")
+@app.route("/graph/<ack_no>", methods=["GET"])
 @login_required
 def graph_tree1(ack_no):
     check_case_access(ack_no)
@@ -2503,7 +2503,7 @@ def graph_tree1(ack_no):
         fname = fname_row[0] if fname_row else None
         log_usage("graph_page", filename=fname, ack_no=ack_no)
     except Exception as e:
-        logger.error(f"UsageLog graph_page error: {e}")
+        logger.exception(f"UsageLog graph_page error: {e}")
 
     # Calculate Layer 1 Total
     layer_1_total = 0.0
@@ -2534,14 +2534,14 @@ def graph_tree1(ack_no):
 
         formatted_l1_total = format_indian_currency(layer_1_total)
     except Exception as e:
-        logger.error(f"Error calculating layer 1 total: {e}")
+        logger.exception(f"Error calculating layer 1 total: {e}")
 
     return render_template(
         "graph_tree1.html", ack_no=ack_no, role=session.get("role"), layer_1_total=formatted_l1_total
     )
 
 
-@app.route("/complaints")
+@app.route("/complaints", methods=["GET"])
 @login_required
 def complaints():
     """'My Cases' — the real cases the current user may access (per-officer
@@ -2575,7 +2575,7 @@ def complaints():
     return render_template("complaint.html", cases=cases, statuses=CASE_STATUSES)
 
 
-@app.route("/graph_data/<ack_no>")
+@app.route("/graph_data/<ack_no>", methods=["GET"])
 @login_required
 def graph_data(ack_no):
     # Authorization check
@@ -2604,7 +2604,7 @@ def graph_data(ack_no):
                         updated_count += 1
                 logger.info(f"Restored persistent POH details for {updated_count} transactions")
         except Exception as e:
-            logger.error(f"Error restoring POH details in graph_data: {e}")
+            logger.exception(f"Error restoring POH details in graph_data: {e}")
 
         # ✅ Restore KYC Details from persistent store (KYCDetails)
         try:
@@ -2627,7 +2627,7 @@ def graph_data(ack_no):
                         kyc_updated_count += 1
                 logger.info(f"Restored persistent KYC details for {kyc_updated_count} transactions")
         except Exception as e:
-            logger.error(f"Error restoring KYC details in graph_data: {e}")
+            logger.exception(f"Error restoring KYC details in graph_data: {e}")
 
         if not transactions:
             logger.warning(f"No transactions found for ACK {ack_no}")
@@ -3001,12 +3001,12 @@ def graph_data(ack_no):
         logger.info(f"Built hierarchy with {len(result['children'])} root children")
         return jsonify(result)
     except Exception as e:
-        logger.error(f"Error processing graph data for ACK {ack_no}: {e}", exc_info=True)
+        logger.exception(f"Error processing graph data for ACK {ack_no}: {e}", exc_info=True)
         # Return a safe error message to the client while logging full traceback to server logs
         return jsonify({"error": "Internal server error while processing graph data."}), 500
 
 
-@app.route("/available_ack_nos")
+@app.route("/available_ack_nos", methods=["GET"])
 @login_required
 def available_ack_nos():
     """List all available ACK numbers accessible to the current user"""
@@ -3032,7 +3032,7 @@ _ATM_RESULT_CACHE = {}
 _ATM_CACHE_MAX = 64  # bound the cache so it can't grow without limit (was a slow leak)
 
 
-@app.route("/atm_data/<ack_no>")
+@app.route("/atm_data/<ack_no>", methods=["GET"])
 @login_required
 def atm_data(ack_no):
     """Return rows from the ATM-related sheet for the uploaded Excel associated with this ack_no."""
@@ -3160,7 +3160,7 @@ def atm_data(ack_no):
 
             logger.info(f"[atm_data] Built layer map for {len(layer_map)} accounts")
         except Exception as e:
-            logger.error(f"[atm_data] Error building layer map: {e}")
+            logger.exception(f"[atm_data] Error building layer map: {e}")
 
         # Find Account Number column in the dataframe
         acc_col = None
@@ -3214,11 +3214,11 @@ def atm_data(ack_no):
         _ATM_RESULT_CACHE[(up.id, ack_no)] = _result  # cache: blob is immutable per upload
         return jsonify(_result)
     except Exception as e:
-        logger.error(f"[atm_data] Error: {e}", exc_info=True)
+        logger.exception(f"[atm_data] Error: {e}", exc_info=True)
         return jsonify({"atm": [], "error": "Failed to load ATM data"})
 
 
-@app.route("/statewise_summary/<ack_no>")
+@app.route("/statewise_summary/<ack_no>", methods=["GET"])
 @login_required
 def statewise_summary(ack_no):
     check_case_access(ack_no)
@@ -3248,7 +3248,7 @@ def statewise_summary(ack_no):
                         try:
                             state = future.result()
                         except Exception as exc:
-                            logger.error(f"IFSC {ifsc} generated an exception: {exc}")
+                            logger.exception(f"IFSC {ifsc} generated an exception: {exc}")
                             state = "Unknown"
                         ifsc_to_state[ifsc] = state
 
@@ -3381,11 +3381,11 @@ def statewise_summary(ack_no):
 
         return jsonify(result)
     except Exception as e:
-        logger.error(f"Error in statewise_summary for {ack_no}: {e}")
+        logger.exception(f"Error in statewise_summary for {ack_no}: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
 
-@app.route("/put_on_hold_transactions/<ack_no>")
+@app.route("/put_on_hold_transactions/<ack_no>", methods=["GET"])
 @login_required
 def put_on_hold_transactions(ack_no):
     """Return all put-on-hold transactions for a complaint."""
@@ -3403,14 +3403,14 @@ def put_on_hold_transactions(ack_no):
             poh_details_list = POHRefundDetails.query.filter_by(ack_no=ack_no.strip()).all()
             poh_map = {p.txn_id: p for p in poh_details_list}
         except Exception as e:
-            logger.error(f"Error fetching POH details in put_on_hold_transactions: {e}")
+            logger.exception(f"Error fetching POH details in put_on_hold_transactions: {e}")
 
         # MRM 7-step progress, keyed by put_on_hold_txn_id (additive to legacy fields).
         mrm_map = {}
         try:
             mrm_map = {m.txn_id: m for m in MRMTracking.query.filter_by(ack_no=ack_no.strip()).all()}
         except Exception as e:
-            logger.error(f"Error fetching MRM details in put_on_hold_transactions: {e}")
+            logger.exception(f"Error fetching MRM details in put_on_hold_transactions: {e}")
 
         response = []
         for t in hold_txns:
@@ -3443,11 +3443,11 @@ def put_on_hold_transactions(ack_no):
 
         return jsonify(response)
     except Exception as e:
-        logger.error(f"Error fetching hold transactions for {_safe_log(ack_no)}: {e}")
+        logger.exception(f"Error fetching hold transactions for {_safe_log(ack_no)}: {e}")
         return jsonify({"error": "Internal server error"}), 500
 
 
-@app.route("/state_transactions/<ack_no>/<state>")
+@app.route("/state_transactions/<ack_no>/<state>", methods=["GET"])
 @login_required
 def state_transactions(ack_no, state):
     check_case_access(ack_no)
@@ -3589,7 +3589,7 @@ def save_kyc():
         logger.info(f"KYC Save Request processed for txn_id: {_safe_log(txn_id)}")
         return jsonify({"status": "success"})
     except Exception as e:
-        logger.error(f"Error saving KYC: {e}")
+        logger.exception(f"Error saving KYC: {e}")
         db.session.rollback()
         return jsonify({"status": "error", "message": "Internal error while saving. See server log."}), 500
 
@@ -3635,7 +3635,7 @@ def save_hold_refund():
         try:
             txn.refund_amount = float(refund_amount_raw) if refund_amount_raw not in (None, "") else None
         except (TypeError, ValueError):
-            logger.error(f"Invalid refund amount: {_safe_log(refund_amount_raw)}")
+            logger.exception(f"Invalid refund amount: {_safe_log(refund_amount_raw)}")
             return jsonify({"status": "error", "message": "Invalid refund amount"}), 400
 
         # Update or Create POHRefundDetails for persistence
@@ -3658,7 +3658,7 @@ def save_hold_refund():
 
         return jsonify({"status": "success"})
     except Exception as e:
-        logger.error(f"Error in save_hold_refund: {e}", exc_info=True)
+        logger.exception(f"Error in save_hold_refund: {e}", exc_info=True)
         return jsonify({"status": "error", "message": "Internal error while saving. See server log."}), 500
 
 
@@ -3815,11 +3815,11 @@ def save_mrm_status():
             db.session.rollback()
         except Exception:
             pass
-        logger.error(f"Error in save_mrm_status: {e}", exc_info=True)
+        logger.exception(f"Error in save_mrm_status: {e}", exc_info=True)
         return jsonify({"status": "error", "message": "Internal error while saving MRM status."}), 500
 
 
-@app.route("/mrm_timeline/<ack_no>/<txn_id>")
+@app.route("/mrm_timeline/<ack_no>/<txn_id>", methods=["GET"])
 @login_required
 def mrm_timeline(ack_no, txn_id):
     """Read-only MRM timeline for one put-on-hold transaction (Admin + IO).
@@ -3858,7 +3858,7 @@ def get_layer_1_total(ack_no):
         l1_txns = Transaction.query.filter_by(ack_no=ack_no, layer=1).all()
         return sum(t.amount for t in l1_txns if t.amount) if l1_txns else 0.0
     except Exception as e:
-        logger.error(f"Error calculating layer 1 total: {e}")
+        logger.exception(f"Error calculating layer 1 total: {e}")
         return 0.0
 
 
@@ -3910,7 +3910,7 @@ def generate_letter():
 
         return render_template(template_name, **context)
     except Exception as e:
-        logger.error(f"Error generating letter: {e}")
+        logger.exception(f"Error generating letter: {e}")
         return jsonify({"error": "Internal error while generating the document"}), 500
 
 
@@ -3991,7 +3991,7 @@ def generate_letter_pdf():
         return send_file(pdf_buffer, mimetype="application/pdf", as_attachment=True, download_name=safe_filename_val)
 
     except Exception as e:
-        logger.error(f"Error generating PDF letter: {e}")
+        logger.exception(f"Error generating PDF letter: {e}")
         return jsonify({"error": "Internal error while generating the document"}), 500
 
 
@@ -4080,7 +4080,7 @@ def generate_letter_docx():
 
             formatted_l1_total = format_indian_currency(layer_1_total)
         except Exception as e:
-            logger.error(f"Error calculating layer 1 total: {e}")
+            logger.exception(f"Error calculating layer 1 total: {e}")
 
         # Prepare ZIP
         zip_buffer = io.BytesIO()
@@ -4465,7 +4465,7 @@ def generate_letter_docx():
         return send_file(zip_buffer, mimetype="application/zip", as_attachment=True, download_name=zip_filename)
 
     except Exception as e:
-        logger.error(f"Error generating DOCX letter: {e}")
+        logger.exception(f"Error generating DOCX letter: {e}")
         return jsonify({"error": "Internal error while generating the document"}), 500
 
 
@@ -4474,13 +4474,13 @@ def generate_letter_docx():
 # ---------------------------------------------------------------------------
 
 
-@app.route("/view_all_complaints")
+@app.route("/view_all_complaints", methods=["GET"])
 @login_required
 def view_all_complaints():
     try:
         log_usage("view_all_complaints")
     except Exception as e:
-        logger.error(f"UsageLog view_all_complaints error: {e}")
+        logger.exception(f"UsageLog view_all_complaints error: {e}")
 
     # OPTIMIZATION: Use defer to skip loading the large 'data' column
     complaints = UploadedFile.query.options(defer(UploadedFile.data)).order_by(UploadedFile.upload_time.desc()).all()
@@ -4584,7 +4584,7 @@ def assign_case():
     return redirect(url_for("view_all_complaints"))
 
 
-@app.route("/view_officers")
+@app.route("/view_officers", methods=["GET"])
 @login_required
 @admin_required
 def view_officers():
@@ -4703,7 +4703,7 @@ def delete_officer():
 # ─────────────────────────────────────────────────────────────────
 #  File Management — view / download / delete uploaded Excel files
 # ─────────────────────────────────────────────────────────────────
-@app.route("/manage_files")
+@app.route("/manage_files", methods=["GET"])
 @login_required
 @admin_required
 def manage_files():
@@ -4760,12 +4760,12 @@ def delete_upload(file_id):
         log_usage("delete_upload", filename=fname)
     except Exception as e:
         db.session.rollback()
-        logger.error(f"delete_upload error for id={file_id}: {e}")
+        logger.exception(f"delete_upload error for id={file_id}: {e}")
         flash("Error deleting file — details are in the server log.", "danger")
     return redirect(url_for("manage_files"))
 
 
-@app.route("/download_upload/<int:file_id>")
+@app.route("/download_upload/<int:file_id>", methods=["GET"])
 @login_required
 @admin_required
 def download_upload(file_id):
@@ -4783,7 +4783,7 @@ def download_upload(file_id):
     )
 
 
-@app.route("/download_case_excel/<ack_no>")
+@app.route("/download_case_excel/<ack_no>", methods=["GET"])
 @login_required
 def download_case_excel(ack_no):
     """Download the original uploaded Excel for a case — available to the owning
@@ -4810,14 +4810,14 @@ def download_case_excel(ack_no):
     )
 
 
-@app.route("/view_analytics")
+@app.route("/view_analytics", methods=["GET"])
 @login_required
 @admin_required
 def view_analytics():
     try:
         log_usage("view_analytics")
     except Exception as e:
-        logger.error(f"UsageLog view_analytics error: {e}")
+        logger.exception(f"UsageLog view_analytics error: {e}")
 
     # ── Summary KPIs ──────────────────────────────────────────────────
     total_files = db.session.query(func.count(func.distinct(UploadedFile.filename))).scalar() or 0
@@ -4955,7 +4955,7 @@ def view_analytics():
     )
 
 
-@app.route("/download_logs")
+@app.route("/download_logs", methods=["GET"])
 @login_required
 @admin_required
 def download_logs():
@@ -5040,7 +5040,7 @@ def download_logs():
         log_usage("download_logs")
         return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=fname)
     except Exception as e:
-        logger.error(f"Failed to generate logs PDF: {e}")
+        logger.exception(f"Failed to generate logs PDF: {e}")
         return "Failed to generate logs.", 500
 
 
@@ -5103,13 +5103,13 @@ def delete_by_ack():
 
     except Exception as e:
         db.session.rollback()
-        logger.error(f"Error deleting ACK {ack_no}: {e}")
+        logger.exception(f"Error deleting ACK {ack_no}: {e}")
         flash("An error occurred while deleting the records.", "danger")
 
     return redirect(url_for("admin_dashboard"))
 
 
-@app.route("/view_complaint/<int:complaint_id>")
+@app.route("/view_complaint/<int:complaint_id>", methods=["GET"])
 @login_required
 def view_complaint(complaint_id):
     complaint = Complaint.query.get_or_404(complaint_id)
@@ -5625,14 +5625,14 @@ def download_fundtrail_pdf():
         return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name=filename)
 
     except Exception as e:
-        logger.error(f"Error generating fundtrail PDF: {e}")
+        logger.exception(f"Error generating fundtrail PDF: {e}")
         return jsonify({"error": "Internal error while generating the document"}), 500
 
 
 # ─────────────────────────────────────────────────────────────────
 #  Officer Analytics — shows only the current officer's own uploads
 # ─────────────────────────────────────────────────────────────────
-@app.route("/my_analytics")
+@app.route("/my_analytics", methods=["GET"])
 @login_required
 def my_analytics():
     """Analytics filtered to the logged-in officer's own uploads only."""
@@ -5785,7 +5785,7 @@ def _require_integration_test_token():
 # ---------------------------------------------------------------------------
 
 
-@app.route("/healthz")
+@app.route("/healthz", methods=["GET"])
 def healthz():
     """Unauthenticated liveness/readiness probe for monitors."""
     db_ok = True
@@ -5825,7 +5825,7 @@ def integration_test_resend():
     return jsonify({"status": "sent", "to": to_email})
 
 
-@app.route("/search")
+@app.route("/search", methods=["GET"])
 @login_required
 def global_search():
     """Find any ACK / account / transaction ID / bank across the
@@ -5856,7 +5856,7 @@ def global_search():
     return render_template("search_results.html", q=q, results=results)
 
 
-@app.route("/repeat_accounts")
+@app.route("/repeat_accounts", methods=["GET"])
 @login_required
 @admin_required
 def repeat_accounts():
@@ -5937,7 +5937,7 @@ def add_case_note(ack_no):
     return redirect(url_for("case_timeline", ack_no=ack_no))
 
 
-@app.route("/case_timeline/<ack_no>")
+@app.route("/case_timeline/<ack_no>", methods=["GET"])
 @login_required
 def case_timeline(ack_no):
     """Chronological case diary — notes + recorded actions."""
@@ -5951,7 +5951,7 @@ def case_timeline(ack_no):
     )
 
 
-@app.route("/download_letters_zip/<ack_no>")
+@app.route("/download_letters_zip/<ack_no>", methods=["GET"])
 @login_required
 def download_letters_zip(ack_no):
     """Download every generated letter for a case as one ZIP."""
@@ -6032,7 +6032,7 @@ def _send_analytics_xlsx(uploader=None, label="analytics"):
     )
 
 
-@app.route("/export_analytics_xlsx")
+@app.route("/export_analytics_xlsx", methods=["GET"])
 @login_required
 @admin_required
 def export_analytics_xlsx():
@@ -6040,14 +6040,14 @@ def export_analytics_xlsx():
     return _send_analytics_xlsx(label="all_cases")
 
 
-@app.route("/export_my_analytics_xlsx")
+@app.route("/export_my_analytics_xlsx", methods=["GET"])
 @login_required
 def export_my_analytics_xlsx():
     """Officer's own analytics export to Excel."""
     return _send_analytics_xlsx(uploader=session.get("username"), label="my_cases")
 
 
-@app.route("/refund_dashboard")
+@app.route("/refund_dashboard", methods=["GET"])
 @login_required
 def refund_dashboard():
     """Per-case put-on-hold vs refunded amounts — the unit's
@@ -6098,7 +6098,7 @@ def refund_dashboard():
 AUDIT_PAGE_SIZE = 50
 
 
-@app.route("/audit_logs")
+@app.route("/audit_logs", methods=["GET"])
 @login_required
 @admin_required
 def audit_logs():
@@ -6151,7 +6151,7 @@ def audit_logs():
     )
 
 
-@app.route("/admin_metrics")
+@app.route("/admin_metrics", methods=["GET"])
 @login_required
 @admin_required
 def admin_metrics():
@@ -6185,7 +6185,7 @@ def admin_metrics():
     )
 
 
-@app.route("/help")
+@app.route("/help", methods=["GET"])
 @login_required
 def help_page():
     """Built-in workflow guide for new officers."""
