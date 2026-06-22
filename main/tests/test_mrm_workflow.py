@@ -11,7 +11,7 @@ the MRM payload in /put_on_hold_transactions, and the startup backfill of
 pre-existing refund/court data. Uses a throwaway temp DB and synthetic data only.
 """
 
-import os, re, sys, json, secrets, tempfile, contextlib
+import os, re, sys, json, math, secrets, tempfile, contextlib
 
 MAIN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, MAIN)
@@ -123,13 +123,13 @@ check("step6 with FULL + amount -> 200", r6.status_code == 200)
 print("\n── Refund step mirrors into Transaction / POHRefundDetails ──")
 with app.app_context():
     t = Transaction.query.filter_by(ack_no="CASE-MRM", put_on_hold_txn_id="HOLD-1").first()
-    check("Transaction.refund_amount mirrored", t.refund_amount == 5000.0)
+    check("Transaction.refund_amount mirrored", math.isclose(t.refund_amount, 5000.0))
     check("Transaction.refund_status = Refunded", t.refund_status == "Refunded")
     check("Transaction.refund_type = FULL", t.refund_type == "FULL")
     poh = POHRefundDetails.query.filter_by(ack_no="CASE-MRM", txn_id="HOLD-1").first()
-    check("POHRefundDetails refund persisted", bool(poh) and poh.refund_amount == 5000.0)
+    check("POHRefundDetails refund persisted", bool(poh) and math.isclose(poh.refund_amount, 5000.0))
     m = MRMTracking.query.filter_by(ack_no="CASE-MRM", txn_id="HOLD-1").first()
-    check("MRM step6 dated + amount", bool(m) and bool(m.step6) and m.refund_amount == 5000.0)
+    check("MRM step6 dated + amount", bool(m) and bool(m.step6) and math.isclose(m.refund_amount, 5000.0))
 
 print("\n── Audit trail (who / what / when) ──")
 with app.app_context():
@@ -137,7 +137,7 @@ with app.app_context():
     check("one audit row per completed stage (6)", len(logs) == 6)
     check("audit records who performed each stage", all(g.performed_by == "off_a" for g in logs))
     refund_log = MRMStatusLog.query.filter_by(ack_no="CASE-MRM", txn_id="HOLD-1", step=MRM_REFUND_STEP).first()
-    check("refund audit row carries type + amount", bool(refund_log) and refund_log.refund_type == "FULL" and refund_log.refund_amount == 5000.0)
+    check("refund audit row carries type + amount", bool(refund_log) and refund_log.refund_type == "FULL" and math.isclose(refund_log.refund_amount, 5000.0))
 
 print("\n── Read-only timeline + hold payload ──")
 tl = admin_c.get("/mrm_timeline/CASE-MRM/HOLD-1")
@@ -181,7 +181,7 @@ with app.app_context():
     check("backfill created an MRM row", m is not None)
     check("backfill step1 = hold date", bool(m) and m.step1 == "2026-05-01")
     check("backfill Partially Refunded -> step6 PARTIAL", bool(m) and bool(m.step6) and m.refund_type == "PARTIAL")
-    check("backfill carried refund amount", bool(m) and m.refund_amount == 1200.0)
+    check("backfill carried refund amount", bool(m) and math.isclose(m.refund_amount, 1200.0))
     # Idempotent: a second pass must not duplicate or overwrite.
     before = MRMTracking.query.count()
     ensure_mrm_backfill()
