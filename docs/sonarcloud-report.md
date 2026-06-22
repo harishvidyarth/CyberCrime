@@ -1,0 +1,455 @@
+# SonarCloud Raw Report — harishvidyarth_CyberCrime
+
+Pulled: 2026-06-22 via SonarCloud Web API. **Read-only snapshot taken BEFORE any fixes.**
+
+- Total open issues: **396**
+- By type: {'VULNERABILITY': 18, 'CODE_SMELL': 360, 'BUG': 18}
+- By severity: {'MAJOR': 212, 'MINOR': 86, 'CRITICAL': 95, 'BLOCKER': 2, 'INFO': 1}
+- Security Hotspots: **10**
+
+## Top rules (by count)
+
+- `python:S1192` — 51
+- `python:S8572` — 40
+- `python:S6965` — 36
+- `javascript:S7761` — 25
+- `javascript:S7764` — 25
+- `python:S3776` — 18
+- `javascript:S6582` — 16
+- `javascript:S2004` — 15
+- `css:S7924` — 11
+- `Web:S6819` — 10
+- `javascript:S7781` — 10
+- `javascript:S7773` — 10
+- `Web:S7927` — 8
+- `Web:InputWithoutLabelCheck` — 8
+- `python:S2068` — 7
+- `javascript:S2486` — 7
+- `shelldre:S7677` — 6
+- `Web:S6853` — 6
+- `python:S1244` — 5
+- `pythonsecurity:S5145` — 5
+- `javascript:S3776` — 5
+- `javascript:S7735` — 5
+- `javascript:S3358` — 4
+- `python:S5603` — 4
+- `python:S1186` — 4
+
+
+## VULNERABILITY (18)
+
+- [BLOCKER] `python:S6437` main/app.py:1385 — Revoke and change this password, as it is compromised.
+- [BLOCKER] `secrets:S6697` main/setup.sql:33 — Make sure this MySQL password gets changed and removed from the code.
+- [MAJOR] `githubactions:S7637` .github/workflows/ci.yml:32 — Use full commit SHA hash for this dependency.
+- [MAJOR] `githubactions:S7637` .github/workflows/ci.yml:46 — Use full commit SHA hash for this dependency.
+- [MAJOR] `githubactions:S7637` .github/workflows/ci.yml:69 — Use full commit SHA hash for this dependency.
+- [MAJOR] `python:S2068` main/tests/smoke_test.py:181 — "password" detected here, review this potentially hard-coded credential.
+- [MAJOR] `python:S2068` main/tests/smoke_test.py:181 — "password" detected here, review this potentially hard-coded credential.
+- [MAJOR] `python:S2068` main/app.py:1068 — "password" detected here, review this potentially hard-coded credential.
+- [MAJOR] `python:S2068` main/app.py:1070 — "password" detected here, review this potentially hard-coded credential.
+- [MAJOR] `python:S2068` main/tests/smoke_test.py:115 — "password" detected here, review this potentially hard-coded credential.
+- [MAJOR] `python:S2068` main/tests/smoke_test.py:128 — "password" detected here, review this potentially hard-coded credential.
+- [MAJOR] `python:S2068` main/tests/smoke_test.py:142 — "password" detected here, review this potentially hard-coded credential.
+- [MAJOR] `text:S8565` pyproject.toml:- — Dependency versions are not predictable if the lock file (uv.lock, poetry.lock, pdm.lock or pylock.toml) is missing.
+- [MINOR] `pythonsecurity:S5145` main/app.py:506 — Change this code to not log user-controlled data.
+- [MINOR] `pythonsecurity:S5145` main/app.py:518 — Change this code to not log user-controlled data.
+- [MINOR] `pythonsecurity:S5145` main/app.py:3583 — Change this code to not log user-controlled data.
+- [MINOR] `pythonsecurity:S5145` main/app.py:3632 — Change this code to not log user-controlled data.
+- [MINOR] `pythonsecurity:S5145` main/app.py:3440 — Change this code to not log user-controlled data.
+
+## BUG (18)
+
+- [MAJOR] `Web:InputWithoutLabelCheck` main/templates/index.html:71 — Associate a valid label to this input field.
+- [MAJOR] `Web:InputWithoutLabelCheck` main/templates/graph_tree1.html:770 — Associate a valid label to this input field.
+- [MAJOR] `Web:InputWithoutLabelCheck` main/templates/graph_tree1.html:816 — Associate a valid label to this input field.
+- [MAJOR] `Web:InputWithoutLabelCheck` main/templates/graph_tree1.html:817 — Associate a valid label to this input field.
+- [MAJOR] `Web:InputWithoutLabelCheck` main/templates/graph_tree1.html:818 — Associate a valid label to this input field.
+- [MAJOR] `Web:InputWithoutLabelCheck` main/templates/graph_tree1.html:819 — Associate a valid label to this input field.
+- [MAJOR] `Web:InputWithoutLabelCheck` main/templates/graph_tree1.html:820 — Associate a valid label to this input field.
+- [MAJOR] `Web:InputWithoutLabelCheck` main/templates/graph_tree1.html:1047 — Associate a valid label to this input field.
+- [MAJOR] `Web:S5254` main/templates/letter_suspect.html:2 — Add "lang" and/or "xml:lang" attributes to the "<html>" or "<body>" element
+- [MAJOR] `Web:S5254` main/templates/letter_victim.html:2 — Add "lang" and/or "xml:lang" attributes to the "<html>" or "<body>" element
+- [MAJOR] `Web:S5256` main/templates/graph_tree1.html:1016 — Add "<th>" headers to this "<table>".
+- [MAJOR] `python:S1244` main/tests/test_mrm_workflow.py:140 — Do not perform equality checks with floating point values.
+- [MAJOR] `python:S1244` main/tests/test_mrm_workflow.py:126 — Do not perform equality checks with floating point values.
+- [MAJOR] `python:S1244` main/tests/test_mrm_workflow.py:130 — Do not perform equality checks with floating point values.
+- [MAJOR] `python:S1244` main/tests/test_mrm_workflow.py:132 — Do not perform equality checks with floating point values.
+- [MAJOR] `python:S1244` main/tests/test_mrm_workflow.py:184 — Do not perform equality checks with floating point values.
+- [MAJOR] `python:S6863` main/app.py:5297 — Specify an explicit HTTP status code for this error handler.
+- [MINOR] `Web:MouseEventWithoutKeyboardEquivalentCheck` main/templates/index.html:65 — Add a 'onKeyPress|onKeyDown|onKeyUp' attribute to this <div> tag.
+
+## CODE_SMELL (360)
+
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1285 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1287 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1293 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1333 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1341 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1362 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1363 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1371 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1520 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1521 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1568 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1578 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1626 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1627 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S2004` main/static/graph.js:1761 — Refactor this code to not nest functions more than 4 levels deep.
+- [CRITICAL] `javascript:S3776` main/static/graph.js:525 — Refactor this function to reduce its Cognitive Complexity from 24 to the 15 allowed.
+- [CRITICAL] `javascript:S3776` main/static/graph.js:552 — Refactor this function to reduce its Cognitive Complexity from 33 to the 15 allowed.
+- [CRITICAL] `javascript:S3776` main/static/graph.js:993 — Refactor this function to reduce its Cognitive Complexity from 31 to the 15 allowed.
+- [CRITICAL] `javascript:S3776` main/static/graph.js:1475 — Refactor this function to reduce its Cognitive Complexity from 41 to the 15 allowed.
+- [CRITICAL] `javascript:S3776` main/templates/graph_tree1.html:1474 — Refactor this function to reduce its Cognitive Complexity from 24 to the 15 allowed.
+- [CRITICAL] `javascript:S3972` main/static/graph.js:1046 — Move this "if" to a new line or add the missing "else".
+- [CRITICAL] `python:S1186` main/migrations/versions/511b73d5b1d3_merge_heads.py:19 — Add a nested comment explaining why this function is empty, or complete the implementation.
+- [CRITICAL] `python:S1186` main/migrations/versions/511b73d5b1d3_merge_heads.py:23 — Add a nested comment explaining why this function is empty, or complete the implementation.
+- [CRITICAL] `python:S1186` main/migrations/versions/cb886b73cc3c_increase_kyc_address_column_size.py:19 — Add a nested comment explaining why this function is empty, or complete the implementation.
+- [CRITICAL] `python:S1186` main/migrations/versions/cb886b73cc3c_increase_kyc_address_column_size.py:23 — Add a nested comment explaining why this function is empty, or complete the implementation.
+- [CRITICAL] `python:S1192` main/app.py:1565 — Define a constant instead of duplicating this literal "forgot_password.html" 12 times.
+- [CRITICAL] `python:S1192` main/tests/smoke_test.py:40 — Define a constant instead of duplicating this literal "/login" 5 times.
+- [CRITICAL] `python:S1192` main/tests/smoke_test.py:53 — Define a constant instead of duplicating this literal "Investigative Officer" 3 times.
+- [CRITICAL] `python:S1192` main/tests/smoke_test.py:160 — Define a constant instead of duplicating this literal "/forgot_password" 5 times.
+- [CRITICAL] `python:S1192` main/tests/smoke_test.py:181 — Define a constant instead of duplicating this literal "ResetPass@2027!" 3 times.
+- [CRITICAL] `python:S1192` main/app.py:965 — Define a constant instead of duplicating this literal "%d %b %Y, %H:%M" 5 times.
+- [CRITICAL] `python:S1192` main/app.py:932 — Define a constant instead of duplicating this literal "Partially Refunded" 3 times.
+- [CRITICAL] `python:S1192` main/app.py:297 — Define a constant instead of duplicating this literal "INITIAL_CREDENTIALS.txt" 3 times.
+- [CRITICAL] `python:S1192` main/app.py:4774 — Define a constant instead of duplicating this literal "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" 3 times.
+- [CRITICAL] `python:S1192` main/app.py:1786 — Define a constant instead of duplicating this literal "/index" 7 times.
+- [CRITICAL] `python:S1192` main/app.py:2235 — Define a constant instead of duplicating this literal "Transaction Id / UTR Number" 5 times.
+- [CRITICAL] `python:S1192` main/app.py:444 — Define a constant instead of duplicating this literal "Andhra Pradesh" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:449 — Define a constant instead of duplicating this literal "Tamil Nadu" 3 times.
+- [CRITICAL] `python:S1192` main/app.py:451 — Define a constant instead of duplicating this literal "Andaman and Nicobar Islands" 3 times.
+- [CRITICAL] `python:S1192` main/app.py:707 — Define a constant instead of duplicating this literal "Investigative Officer" 6 times.
+- [CRITICAL] `python:S1192` main/app.py:1024 — Define a constant instead of duplicating this literal "VARCHAR(100)" 14 times.
+- [CRITICAL] `python:S1192` main/app.py:1028 — Define a constant instead of duplicating this literal "VARCHAR(50)" 5 times.
+- [CRITICAL] `python:S1192` main/app.py:1047 — Define a constant instead of duplicating this literal "VARCHAR(20)" 3 times.
+- [CRITICAL] `python:S1192` main/app.py:1067 — Define a constant instead of duplicating this literal "INT NULL" 3 times.
+- [CRITICAL] `python:S1192` main/app.py:1277 — Define a constant instead of duplicating this literal "/login" 3 times.
+- [CRITICAL] `python:S1192` main/app.py:1945 — Define a constant instead of duplicating this literal "Withdrawal through ATM" 3 times.
+- [CRITICAL] `python:S1192` main/app.py:2069 — Define a constant instead of duplicating this literal r"[\s/_\-\.]+" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2083 — Define a constant instead of duplicating this literal "Transaction ID / UTR Number2" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2084 — Define a constant instead of duplicating this literal "Transaction Id / UTR Number2" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2085 — Define a constant instead of duplicating this literal "Transaction ID/ UTR Number2" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2086 — Define a constant instead of duplicating this literal "Transaction ID/UTR Number2" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2087 — Define a constant instead of duplicating this literal "Transaction ID / UTR Number 2" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2088 — Define a constant instead of duplicating this literal "Transaction Id / UTR Number 2" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2089 — Define a constant instead of duplicating this literal "Txn ID / UTR Number2" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2090 — Define a constant instead of duplicating this literal "Txn Id / UTR Number2" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2091 — Define a constant instead of duplicating this literal "UTR Number2" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2092 — Define a constant instead of duplicating this literal "Txn ID / UTR Number 2" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2093 — Define a constant instead of duplicating this literal "Txn Id / UTR Number 2" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2094 — Define a constant instead of duplicating this literal "Transaction ID/UTR Number 2" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2095 — Define a constant instead of duplicating this literal "Txn ID/UTR Number2" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2096 — Define a constant instead of duplicating this literal "Transaction ID / UTR" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2097 — Define a constant instead of duplicating this literal "Transaction ID/UTR" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2098 — Define a constant instead of duplicating this literal "Txn ID/UTR" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2099 — Define a constant instead of duplicating this literal "Transaction ID / UTR Number" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:2121 — Define a constant instead of duplicating this literal "number 2" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:3379 — Define a constant instead of duplicating this literal "Internal server error" 3 times.
+- [CRITICAL] `python:S1192` main/app.py:3908 — Define a constant instead of duplicating this literal "Internal error while generating the document" 4 times.
+- [CRITICAL] `python:S1192` main/app.py:3985 — Define a constant instead of duplicating this literal "application/pdf" 3 times.
+- [CRITICAL] `python:S1192` main/app.py:4089 — Define a constant instead of duplicating this literal "Unknown Bank" 3 times.
+- [CRITICAL] `python:S1192` main/app.py:4313 — Define a constant instead of duplicating this literal "Suspect Account Number" 3 times.
+- [CRITICAL] `python:S1192` main/models.py:175 — Define a constant instead of duplicating this literal "user.id" 5 times.
+- [CRITICAL] `python:S1192` main/tests/smoke_test.py:79 — Define a constant instead of duplicating this literal "/index" 4 times.
+- [CRITICAL] `python:S1192` main/tests/smoke_test.py:81 — Define a constant instead of duplicating this literal "/home" 3 times.
+- [CRITICAL] `python:S1192` main/tests/smoke_test.py:82 — Define a constant instead of duplicating this literal "/admin_dashboard" 4 times.
+- [CRITICAL] `python:S1192` main/tests/smoke_test.py:109 — Define a constant instead of duplicating this literal "/submit_officer" 3 times.
+- [CRITICAL] `python:S1192` main/tests/smoke_test.py:128 — Define a constant instead of duplicating this literal "TempPass@2026!" 3 times.
+- [CRITICAL] `python:S3776` main/app.py:1556 — Refactor this function to reduce its Cognitive Complexity from 30 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:3659 — Refactor this function to reduce its Cognitive Complexity from 20 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:4810 — Refactor this function to reduce its Cognitive Complexity from 26 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:5631 — Refactor this function to reduce its Cognitive Complexity from 33 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:1781 — Refactor this function to reduce its Cognitive Complexity from 260 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:3706 — Refactor this function to reduce its Cognitive Complexity from 35 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:1088 — Refactor this function to reduce its Cognitive Complexity from 26 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:1307 — Refactor this function to reduce its Cognitive Complexity from 18 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:3593 — Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:3994 — Refactor this function to reduce its Cognitive Complexity from 268 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:1176 — Refactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:1354 — Refactor this function to reduce its Cognitive Complexity from 40 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:2574 — Refactor this function to reduce its Cognitive Complexity from 150 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:3031 — Refactor this function to reduce its Cognitive Complexity from 66 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:3217 — Refactor this function to reduce its Cognitive Complexity from 41 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:4473 — Refactor this function to reduce its Cognitive Complexity from 22 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/app.py:5311 — Refactor this function to reduce its Cognitive Complexity from 70 to the 15 allowed.
+- [CRITICAL] `python:S3776` main/ifsc_utils.py:23 — Refactor this function to reduce its Cognitive Complexity from 42 to the 15 allowed.
+- [CRITICAL] `python:S5754` main/app.py:2001 — Specify an exception class to catch or reraise the exception
+- [MAJOR] `Web:AvoidCommentedOutCodeCheck` main/templates/graph_tree1.html:830 — Remove this commented out code.
+- [MAJOR] `Web:LinksIdenticalTextsDifferentTargetsCheck` main/templates/_layout.html:79 — Use distinct texts or point to the same target for this link and the one at line 35.
+- [MAJOR] `Web:S6819` main/templates/forgot_password.html:107 — Use <output> instead of the status role to ensure accessibility across all devices.
+- [MAJOR] `Web:S6819` main/templates/graph_tree1.html:852 — Use <dialog> instead of the dialog role to ensure accessibility across all devices.
+- [MAJOR] `Web:S6819` main/templates/_layout.html:151 — Use <dialog> instead of the dialog role to ensure accessibility across all devices.
+- [MAJOR] `Web:S6819` main/templates/admin_metrics.html:51 — Use <img> or <svg> instead of the img role to ensure accessibility across all devices.
+- [MAJOR] `Web:S6819` main/templates/index.html:65 — Use <button> or <input> instead of the button role to ensure accessibility across all devices.
+- [MAJOR] `Web:S6819` main/templates/_toasts.html:45 — Use <output> instead of the status role to ensure accessibility across all devices.
+- [MAJOR] `Web:S6819` main/templates/graph_tree1.html:888 — Use <dialog> instead of the dialog role to ensure accessibility across all devices.
+- [MAJOR] `Web:S6819` main/templates/graph_tree1.html:1004 — Use <dialog> instead of the dialog role to ensure accessibility across all devices.
+- [MAJOR] `Web:S6819` main/templates/graph_tree1.html:1028 — Use <dialog> instead of the dialog role to ensure accessibility across all devices.
+- [MAJOR] `Web:S6819` main/templates/graph_tree1.html:2094 — Use <output> instead of the status role to ensure accessibility across all devices.
+- [MAJOR] `Web:S6853` main/templates/graph_tree1.html:816 — A form label must be associated with a control and have accessible text.
+- [MAJOR] `Web:S6853` main/templates/graph_tree1.html:817 — A form label must be associated with a control and have accessible text.
+- [MAJOR] `Web:S6853` main/templates/graph_tree1.html:818 — A form label must be associated with a control and have accessible text.
+- [MAJOR] `Web:S6853` main/templates/graph_tree1.html:819 — A form label must be associated with a control and have accessible text.
+- [MAJOR] `Web:S6853` main/templates/graph_tree1.html:820 — A form label must be associated with a control and have accessible text.
+- [MAJOR] `Web:S6853` main/templates/graph_tree1.html:1046 — A form label must be associated with a control and have accessible text.
+- [MAJOR] `Web:S7927` main/templates/audit_logs.html:76 — The accessible name should be part of the visible label.
+- [MAJOR] `Web:S7927` main/templates/audit_logs.html:87 — The accessible name should be part of the visible label.
+- [MAJOR] `Web:S7927` main/templates/complaint.html:42 — The accessible name should be part of the visible label.
+- [MAJOR] `Web:S7927` main/templates/complaint.html:42 — The accessible name should be part of the visible label.
+- [MAJOR] `Web:S7927` main/templates/view_all_complaints.html:46 — The accessible name should be part of the visible label.
+- [MAJOR] `Web:S7927` main/templates/view_all_complaints.html:46 — The accessible name should be part of the visible label.
+- [MAJOR] `Web:S7927` main/templates/view_all_complaints.html:63 — The accessible name should be part of the visible label.
+- [MAJOR] `Web:S7927` main/templates/view_all_complaints.html:63 — The accessible name should be part of the visible label.
+- [MAJOR] `css:S7924` main/templates/forgot_password.html:24 — Text does not meet the minimal contrast requirement with its background.
+- [MAJOR] `css:S7924` main/templates/forgot_password.html:42 — Text does not meet the minimal contrast requirement with its background.
+- [MAJOR] `css:S7924` main/static/css/design-system.css:154 — Text does not meet the minimal contrast requirement with its background.
+- [MAJOR] `css:S7924` main/templates/graph_tree1.html:150 — Text does not meet the minimal contrast requirement with its background.
+- [MAJOR] `css:S7924` main/templates/graph_tree1.html:167 — Text does not meet the minimal contrast requirement with its background.
+- [MAJOR] `css:S7924` main/templates/graph_tree1.html:221 — Text does not meet the minimal contrast requirement with its background.
+- [MAJOR] `css:S7924` main/templates/graph_tree1.html:395 — Text does not meet the minimal contrast requirement with its background.
+- [MAJOR] `css:S7924` main/templates/graph_tree1.html:400 — Text does not meet the minimal contrast requirement with its background.
+- [MAJOR] `css:S7924` main/templates/graph_tree1.html:425 — Text does not meet the minimal contrast requirement with its background.
+- [MAJOR] `css:S7924` main/templates/graph_tree1.html:732 — Text does not meet the minimal contrast requirement with its background.
+- [MAJOR] `css:S7924` main/templates/graph_tree1.html:1079 — Text does not meet the minimal contrast requirement with its background.
+- [MAJOR] `javascript:S1854` main/templates/graph_tree1.html:1961 — Remove this useless assignment to variable "atmIndicator".
+- [MAJOR] `javascript:S2814` main/static/graph.js:1698 — 'getTotalRepeatedAmount' is already defined.
+- [MAJOR] `javascript:S3358` main/static/graph.js:1297 — Extract this nested ternary operation into an independent statement.
+- [MAJOR] `javascript:S3358` main/static/graph.js:1298 — Extract this nested ternary operation into an independent statement.
+- [MAJOR] `javascript:S3358` main/templates/graph_tree1.html:1533 — Extract this nested ternary operation into an independent statement.
+- [MAJOR] `javascript:S3358` main/static/graph.js:1822 — Extract this nested ternary operation into an independent statement.
+- [MAJOR] `javascript:S3800` main/static/graph.js:197 — Refactor this function to always return the same type.
+- [MAJOR] `javascript:S4144` main/static/graph.js:1698 — Update this function so that its implementation is not identical to the one on line 857.
+- [MAJOR] `javascript:S6535` main/templates/graph_tree1.html:1169 — Unnecessary escape character: \-.
+- [MAJOR] `javascript:S6535` main/templates/graph_tree1.html:1178 — Unnecessary escape character: \-.
+- [MAJOR] `javascript:S6535` main/templates/graph_tree1.html:1180 — Unnecessary escape character: \-.
+- [MAJOR] `javascript:S6582` main/static/graph.js:1913 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:537 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:1007 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:41 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:687 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:743 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:757 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:834 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:839 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:843 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:852 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:955 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:963 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:995 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:1520 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6582` main/static/graph.js:1887 — Prefer using an optional chain expression instead, as it's more concise and easier to read.
+- [MAJOR] `javascript:S6671` main/static/graph.js:1285 — Expected the Promise rejection reason to be an Error.
+- [MAJOR] `javascript:S7740` main/templates/graph_tree1.html:1420 — Do not assign `this` to `foundEl`.
+- [MAJOR] `javascript:S7740` main/templates/graph_tree1.html:1730 — Do not assign `this` to `btn`.
+- [MAJOR] `javascript:S7761` main/templates/admin_dashboard.html:159 — Prefer `.dataset` over `getAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/templates/index.html:258 — Prefer `.dataset` over `getAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/templates/change_password.html:111 — Prefer `.dataset` over `setAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/templates/forgot_password.html:8 — Prefer `.dataset` over `setAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/templates/letter_suspect.html:27 — Prefer `.dataset` over `setAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/templates/letter_victim.html:16 — Prefer `.dataset` over `setAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/templates/verify_2fa.html:8 — Prefer `.dataset` over `setAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/templates/_layout.html:13 — Prefer `.dataset` over `setAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/static/graph.js:166 — Prefer `.dataset` over `getAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/static/graph.js:276 — Prefer `.dataset` over `setAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/static/graph.js:290 — Prefer `.dataset` over `setAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/static/graph.js:321 — Prefer `.dataset` over `getAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/static/graph.js:380 — Prefer `.dataset` over `setAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/static/graph.js:385 — Prefer `.dataset` over `setAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/static/graph.js:395 — Prefer `.dataset` over `setAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/static/graph.js:400 — Prefer `.dataset` over `setAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/static/graph.js:428 — Prefer `.dataset` over `setAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/static/graph.js:434 — Prefer `.dataset` over `setAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/static/graph.js:1516 — Prefer `.dataset` over `getAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/templates/change_password.html:214 — Prefer `.dataset` over `getAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/templates/graph_tree1.html:1585 — Prefer `.dataset` over `getAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/templates/graph_tree1.html:1648 — Prefer `.dataset` over `getAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/templates/graph_tree1.html:1658 — Prefer `.dataset` over `getAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/templates/graph_tree1.html:1752 — Prefer `.dataset` over `getAttribute(…)`.
+- [MAJOR] `javascript:S7761` main/templates/graph_tree1.html:1914 — Prefer `.dataset` over `getAttribute(…)`.
+- [MAJOR] `javascript:S7762` main/templates/graph_tree1.html:1636 — Prefer `childNode.remove()` over `parentNode.removeChild(childNode)`.
+- [MAJOR] `javascript:S7762` main/templates/graph_tree1.html:1817 — Prefer `childNode.remove()` over `parentNode.removeChild(childNode)`.
+- [MAJOR] `javascript:S7785` main/static/graph.js:811 — Prefer top-level await over using a promise chain.
+- [MAJOR] `python:S108` main/app.py:742 — Either remove or fill this block of code.
+- [MAJOR] `python:S5603` main/app.py:2067 — Remove this unused function declaration.
+- [MAJOR] `python:S5603` main/app.py:2650 — Remove this unused function declaration.
+- [MAJOR] `python:S5603` main/app.py:2712 — Remove this unused function declaration.
+- [MAJOR] `python:S5603` main/app.py:2771 — Remove this unused function declaration.
+- [MAJOR] `python:S6965` main/app.py:3816 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:4780 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:631 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:1275 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:1280 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:1675 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:1706 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:2431 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:2465 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:2485 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:2538 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:2572 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:3003 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:3029 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:3215 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:3382 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:3444 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:4471 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:4581 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:4700 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:4762 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:4807 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:4952 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:5106 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:5629 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:5782 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:5822 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:5853 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:5934 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:5948 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:6029 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:6037 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:6044 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:6095 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:6148 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S6965` main/app.py:6182 — Specify the HTTP methods this route should accept.
+- [MAJOR] `python:S8572` main/app.py:3407 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:3812 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:3245 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:482 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:1216 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:1256 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:2400 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:573 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:585 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:612 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:627 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:640 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:890 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:1813 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:1865 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:2409 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:2481 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:2500 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:2531 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:2601 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:2624 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:2998 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:3157 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:3211 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:3378 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:3400 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:3440 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:3586 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:3655 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:3855 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:3907 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:3988 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:4077 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:4462 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:4477 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:4757 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:4814 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:5037 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:5100 — Use "logging.exception()" instead.
+- [MAJOR] `python:S8572` main/app.py:5622 — Use "logging.exception()" instead.
+- [MAJOR] `shelldre:S1066` fundtrail.sh:128 — Merge this if statement with the enclosing one.
+- [MAJOR] `shelldre:S7677` build_exe.sh:32 — Redirect this error message to stderr (>&2).
+- [MAJOR] `shelldre:S7677` fundtrail.sh:52 — Redirect this error message to stderr (>&2).
+- [MAJOR] `shelldre:S7677` fundtrail.sh:65 — Redirect this error message to stderr (>&2).
+- [MAJOR] `shelldre:S7677` fundtrail.sh:83 — Redirect this error message to stderr (>&2).
+- [MAJOR] `shelldre:S7677` fundtrail.sh:95 — Redirect this error message to stderr (>&2).
+- [MAJOR] `shelldre:S7677` fundtrail.sh:152 — Redirect this error message to stderr (>&2).
+- [MAJOR] `shelldre:S7688` build_exe.sh:24 — Use '[[' instead of '[' for conditional tests. The '[[' construct is safer and more feature-rich.
+- [MINOR] `javascript:S1481` main/templates/graph_tree1.html:1961 — Remove the declaration of the unused 'atmIndicator' variable.
+- [MINOR] `javascript:S1874` main/static/graph.js:1476 — 'event' is deprecated.
+- [MINOR] `javascript:S2486` main/templates/graph_tree1.html:1790 — Handle this exception or don't catch it at all.
+- [MINOR] `javascript:S2486` main/templates/setup_2fa.html:189 — Handle this exception or don't catch it at all.
+- [MINOR] `javascript:S2486` main/templates/_layout.html:18 — Handle this exception or don't catch it at all.
+- [MINOR] `javascript:S2486` main/static/graph.js:32 — Handle this exception or don't catch it at all.
+- [MINOR] `javascript:S2486` main/static/graph.js:1165 — Handle this exception or don't catch it at all.
+- [MINOR] `javascript:S2486` main/templates/graph_tree1.html:1580 — Handle this exception or don't catch it at all.
+- [MINOR] `javascript:S2486` main/templates/graph_tree1.html:2143 — Handle this exception or don't catch it at all.
+- [MINOR] `javascript:S6353` main/templates/change_password.html:241 — Use concise character class syntax '\d' instead of '[0-9]'.
+- [MINOR] `javascript:S6353` main/templates/change_password.html:256 — Use concise character class syntax '\d' instead of '[0-9]'.
+- [MINOR] `javascript:S6644` main/static/graph.js:1522 — Unnecessary use of boolean literals in conditional expression.
+- [MINOR] `javascript:S7735` main/static/graph.js:4 — Unexpected negated condition.
+- [MINOR] `javascript:S7735` main/static/graph.js:191 — Unexpected negated condition.
+- [MINOR] `javascript:S7735` main/static/graph.js:1714 — Unexpected negated condition.
+- [MINOR] `javascript:S7735` main/templates/graph_tree1.html:1171 — Unexpected negated condition.
+- [MINOR] `javascript:S7735` main/templates/graph_tree1.html:1487 — Unexpected negated condition.
+- [MINOR] `javascript:S7747` main/templates/graph_tree1.html:1196 — `new Set(…)` accepts iterable as argument, it's unnecessary to convert to an array.
+- [MINOR] `javascript:S7748` main/static/graph.js:1674 — Don't use a zero fraction in the number.
+- [MINOR] `javascript:S7748` main/templates/graph_tree1.html:1436 — Don't use a zero fraction in the number.
+- [MINOR] `javascript:S7764` main/static/graph.js:1502 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/templates/setup_2fa.html:181 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/templates/index.html:222 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/static/graph.js:4 — Prefer `globalThis.window` over `window`.
+- [MINOR] `javascript:S7764` main/static/graph.js:4 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/static/graph.js:101 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/static/graph.js:102 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/static/graph.js:103 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/static/graph.js:104 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/static/graph.js:731 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/static/graph.js:1523 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/static/graph.js:1524 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/static/graph.js:1754 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/static/graph.js:1931 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/static/graph.js:1938 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/templates/graph_tree1.html:1093 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/templates/graph_tree1.html:1381 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/templates/graph_tree1.html:1477 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/templates/graph_tree1.html:1628 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/templates/graph_tree1.html:1635 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/templates/graph_tree1.html:1797 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/templates/graph_tree1.html:1816 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/templates/graph_tree1.html:2134 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/templates/graph_tree1.html:2135 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7764` main/templates/graph_tree1.html:2140 — Prefer `globalThis` over `window`.
+- [MINOR] `javascript:S7765` main/templates/graph_tree1.html:1805 — Use `.includes()`, rather than `.indexOf()`, when checking for existence.
+- [MINOR] `javascript:S7773` main/templates/graph_tree1.html:1999 — Prefer `Number.parseInt` over `parseInt`.
+- [MINOR] `javascript:S7773` main/templates/admin_dashboard.html:159 — Prefer `Number.parseFloat` over `parseFloat`.
+- [MINOR] `javascript:S7773` main/templates/admin_dashboard.html:160 — Prefer `Number.isNaN` over `isNaN`.
+- [MINOR] `javascript:S7773` main/templates/index.html:258 — Prefer `Number.parseFloat` over `parseFloat`.
+- [MINOR] `javascript:S7773` main/templates/index.html:259 — Prefer `Number.isNaN` over `isNaN`.
+- [MINOR] `javascript:S7773` main/static/graph.js:864 — Prefer `Number.parseFloat` over `parseFloat`.
+- [MINOR] `javascript:S7773` main/static/graph.js:1149 — Prefer `Number.parseFloat` over `parseFloat`.
+- [MINOR] `javascript:S7773` main/static/graph.js:1705 — Prefer `Number.parseFloat` over `parseFloat`.
+- [MINOR] `javascript:S7773` main/templates/graph_tree1.html:1170 — Prefer `Number.parseFloat` over `parseFloat`.
+- [MINOR] `javascript:S7773` main/templates/graph_tree1.html:1485 — Prefer `Number.NaN` over `NaN`.
+- [MINOR] `javascript:S7781` main/templates/graph_tree1.html:1862 — Prefer `String#replaceAll()` over `String#replace()`.
+- [MINOR] `javascript:S7781` main/templates/graph_tree1.html:1862 — Prefer `String#replaceAll()` over `String#replace()`.
+- [MINOR] `javascript:S7781` main/templates/graph_tree1.html:1862 — Prefer `String#replaceAll()` over `String#replace()`.
+- [MINOR] `javascript:S7781` main/templates/graph_tree1.html:1863 — Prefer `String#replaceAll()` over `String#replace()`.
+- [MINOR] `javascript:S7781` main/templates/graph_tree1.html:1863 — Prefer `String#replaceAll()` over `String#replace()`.
+- [MINOR] `javascript:S7781` main/static/graph.js:10 — Prefer `String#replaceAll()` over `String#replace()`.
+- [MINOR] `javascript:S7781` main/static/graph.js:11 — Prefer `String#replaceAll()` over `String#replace()`.
+- [MINOR] `javascript:S7781` main/static/graph.js:12 — Prefer `String#replaceAll()` over `String#replace()`.
+- [MINOR] `javascript:S7781` main/static/graph.js:13 — Prefer `String#replaceAll()` over `String#replace()`.
+- [MINOR] `javascript:S7781` main/static/graph.js:14 — Prefer `String#replaceAll()` over `String#replace()`.
+- [MINOR] `python:S117` main/app.py:4395 — Rename this local variable "_tblPr" to match the regular expression ^[_a-z][a-z0-9_]*$.
+- [MINOR] `python:S117` main/app.py:4323 — Rename this local variable "tblHeader" to match the regular expression ^[_a-z][a-z0-9_]*$.
+- [MINOR] `python:S117` main/app.py:4322 — Rename this local variable "trPr" to match the regular expression ^[_a-z][a-z0-9_]*$.
+- [MINOR] `python:S1481` main/app.py:1166 — Replace the unused loop index "i" with "_".
+- [MINOR] `python:S1481` main/app.py:4969 — Replace the unused local variable "width" with "_".
+- [MINOR] `python:S2772` main/app.py:3115 — Remove this unneeded "pass".
+- [MINOR] `python:S5713` main/app.py:149 — Remove this redundant Exception class; it derives from another which is already caught.
+- [MINOR] `python:S5713` main/app.py:203 — Remove this redundant Exception class; it derives from another which is already caught.
+- [MINOR] `python:S6353` main/models.py:31 — Use concise character class syntax '\d' instead of '[0-9]'.
+- [MINOR] `python:S7498` main/app.py:347 — Replace this constructor call with a literal.
+- [MINOR] `python:S7500` main/app.py:2229 — Replace this comprehension with passing the iterable to the dict constructor call
+- [MINOR] `python:S7500` main/app.py:2239 — Replace this comprehension with passing the iterable to the dict constructor call
+- [MINOR] `python:S7508` main/app.py:4505 — Remove this redundant call.
+- [MINOR] `shelldre:S1192` fundtrail.sh:214 — Define a constant instead of using the literal '+----------------------------------------------------------+' 4 times.
+- [INFO] `javascript:S1135` main/templates/graph_tree1.html:1561 — Complete the task associated to this "TODO" comment.
+
+## Security Hotspots (10) — DO NOT auto-resolve
+
+- `csrf` (HIGH) main/app.py:5797 — Make sure disabling CSRF protection is safe here.  [key=AZ7tf9XxvW_wkPcXYai3]
+- `csrf` (HIGH) main/app.py:5807 — Make sure disabling CSRF protection is safe here.  [key=AZ7tf9XxvW_wkPcXYai4]
+- `csrf` (HIGH) main/tests/test_access_control.py:37 — Make sure disabling CSRF protection is safe here.  [key=AZ7tf9UyvW_wkPcXYadX]
+- `csrf` (HIGH) main/tests/test_mrm_workflow.py:27 — Make sure disabling CSRF protection is safe here.  [key=AZ7tf9UqvW_wkPcXYadR]
+- `dos` (MEDIUM) main/templates/admin_dashboard.html:154 — Make sure the regex used here, which is vulnerable to super-linear runtime due to backtracking, cannot lead to denial of service.  [key=AZ7tf9VpvW_wkPcXYaew]
+- `dos` (MEDIUM) main/templates/admin_dashboard.html:155 — Make sure the regex used here, which is vulnerable to super-linear runtime due to backtracking, cannot lead to denial of service.  [key=AZ7tf9VpvW_wkPcXYaex]
+- `dos` (MEDIUM) main/templates/graph_tree1.html:1180 — Make sure the regex used here, which is vulnerable to super-linear runtime due to backtracking, cannot lead to denial of service.  [key=AZ7tf9VRvW_wkPcXYadq]
+- `dos` (MEDIUM) main/templates/index.html:253 — Make sure the regex used here, which is vulnerable to super-linear runtime due to backtracking, cannot lead to denial of service.  [key=AZ7tf9U6vW_wkPcXYadZ]
+- `dos` (MEDIUM) main/templates/index.html:254 — Make sure the regex used here, which is vulnerable to super-linear runtime due to backtracking, cannot lead to denial of service.  [key=AZ7tf9U6vW_wkPcXYada]
+- `dos` (MEDIUM) main/app.py:4021 — Make sure the regex used here, which is vulnerable to polynomial runtime due to backtracking, cannot lead to denial of service.  [key=AZ7tf9XxvW_wkPcXYaia]

@@ -1382,8 +1382,8 @@ def login():
             password_valid = user.check_password(password)
         else:
             # Dummy hash op to keep response timing consistent when the user doesn't exist.
-            dummy_hash = generate_password_hash("dummy_password")
-            check_password_hash(dummy_hash, password)
+            # Hash a random throwaway value (no hardcoded credential — SonarCloud S6437).
+            check_password_hash(generate_password_hash(secrets.token_urlsafe(16)), password)
 
         if user and password_valid and not locked:
             user.failed_login_attempts = 0
