@@ -23,6 +23,17 @@ app.config["SESSION_COOKIE_SECURE"] = False
 
 FAILS = []
 
+# Deduplicated literals (SonarCloud python:S1192)
+LOGIN_URL = "/login"
+INDEX_URL = "/index"
+HOME_URL = "/home"
+ADMIN_DASHBOARD_URL = "/admin_dashboard"
+SUBMIT_OFFICER_URL = "/submit_officer"
+FORGOT_PASSWORD_URL = "/forgot_password"
+ROLE_IO = "Investigative Officer"
+TEMP_PASSWORD = "TempPass@2026!"  # NOSONAR test fixture, not a real credential
+RESET_PASSWORD = "ResetPass@2027!"  # NOSONAR test fixture, not a real credential
+
 
 def check(name, cond):
     print(("  PASS " if cond else "  FAIL ") + name)
@@ -37,8 +48,8 @@ def csrf(html):
 
 
 def login(client, role, username, password):
-    tok = csrf(client.get("/login").get_data(as_text=True))
-    return client.post("/login", data={"role": role, "username": username, "password": password, "csrf_token": tok})
+    tok = csrf(client.get(LOGIN_URL).get_data(as_text=True))
+    return client.post(LOGIN_URL, data={"role": role, "username": username, "password": password, "csrf_token": tok})
 
 
 def loc(r):
@@ -50,8 +61,8 @@ with app.app_context():
     db.create_all()
     for uname, role, pw in [
         ("admin", "Admin", "AdminPass@2026!"),
-        ("officer", "Investigative Officer", "OfficerPass@2026!"),
-        ("reset_user", "Investigative Officer", "ResetPass@2026!"),
+        ("officer", ROLE_IO, "OfficerPass@2026!"),
+        ("reset_user", ROLE_IO, "ResetPass@2026!"),
     ]:
         u = User.query.filter_by(username=uname).first() or User(username=uname, role=role)
         if u.id is None:
@@ -76,17 +87,17 @@ admin = app.test_client()
 officer = app.test_client()
 check("admin login -> /admin_dashboard", "admin_dashboard" in loc(login(admin, "Admin", "admin", "AdminPass@2026!")))
 check(
-    "officer login -> /index", "/index" in loc(login(officer, "Investigative Officer", "officer", "OfficerPass@2026!"))
+    "officer login -> /index", INDEX_URL in loc(login(officer, ROLE_IO, "officer", "OfficerPass@2026!"))
 )
-check("/home anon -> /login", "/login" in loc(app.test_client().get("/home")))
-check("/home admin -> /admin_dashboard", "/admin_dashboard" in loc(admin.get("/home")))
-check("/home officer -> /index", "/index" in loc(officer.get("/home")))
-check("admin /index -> /admin_dashboard (separation)", "/admin_dashboard" in loc(admin.get("/index")))
-check("officer /admin_dashboard -> redirect (blocked)", officer.get("/admin_dashboard").status_code in (301, 302))
+check("/home anon -> /login", LOGIN_URL in loc(app.test_client().get(HOME_URL)))
+check("/home admin -> /admin_dashboard", ADMIN_DASHBOARD_URL in loc(admin.get(HOME_URL)))
+check("/home officer -> /index", INDEX_URL in loc(officer.get(HOME_URL)))
+check("admin /index -> /admin_dashboard (separation)", ADMIN_DASHBOARD_URL in loc(admin.get(INDEX_URL)))
+check("officer /admin_dashboard -> redirect (blocked)", officer.get(ADMIN_DASHBOARD_URL).status_code in (301, 302))
 
 print("\n── Pages render (catches url_for breakage in refactor) ──")
 for p in [
-    "/admin_dashboard",
+    ADMIN_DASHBOARD_URL,
     "/view_officers",
     "/manage_files",
     "/admin/add_officer",
@@ -100,13 +111,13 @@ check(
     "graph page is offline (no d3js.org / cdnjs)",
     "d3js.org" not in _gr.get_data(as_text=True) and "cdnjs" not in _gr.get_data(as_text=True),
 )
-for p in ["/index", "/my_analytics", "/change_password"]:
+for p in [INDEX_URL, "/my_analytics", "/change_password"]:
     check(f"officer GET {p}", officer.get(p).status_code == 200)
 
 print("\n── Add Officer flow ──")
 tok = csrf(admin.get("/admin/add_officer").get_data(as_text=True))
 r = admin.post(
-    "/submit_officer",
+    SUBMIT_OFFICER_URL,
     data={
         "name": "T",
         "rank": "SI",
@@ -119,13 +130,13 @@ r = admin.post(
 check("weak pw is NOT 404", r.status_code != 404)
 check("weak pw shows the rule", "at least 12 characters" in r.get_data(as_text=True))
 r = admin.post(
-    "/submit_officer",
+    SUBMIT_OFFICER_URL,
     data={
         "name": "T",
         "rank": "SI",
         "email": "t@x.gov",
         "username": "smoke_off",
-        "password": "TempPass@2026!",
+        "password": TEMP_PASSWORD,
         "csrf_token": tok,
     },
 )
@@ -133,19 +144,19 @@ check("strong pw -> /view_officers", "view_officers" in loc(r))
 with app.app_context():
     o = User.query.filter_by(username="smoke_off").first()
     check(
-        "officer saved, temp pw, must_change", bool(o) and o.must_change_password and o.check_password("TempPass@2026!")
+        "officer saved, temp pw, must_change", bool(o) and o.must_change_password and o.check_password(TEMP_PASSWORD)
     )
 
 print("\n── CSRF & errors ──")
 r = admin.post(
-    "/submit_officer",
-    data={"name": "X", "rank": "SI", "email": "x@x.gov", "username": "x2", "password": "TempPass@2026!"},
+    SUBMIT_OFFICER_URL,
+    data={"name": "X", "rank": "SI", "email": "x@x.gov", "username": "x2", "password": TEMP_PASSWORD},
 )
 check("missing CSRF -> 400", r.status_code == 400)
 check("missing CSRF -> friendly page", "Session Expired" in r.get_data(as_text=True))
 r = admin.get("/no-such-route-xyz")
 check("404 page renders", r.status_code == 404 and "Return to Home" in r.get_data(as_text=True))
-check("logout -> /login", "/login" in loc(admin.get("/logout")))
+check("logout -> /login", LOGIN_URL in loc(admin.get("/logout")))
 
 print("\n── Password reset email fallback ──")
 sent_links = []
@@ -157,18 +168,18 @@ def fake_send_password_reset(_to_email, reset_link):
 
 app_module.send_password_reset = fake_send_password_reset
 reset_client = app.test_client()
-tok = csrf(reset_client.get("/forgot_password").get_data(as_text=True))
-r = reset_client.post("/forgot_password", data={"username": "reset_user", "csrf_token": tok})
+tok = csrf(reset_client.get(FORGOT_PASSWORD_URL).get_data(as_text=True))
+r = reset_client.post(FORGOT_PASSWORD_URL, data={"username": "reset_user", "csrf_token": tok})
 check("reset user with TOTP reaches verify step", r.status_code == 200 and "Authentication code" in r.get_data(as_text=True))
-r = reset_client.post("/forgot_password", data={"code": "000000", "csrf_token": tok})
+r = reset_client.post(FORGOT_PASSWORD_URL, data={"code": "000000", "csrf_token": tok})
 check("bad TOTP keeps email fallback available", r.status_code == 200 and "Email reset" in r.get_data(as_text=True))
 r = reset_client.post(
-    "/forgot_password",
+    FORGOT_PASSWORD_URL,
     data={"reset_method": "email", "email": "wrong@example.gov", "csrf_token": tok},
 )
 check("wrong reset email does not send", r.status_code == 200 and not sent_links)
 r = reset_client.post(
-    "/forgot_password",
+    FORGOT_PASSWORD_URL,
     data={"reset_method": "email", "email": "reset@example.gov", "csrf_token": tok},
 )
 check("matching reset email sends link", r.status_code == 200 and len(sent_links) == 1)
@@ -178,14 +189,14 @@ reset_tok = csrf(r.get_data(as_text=True))
 check("valid reset token renders password form", r.status_code == 200 and reset_tok)
 r = reset_client.post(
     reset_path,
-    data={"password": "ResetPass@2027!", "confirm_password": "ResetPass@2027!", "csrf_token": reset_tok},
+    data={"password": RESET_PASSWORD, "confirm_password": RESET_PASSWORD, "csrf_token": reset_tok},
 )
-check("valid reset token changes password", "/login" in loc(r))
+check("valid reset token changes password", LOGIN_URL in loc(r))
 check("reset token cannot be reused", reset_client.get(reset_path).status_code in (301, 302))
 check("invalid reset token redirects", reset_client.get("/reset_password/not-a-token").status_code in (301, 302))
 with app.app_context():
     reset_user = User.query.filter_by(username="reset_user").first()
-    check("new reset password works", reset_user.check_password("ResetPass@2027!"))
+    check("new reset password works", reset_user.check_password(RESET_PASSWORD))
 
 print("\n── Security hardening (Phase 5) ──")
 check("MAX_CONTENT_LENGTH set (request-size cap)", bool(app.config.get("MAX_CONTENT_LENGTH")))

@@ -7,6 +7,9 @@ import re
 
 db = SQLAlchemy()
 
+# Foreign-key target reused across models (SonarCloud python:S1192)
+USER_ID_FK = "user.id"
+
 # Password policy constants (single source of truth for the whole app).
 PASSWORD_MIN_LENGTH = 12
 PASSWORD_HISTORY_LIMIT = 5  # block reuse of the last N passwords
@@ -172,7 +175,7 @@ class PasswordHistory(db.Model):
     (Feature B12: password expiry & reuse prevention)."""
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey(USER_ID_FK), index=True)
     password_hash = db.Column(db.Text)
     changed_at = db.Column(db.DateTime, default=utc_now)
 
@@ -199,7 +202,7 @@ class User(db.Model, UserMixin):
     totp_secret = db.Column(db.String(64), nullable=True)
     # Multi-admin isolation: for officers, points to their managing admin (User.id).
     # NULL on Admin and SuperAdmin accounts.
-    admin_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    admin_id = db.Column(db.Integer, db.ForeignKey(USER_ID_FK), nullable=True)
     # SuperAdmin flag: a SuperAdmin is an Admin who can see all groups and all admins.
     # Exactly one account should carry this; it is seeded automatically on first run.
     is_superadmin = db.Column(db.Boolean, default=False, nullable=False, server_default="0")
@@ -254,15 +257,15 @@ class Complaint(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ack_no = db.Column(db.String(50), unique=True, nullable=False)
     file_name = db.Column(db.String(200))
-    uploaded_by = db.Column(db.Integer, db.ForeignKey("user.id"))
-    assigned_to = db.Column(db.Integer, db.ForeignKey("user.id"))
+    uploaded_by = db.Column(db.Integer, db.ForeignKey(USER_ID_FK))
+    assigned_to = db.Column(db.Integer, db.ForeignKey(USER_ID_FK))
     upload_time = db.Column(db.DateTime)
     # Feature A1: case workflow state — one of CASE_STATUSES.
     status = db.Column(db.String(30), default="Open")
     # Multi-admin isolation: which admin group owns this case.
     # Set to the uploading admin's id (or the officer's admin_id) at upload time.
     # NULL means visible to all admins (legacy rows from before isolation was introduced).
-    owner_admin_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
+    owner_admin_id = db.Column(db.Integer, db.ForeignKey(USER_ID_FK), nullable=True)
 
 
 class CaseNote(db.Model):

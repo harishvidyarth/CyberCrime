@@ -126,6 +126,31 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfgen import canvas
 from xhtml2pdf import pisa
 
+# ---------------------------------------------------------------------------
+# Shared string constants (deduplicated literals — SonarCloud python:S1192)
+# ---------------------------------------------------------------------------
+INITIAL_CREDENTIALS_FILENAME = "INITIAL_CREDENTIALS.txt"
+STATE_ANDHRA_PRADESH = "Andhra Pradesh"
+STATE_TAMIL_NADU = "Tamil Nadu"
+STATE_ANDAMAN_NICOBAR = "Andaman and Nicobar Islands"
+ROLE_INVESTIGATIVE_OFFICER = "Investigative Officer"
+STATUS_PARTIALLY_REFUNDED = "Partially Refunded"
+DATETIME_DISPLAY_FORMAT = "%d %b %Y, %H:%M"
+DDL_VARCHAR_100 = "VARCHAR(100)"
+DDL_VARCHAR_50 = "VARCHAR(50)"
+DDL_VARCHAR_20 = "VARCHAR(20)"
+DDL_INT_NULL = "INT NULL"
+ROUTE_LOGIN = "/login"
+ROUTE_INDEX = "/index"
+TEMPLATE_FORGOT_PASSWORD = "forgot_password.html"
+TXN_WITHDRAWAL_ATM = "Withdrawal through ATM"
+MSG_INTERNAL_SERVER_ERROR = "Internal server error"
+MSG_DOC_GENERATION_ERROR = "Internal error while generating the document"
+MIME_PDF = "application/pdf"
+BANK_UNKNOWN = "Unknown Bank"
+LABEL_SUSPECT_ACCOUNT_NUMBER = "Suspect Account Number"
+MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -294,7 +319,7 @@ if not os.environ.get("FUNDTRAIL_DATA_DIR"):
         import shutil
 
         for _f in (
-            "fundtrail.db", "INITIAL_CREDENTIALS.txt",
+            "fundtrail.db", INITIAL_CREDENTIALS_FILENAME,
             "poh_refund_details.db", "kyc_details.db", "ifsc_state_cache.json",
         ):
             _src, _dst = os.path.join(_legacy_base, _f), os.path.join(secure_base, _f)
@@ -441,16 +466,16 @@ DISTRICT_TO_STATE = {
     "25": "Daman and Diu",
     "26": "Dadra and Nagar Haveli",
     "27": "Maharashtra",
-    "28": "Andhra Pradesh",
+    "28": STATE_ANDHRA_PRADESH,
     "29": "Karnataka",
     "30": "Goa",
     "31": "Lakshadweep",
     "32": "Kerala",
-    "33": "Tamil Nadu",
+    "33": STATE_TAMIL_NADU,
     "34": "Puducherry",
-    "35": "Andaman and Nicobar Islands",
+    "35": STATE_ANDAMAN_NICOBAR,
     "36": "Telangana",
-    "37": "Andhra Pradesh",
+    "37": STATE_ANDHRA_PRADESH,
     "38": "Ladakh",
 }
 
@@ -710,7 +735,7 @@ def _officers_q():
     - SuperAdmin  → all officers across every admin group
     - Admin       → only officers whose admin_id points to them
     """
-    base = User.query.filter_by(role="Investigative Officer")
+    base = User.query.filter_by(role=ROLE_INVESTIGATIVE_OFFICER)
     if is_superadmin():
         return base
     return base.filter_by(admin_id=current_user.id)
@@ -935,7 +960,7 @@ def validate_court_order_date(value):
 
 
 # Mirrors the fixed <select> options in static/graph.js (blank = clear the field).
-ALLOWED_REFUND_STATUSES = {"", "Refunded", "Partially Refunded", "Not Refunded"}
+ALLOWED_REFUND_STATUSES = {"", "Refunded", STATUS_PARTIALLY_REFUNDED, "Not Refunded"}
 
 # Money Restoration Module (MRM) — 7-stage sequential workflow. Order is significant:
 # a stage can only be dated once the previous one is dated. Stage 6 (1-based),
@@ -968,7 +993,7 @@ def to_ist(dt):
 
 
 @app.template_filter("ist")
-def _ist_filter(dt, fmt="%d %b %Y, %H:%M"):
+def _ist_filter(dt, fmt=DATETIME_DISPLAY_FORMAT):
     """Jinja filter: render a UTC datetime in IST, e.g. {{ log.timestamp | ist }}."""
     d = to_ist(dt)
     return d.strftime(fmt) if d else ""
@@ -1027,36 +1052,36 @@ def ensure_transaction_columns():
     """Add any newly introduced columns to the transaction table if missing."""
     required_columns = {
         "layer": "INT",
-        "from_account": "VARCHAR(100)",
-        "to_account": "VARCHAR(100)",
-        "ack_no": "VARCHAR(100)",
-        "bank_name": "VARCHAR(100)",
-        "ifsc_code": "VARCHAR(50)",
-        "txn_date": "VARCHAR(100)",
-        "txn_id": "VARCHAR(100)",
+        "from_account": DDL_VARCHAR_100,
+        "to_account": DDL_VARCHAR_100,
+        "ack_no": DDL_VARCHAR_100,
+        "bank_name": DDL_VARCHAR_100,
+        "ifsc_code": DDL_VARCHAR_50,
+        "txn_date": DDL_VARCHAR_100,
+        "txn_id": DDL_VARCHAR_100,
         "amount": "FLOAT",
         "disputed_amount": "FLOAT",
         "action_taken": "VARCHAR(255)",
-        "account_number": "VARCHAR(50)",
-        "state": "VARCHAR(50)",
-        "atm_id": "VARCHAR(100)",
+        "account_number": DDL_VARCHAR_50,
+        "state": DDL_VARCHAR_50,
+        "atm_id": DDL_VARCHAR_100,
         "atm_withdraw_amount": "FLOAT",
-        "atm_withdraw_date": "VARCHAR(100)",
+        "atm_withdraw_date": DDL_VARCHAR_100,
         "atm_location": "VARCHAR(200)",
-        "cheque_no": "VARCHAR(100)",
+        "cheque_no": DDL_VARCHAR_100,
         "cheque_withdraw_amount": "FLOAT",
-        "cheque_withdraw_date": "VARCHAR(100)",
-        "cheque_ifsc": "VARCHAR(50)",
-        "put_on_hold_txn_id": "VARCHAR(100)",
-        "put_on_hold_date": "VARCHAR(100)",
+        "cheque_withdraw_date": DDL_VARCHAR_100,
+        "cheque_ifsc": DDL_VARCHAR_50,
+        "put_on_hold_txn_id": DDL_VARCHAR_100,
+        "put_on_hold_date": DDL_VARCHAR_100,
         "put_on_hold_amount": "FLOAT",
-        "court_order_date": "VARCHAR(20)",
-        "refund_status": "VARCHAR(50)",
+        "court_order_date": DDL_VARCHAR_20,
+        "refund_status": DDL_VARCHAR_50,
         "refund_amount": "FLOAT",
         "refund_type": "VARCHAR(10)",
         "kyc_name": "VARCHAR(120)",
-        "kyc_aadhar": "VARCHAR(20)",
-        "kyc_mobile": "VARCHAR(20)",
+        "kyc_aadhar": DDL_VARCHAR_20,
+        "kyc_mobile": DDL_VARCHAR_20,
         "kyc_address": "VARCHAR(200)",
         "upload_id": "INT",
     }
@@ -1067,16 +1092,16 @@ def ensure_transaction_columns():
 def ensure_user_columns():
     """Add newly introduced columns to the user table if they are missing."""
     required_columns = {
-        "name": "VARCHAR(100)",
-        "rank": "VARCHAR(100)",
+        "name": DDL_VARCHAR_100,
+        "rank": DDL_VARCHAR_100,
         "email": "VARCHAR(120)",
-        "manual_upload_count": "INT NULL",
+        "manual_upload_count": DDL_INT_NULL,
         "must_change_password": "BOOLEAN DEFAULT 0",
         "last_login_at": "DATETIME NULL",
         "password_changed_at": "DATETIME NULL",
         "totp_secret": "VARCHAR(64) NULL",
         # Multi-admin isolation (added in v2.1)
-        "admin_id": "INT NULL",
+        "admin_id": DDL_INT_NULL,
         "is_superadmin": "BOOLEAN DEFAULT 0",
     }
     _ensure_columns("user", required_columns)
@@ -1087,7 +1112,7 @@ def ensure_complaint_columns():
     _ensure_columns("complaint", {
         "status": "VARCHAR(30) DEFAULT 'Open'",
         # Multi-admin isolation (added in v2.1): which admin group owns this case.
-        "owner_admin_id": "INT NULL",
+        "owner_admin_id": DDL_INT_NULL,
     })
 
 
@@ -1138,7 +1163,7 @@ def ensure_mrm_backfill():
                 row.refund_type = "FULL"
                 row.refund_amount = ref_amount
                 t.refund_type = "FULL"
-            elif ref_status == "Partially Refunded":
+            elif ref_status == STATUS_PARTIALLY_REFUNDED:
                 setattr(row, f"step{MRM_REFUND_STEP}", _refund_date(poh))
                 row.refund_type = "PARTIAL"
                 row.refund_amount = ref_amount
@@ -1280,7 +1305,7 @@ VIEW_ONLY_ROLES = set()  # Viewer (read-only) role removed — only Admin & Inve
 
 @app.route("/", methods=["GET"])
 def home():
-    return redirect("/login")
+    return redirect(ROUTE_LOGIN)
 
 
 @app.route("/home", methods=["GET"])
@@ -1335,7 +1360,7 @@ def change_password():
                 db.session.commit()
                 log_usage("change_password")
                 try:
-                    os.remove(os.path.join(secure_base, "INITIAL_CREDENTIALS.txt"))
+                    os.remove(os.path.join(secure_base, INITIAL_CREDENTIALS_FILENAME))
                 except OSError:
                     pass
                 flash("Password changed successfully.", "success")
@@ -1352,7 +1377,7 @@ def change_password():
     return render_template("change_password.html", error=error, forced=forced)
 
 
-@app.route("/login", methods=["GET", "POST"])
+@app.route(ROUTE_LOGIN, methods=["GET", "POST"])
 # Brute-force throttle: only count actual POST login attempts, NOT page views/refreshes.
 # The per-account lockout (MAX_LOGIN_ATTEMPTS fails -> LOCKOUT_MINUTES, below) is the
 # primary defence; this per-IP cap is a secondary guard.
@@ -1568,7 +1593,7 @@ def forgot_password():
         session.pop("fp_step", None)
         session.pop("fp_uid", None)
         session.pop("fp_verified", None)
-        return render_template("forgot_password.html", step=1)
+        return render_template(TEMPLATE_FORGOT_PASSWORD, step=1)
 
     step = session.get("fp_step", 1)
 
@@ -1577,12 +1602,12 @@ def forgot_password():
         username = request.form.get("username", "").strip()
         user = User.query.filter_by(username=username).first()
         if not user:
-            return render_template("forgot_password.html", step=1, no_2fa=True)
+            return render_template(TEMPLATE_FORGOT_PASSWORD, step=1, no_2fa=True)
         session["fp_uid"] = user.id
         session["fp_step"] = 2
         if user.totp_secret and pyotp is not None:
-            return render_template("forgot_password.html", step=2, email_fallback=True)
-        return render_template("forgot_password.html", step=2, email_required=True)
+            return render_template(TEMPLATE_FORGOT_PASSWORD, step=2, email_fallback=True)
+        return render_template(TEMPLATE_FORGOT_PASSWORD, step=2, email_required=True)
 
     # Step 2: verify TOTP
     if step == 2:
@@ -1592,14 +1617,14 @@ def forgot_password():
             return redirect(url_for("forgot_password"))
         if request.form.get("reset_method") == "email":
             _send_password_reset_if_email_matches(user, request.form.get("email", ""))
-            return render_template("forgot_password.html", step=2, email_required=not bool(user.totp_secret and pyotp), email_sent=True)
+            return render_template(TEMPLATE_FORGOT_PASSWORD, step=2, email_required=not bool(user.totp_secret and pyotp), email_sent=True)
         code = request.form.get("code", "").strip().replace(" ", "")
         if pyotp and user.totp_secret and pyotp.TOTP(user.totp_secret).verify(code, valid_window=1):
             session["fp_step"] = 3
             session["fp_verified"] = True
-            return render_template("forgot_password.html", step=3)
+            return render_template(TEMPLATE_FORGOT_PASSWORD, step=3)
         return render_template(
-            "forgot_password.html",
+            TEMPLATE_FORGOT_PASSWORD,
             step=2,
             error="Invalid code — check your authenticator app and try again.",
             email_fallback=True,
@@ -1616,7 +1641,7 @@ def forgot_password():
         new_pw = request.form.get("password", "")
         confirm_pw = request.form.get("confirm_password", "")
         if new_pw != confirm_pw:
-            return render_template("forgot_password.html", step=3, error="Passwords do not match.")
+            return render_template(TEMPLATE_FORGOT_PASSWORD, step=3, error="Passwords do not match.")
         try:
             user.set_password(new_pw)
             db.session.commit()
@@ -1627,7 +1652,7 @@ def forgot_password():
             flash("Password reset successfully. Please sign in with your new password.", "success")
             return redirect(url_for("login"))
         except ValueError as exc:
-            return render_template("forgot_password.html", step=3, error=str(exc))
+            return render_template(TEMPLATE_FORGOT_PASSWORD, step=3, error=str(exc))
 
     return redirect(url_for("forgot_password"))
 
@@ -1646,12 +1671,12 @@ def reset_password(token):
         return redirect(url_for("forgot_password"))
 
     if request.method == "GET":
-        return render_template("forgot_password.html", step=3, reset_token=token)
+        return render_template(TEMPLATE_FORGOT_PASSWORD, step=3, reset_token=token)
 
     new_pw = request.form.get("password", "")
     confirm_pw = request.form.get("confirm_password", "")
     if new_pw != confirm_pw:
-        return render_template("forgot_password.html", step=3, reset_token=token, error="Passwords do not match.")
+        return render_template(TEMPLATE_FORGOT_PASSWORD, step=3, reset_token=token, error="Passwords do not match.")
     try:
         user.set_password(new_pw)
         user.must_change_password = False
@@ -1660,7 +1685,7 @@ def reset_password(token):
         flash("Password reset successfully. Please sign in with your new password.", "success")
         return redirect(url_for("login"))
     except ValueError as exc:
-        return render_template("forgot_password.html", step=3, reset_token=token, error=str(exc))
+        return render_template(TEMPLATE_FORGOT_PASSWORD, step=3, reset_token=token, error=str(exc))
 
 
 @app.route("/logout", methods=["GET", "POST"])
@@ -1670,7 +1695,7 @@ def logout():
     log_usage("logout")
     logout_user()
     session.clear()
-    return redirect("/login")
+    return redirect(ROUTE_LOGIN)
 
 
 # ---------------------------------------------------------------------------
@@ -1709,11 +1734,11 @@ def admin_dashboard():
     )
 
 
-@app.route("/index", methods=["GET"])
+@app.route(ROUTE_INDEX, methods=["GET"])
 def index():
     """Officer dashboard: KPI stat cards, recent cases, activity feed, upload."""
     if "username" not in session:
-        return redirect("/login")
+        return redirect(ROUTE_LOGIN)
     # Strict role separation: the admin has their own dashboard. If an admin reaches
     # the officer dashboard, bounce them back to the admin dashboard.
     if session.get("role") == "Admin":
@@ -1789,14 +1814,14 @@ def upload_excel():
     file = request.files.get("excel_file")
     if file is None or not file.filename:
         flash("No file selected. Please choose a .xlsx file.", "warning")
-        return redirect("/index")
+        return redirect(ROUTE_INDEX)
 
     # secure_filename strips any directory components / path-traversal sequences;
     # enforce the .xlsx extension case-insensitively on the *sanitised* name.
     filename = secure_filename(file.filename)
     if not filename or not filename.lower().endswith(".xlsx"):
         flash("Invalid file type. Only .xlsx workbooks are accepted.", "warning")
-        return redirect("/index")
+        return redirect(ROUTE_INDEX)
     file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
 
     # Use file lock to prevent race conditions
@@ -1841,7 +1866,7 @@ def upload_excel():
             pass
         logger.warning("Rejected non-xlsx upload (bad magic bytes): %s", filename)
         flash("That file is not a valid .xlsx workbook and was rejected.", "danger")
-        return redirect("/index")
+        return redirect(ROUTE_INDEX)
 
     # Any failure while parsing below would otherwise leave the saved working copy
     # orphaned in UPLOAD_FOLDER (an untracked, attacker-supplied blob). Track whether
@@ -1870,7 +1895,7 @@ def upload_excel():
         except Exception as e:
             logger.exception(f"Error reading Excel file: {str(e)}", exc_info=True)
             flash("Error reading Excel file. Please ensure it is a valid .xlsx file.", "error")
-            return redirect("/index")
+            return redirect(ROUTE_INDEX)
 
         # Robustly find the sheet name (handles case/spacing/extra text)
         def find_sheet_name(xls_obj, target):
@@ -1910,7 +1935,7 @@ def upload_excel():
             if os.path.exists(file_path):
                 os.remove(file_path)
             flash(f"File contains too many rows. Maximum {MAX_ROWS} rows allowed.", "error")
-            return redirect("/index")
+            return redirect(ROUTE_INDEX)
 
         # Sanitize all cells in main dataframe
         for col in tx_df.columns:
@@ -1920,7 +1945,7 @@ def upload_excel():
 
         if len(acknos_in_excel) == 0:
             flash("⚠️ No Acknowledgement numbers found in the Excel file!", "warning")
-            return redirect("/index")
+            return redirect(ROUTE_INDEX)
 
         # ✅ Step 3: Purge ALL existing transactions for these ACK numbers.
         # This is belt-and-suspenders: the filename-dedup above handles same-name
@@ -1947,8 +1972,8 @@ def upload_excel():
 
         # ✅ Step 5: Process and insert transactions
         atm_df = (
-            pd.read_excel(xls, sheet_name="Withdrawal through ATM")
-            if "Withdrawal through ATM" in xls.sheet_names
+            pd.read_excel(xls, sheet_name=TXN_WITHDRAWAL_ATM)
+            if TXN_WITHDRAWAL_ATM in xls.sheet_names
             else pd.DataFrame()
         )
         chq_df = (
@@ -2431,7 +2456,7 @@ def upload_excel():
             except OSError as exc:
                 logger.warning("Could not remove orphaned upload %s: %s", filename, exc)
 
-    return redirect("/index")
+    return redirect(ROUTE_INDEX)
 
 
 @app.route("/download/<filename>", methods=["GET"])
@@ -3083,7 +3108,7 @@ def atm_data(ack_no):
         # Robust sheet finding
         sheet_name = None
         # 1. Exact match candidates
-        candidates = ["Withdrawal through ATM", "Withdrawal through ATM ", "Withdrawal through ATM\n"]
+        candidates = [TXN_WITHDRAWAL_ATM, "Withdrawal through ATM ", "Withdrawal through ATM\n"]
         for c in candidates:
             if c in xls.sheet_names:
                 sheet_name = c
@@ -3279,14 +3304,14 @@ def statewise_summary(ack_no):
         # Define regions
         regions = {
             "Southern": [
-                "Tamil Nadu",
+                STATE_TAMIL_NADU,
                 "Kerala",
                 "Karnataka",
-                "Andhra Pradesh",
+                STATE_ANDHRA_PRADESH,
                 "Telangana",
                 "Puducherry",
                 "Lakshadweep",
-                "Andaman and Nicobar Islands",
+                STATE_ANDAMAN_NICOBAR,
             ],
             "Western": ["Maharashtra", "Gujarat", "Rajasthan", "Goa", "Daman and Diu", "Dadra and Nagar Haveli"],
             "Eastern": [
@@ -3349,14 +3374,14 @@ def statewise_summary(ack_no):
 
         # Sort within each region by total_amount descending, except Southern which uses custom order
         southern_order = [
-            "Tamil Nadu",
+            STATE_TAMIL_NADU,
             "Kerala",
             "Karnataka",
-            "Andhra Pradesh",
+            STATE_ANDHRA_PRADESH,
             "Telangana",
             "Puducherry",
             "Lakshadweep",
-            "Andaman and Nicobar Islands",
+            STATE_ANDAMAN_NICOBAR,
         ]
         for region in regional_summaries:
             if region == "Southern":
@@ -3382,7 +3407,7 @@ def statewise_summary(ack_no):
         return jsonify(result)
     except Exception as e:
         logger.exception(f"Error in statewise_summary for {ack_no}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"error": MSG_INTERNAL_SERVER_ERROR}), 500
 
 
 @app.route("/put_on_hold_transactions/<ack_no>", methods=["GET"])
@@ -3444,7 +3469,7 @@ def put_on_hold_transactions(ack_no):
         return jsonify(response)
     except Exception as e:
         logger.exception(f"Error fetching hold transactions for {_safe_log(ack_no)}: {e}")
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"error": MSG_INTERNAL_SERVER_ERROR}), 500
 
 
 @app.route("/state_transactions/<ack_no>/<state>", methods=["GET"])
@@ -3777,7 +3802,7 @@ def save_mrm_status():
             # Mirror into the durable refund stores so existing views stay correct.
             txn.refund_type = refund_type
             txn.refund_amount = refund_amount
-            txn.refund_status = "Refunded" if refund_type == "FULL" else "Partially Refunded"
+            txn.refund_status = "Refunded" if refund_type == "FULL" else STATUS_PARTIALLY_REFUNDED
             poh = POHRefundDetails.query.filter_by(ack_no=ack_no, txn_id=hold_txn_id).first()
             if not poh:
                 poh = POHRefundDetails(ack_no=ack_no, txn_id=hold_txn_id)
@@ -3911,7 +3936,7 @@ def generate_letter():
         return render_template(template_name, **context)
     except Exception as e:
         logger.exception(f"Error generating letter: {e}")
-        return jsonify({"error": "Internal error while generating the document"}), 500
+        return jsonify({"error": MSG_DOC_GENERATION_ERROR}), 500
 
 
 @app.route("/generate_letter_pdf", methods=["POST"])
@@ -3988,11 +4013,11 @@ def generate_letter_pdf():
         pdf_buffer.seek(0)
 
         log_usage("download_letter_pdf", filename=safe_filename_val, ack_no=ack_no)
-        return send_file(pdf_buffer, mimetype="application/pdf", as_attachment=True, download_name=safe_filename_val)
+        return send_file(pdf_buffer, mimetype=MIME_PDF, as_attachment=True, download_name=safe_filename_val)
 
     except Exception as e:
         logger.exception(f"Error generating PDF letter: {e}")
-        return jsonify({"error": "Internal error while generating the document"}), 500
+        return jsonify({"error": MSG_DOC_GENERATION_ERROR}), 500
 
 
 @app.route("/generate_letter_docx", methods=["POST"])
@@ -4092,7 +4117,7 @@ def generate_letter_docx():
                 bmap = {}
                 for t in l1_txns:
                     # Robust bank name normalization
-                    bname = (t.bank_name or t.ifsc_code or "Unknown Bank").strip().upper()
+                    bname = (t.bank_name or t.ifsc_code or BANK_UNKNOWN).strip().upper()
                     if bname not in bmap:
                         bmap[bname] = []
                     bmap[bname].append(t)
@@ -4186,7 +4211,7 @@ def generate_letter_docx():
                     or "UNKNOWN"
                 )
 
-                bank_name = "Unknown Bank"
+                bank_name = BANK_UNKNOWN
                 amount_lost = 0.0
                 from_date_local = context["letter_date"]
 
@@ -4316,7 +4341,7 @@ def generate_letter_docx():
                         header_cells = table.rows[0].cells
                         headers_text = [c.text.strip() for c in header_cells]
                         if (
-                            "Suspect Account Number" in headers_text
+                            LABEL_SUSPECT_ACCOUNT_NUMBER in headers_text
                             or "Transaction Id / UTR Number" in headers_text
                             or "Victim Account Number" in headers_text
                         ):
@@ -4337,7 +4362,7 @@ def generate_letter_docx():
                     target_idx = -1
                     headings_to_find = [
                         "Suspect Account Txn Details",
-                        "Suspect Account Number",
+                        LABEL_SUSPECT_ACCOUNT_NUMBER,
                         "Suspect Account Details",
                     ]
                     for i, p in enumerate(doc.paragraphs):
@@ -4355,7 +4380,7 @@ def generate_letter_docx():
                         hdr_cells = target_table.rows[0].cells
                         headers = [
                             "S. No.",
-                            "Suspect Account Number",
+                            LABEL_SUSPECT_ACCOUNT_NUMBER,
                             "Transaction Date",
                             "Transaction Amount",
                             "Transaction Id / UTR Number",
@@ -4466,7 +4491,7 @@ def generate_letter_docx():
 
     except Exception as e:
         logger.exception(f"Error generating DOCX letter: {e}")
-        return jsonify({"error": "Internal error while generating the document"}), 500
+        return jsonify({"error": MSG_DOC_GENERATION_ERROR}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -4627,7 +4652,7 @@ def update_officer():
         return redirect(url_for("view_officers"))
 
     # Only allow editing investigative officers via this view
-    if user.role != "Investigative Officer":
+    if user.role != ROLE_INVESTIGATIVE_OFFICER:
         flash("Only Investigative Officers can be edited here.")
         return redirect(url_for("view_officers"))
 
@@ -4727,7 +4752,7 @@ def manage_files():
                 "id": f.id,
                 "filename": f.filename,
                 "uploader": f.uploader or "—",
-                "upload_time": (to_ist(f.upload_time).strftime("%d %b %Y, %H:%M") if f.upload_time else "—"),
+                "upload_time": (to_ist(f.upload_time).strftime(DATETIME_DISPLAY_FORMAT) if f.upload_time else "—"),
                 "txn_count": len(txns),
                 "ack_nos": ack_nos,
                 "total_amt": total_amt,
@@ -4777,7 +4802,7 @@ def download_upload(file_id):
     log_usage("download_upload", filename=f.filename)
     return send_file(
         io.BytesIO(f.data),
-        mimetype=f.mimetype or "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        mimetype=f.mimetype or MIME_XLSX,
         as_attachment=True,
         download_name=f.filename,
     )
@@ -4804,7 +4829,7 @@ def download_case_excel(ack_no):
     log_usage("download_case_excel", filename=row.filename, ack_no=ack_no)
     return send_file(
         io.BytesIO(row.data),
-        mimetype=row.mimetype or "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        mimetype=row.mimetype or MIME_XLSX,
         as_attachment=True,
         download_name=row.filename,
     )
@@ -4851,7 +4876,7 @@ def view_analytics():
             {
                 "filename": f.filename,
                 "uploader": f.uploader or "—",
-                "upload_time": (to_ist(f.upload_time).strftime("%d %b %Y, %H:%M") if f.upload_time else "—"),
+                "upload_time": (to_ist(f.upload_time).strftime(DATETIME_DISPLAY_FORMAT) if f.upload_time else "—"),
                 "txn_count": len(txns),
                 "ack_count": len(ack_nos),
                 "total_amt": fa,
@@ -4919,7 +4944,7 @@ def view_analytics():
     officer_stats = (
         db.session.query(User.username, User.name, func.count(UploadedFile.id).label("uploads"))
         .join(UploadedFile, UploadedFile.uploader == User.username)
-        .filter(User.role == "Investigative Officer")
+        .filter(User.role == ROLE_INVESTIGATIVE_OFFICER)
         .group_by(User.username, User.name)
         .order_by(desc("uploads"))
         .all()
@@ -5038,7 +5063,7 @@ def download_logs():
             f"usage_logs_{start_of_day.astimezone(timezone(timedelta(hours=5, minutes=30))).strftime('%Y-%m-%d')}.pdf"
         )
         log_usage("download_logs")
-        return send_file(buf, mimetype="application/pdf", as_attachment=True, download_name=fname)
+        return send_file(buf, mimetype=MIME_PDF, as_attachment=True, download_name=fname)
     except Exception as e:
         logger.exception(f"Failed to generate logs PDF: {e}")
         return "Failed to generate logs.", 500
@@ -5172,7 +5197,7 @@ def submit_officer():
 
     new_officer = User(
         username=username,
-        role="Investigative Officer",
+        role=ROLE_INVESTIGATIVE_OFFICER,
         name=name,
         rank=rank,
         email=email,
@@ -5219,7 +5244,7 @@ with app.app_context():
 
         officer = User(
             username="officer",
-            role="Investigative Officer",
+            role=ROLE_INVESTIGATIVE_OFFICER,
             admin_id=admin.id,  # officer belongs to the seed admin group
         )
         officer.set_password(officer_password)
@@ -5234,7 +5259,7 @@ with app.app_context():
         # The console message scrolls away the moment the app starts logging requests,
         # which is exactly why the admin password kept getting "lost" after a clone.
         try:
-            creds_path = os.path.join(secure_base, "INITIAL_CREDENTIALS.txt")
+            creds_path = os.path.join(secure_base, INITIAL_CREDENTIALS_FILENAME)
             with open(creds_path, "w") as cf:
                 cf.write(
                     "FundTrail initial login credentials (auto-generated)\n"
@@ -5285,7 +5310,7 @@ def forbidden(error):
 
 @app.errorhandler(500)
 def internal_error(error):
-    logger.error("Internal server error", exc_info=True)
+    logger.error(MSG_INTERNAL_SERVER_ERROR, exc_info=True)
     # Mirror into alerts.log so failures are noticed, not buried.
     try:
         alert_logger.error(
@@ -5431,7 +5456,7 @@ def download_fundtrail_pdf():
             c.drawRightString(width - MARGIN, height - 34, "Ack No: %s" % ack_no)
             c.setFillColor(HEADSUB)
             c.setFont("Helvetica", 8.5)
-            c.drawRightString(width - MARGIN, height - 50, "Generated " + datetime.now().strftime("%d %b %Y, %H:%M"))
+            c.drawRightString(width - MARGIN, height - 50, "Generated " + datetime.now().strftime(DATETIME_DISPLAY_FORMAT))
             c.setFillColor(HEADSUB)
             c.setFont("Helvetica-Bold", 7.5)
             c.drawRightString(width - MARGIN, height - 65, "CONFIDENTIAL")
@@ -5513,7 +5538,7 @@ def download_fundtrail_pdf():
             else:
                 bg, accent, tcolor, badge = M_BG, M_AC, M_TI, "LAYER %d" % i
 
-            rows = [("Account No", node.get("account_number", "N/A")), ("Bank", node.get("bank", "Unknown Bank"))]
+            rows = [("Account No", node.get("account_number", "N/A")), ("Bank", node.get("bank", BANK_UNKNOWN))]
             if i != 0:
                 rows += [
                     ("Branch", node.get("branch", "Unknown")),
@@ -5622,11 +5647,11 @@ def download_fundtrail_pdf():
 
         filename = f"FundTrail_{ack_no}.pdf"
         log_usage("download_fundtrail_pdf", filename=filename, ack_no=ack_no)
-        return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name=filename)
+        return send_file(buffer, mimetype=MIME_PDF, as_attachment=True, download_name=filename)
 
     except Exception as e:
         logger.exception(f"Error generating fundtrail PDF: {e}")
-        return jsonify({"error": "Internal error while generating the document"}), 500
+        return jsonify({"error": MSG_DOC_GENERATION_ERROR}), 500
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -5679,7 +5704,7 @@ def my_analytics():
             {
                 "id": f.id,
                 "filename": f.filename,
-                "upload_time": (to_ist(f.upload_time).strftime("%d %b %Y, %H:%M") if f.upload_time else "—"),
+                "upload_time": (to_ist(f.upload_time).strftime(DATETIME_DISPLAY_FORMAT) if f.upload_time else "—"),
                 "txn_count": len(ftxns),
                 "ack_nos": ack_nos,
                 "total_amt": fa,
@@ -6028,7 +6053,7 @@ def _send_analytics_xlsx(uploader=None, label="analytics"):
         buf,
         as_attachment=True,
         download_name=f"FundTrail_{label}_{stamp}.xlsx",
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        mimetype=MIME_XLSX,
     )
 
 
@@ -6176,7 +6201,7 @@ def admin_metrics():
         weeks=weeks,
         status_counts=status_counts,
         total_cases=Complaint.query.count(),
-        total_officers=User.query.filter_by(role="Investigative Officer").count(),
+        total_officers=User.query.filter_by(role=ROLE_INVESTIGATIVE_OFFICER).count(),
         held=held,
         refunded=refunded,
         recovery_pct=(refunded / held * 100) if held else 0.0,
