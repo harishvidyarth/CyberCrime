@@ -11,7 +11,7 @@ Flask-Migrate==4.1.0
 PyMySQL==1.2.0
 cryptography==48.0.1
 openpyxl==3.1.5
-requests==2.33.0          # >=2.33 fixes GHSA-gc5v-m9x4-r6x2
+requests==2.34.2          # >=2.33 fixes GHSA-gc5v-m9x4-r6x2
 python-dotenv==1.2.2      # >=1.2.2 fixes GHSA-mf9w-mj56-hr94
 urllib3==2.7.0            # transitive (requests); pinned for PYSEC-2026-141/142
 pillow==12.2.0            # transitive (xhtml2pdf/reportlab); pinned for 6 CVEs
