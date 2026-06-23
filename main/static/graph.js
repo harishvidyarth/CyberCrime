@@ -1731,16 +1731,6 @@ function addIcon(container, x, y, emoji, onClick) {
     .style('font-size', '18px').style('cursor', 'pointer').style('fill', '#000')
     .text(emoji).on('click', onClick);
 }
-// 🧮 Helper: calculate total repeated transaction amount
-function getTotalRepeatedAmount(txns) {
-  if (!txns || txns.length === 0) return 0;
-
-  const uniqueTxns = Array.from(
-    new Map(txns.map(txn => [txn.txn_id, txn])).values()
-  );
-
-  return uniqueTxns.reduce((sum, txn) => sum + (Number.parseFloat(txn.amount) || 0), 0);
-}
 
 // Add event listener for Download PDF button (using pdfmake)
 (function () {
