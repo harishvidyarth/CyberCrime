@@ -1203,6 +1203,7 @@ function drawTree(root) {
       }
     } catch (e) {
       // silently ignore sizing errors
+      console.debug('branch label sizing error', e);
     }
 
     const iconData = [];
