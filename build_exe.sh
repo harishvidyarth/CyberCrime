@@ -21,7 +21,7 @@ echo "Building FundTrail (this can take a few minutes)..."
 python3 -m PyInstaller --noconfirm --clean FundTrail.spec
 
 echo ""
-if [ -f "dist/FundTrail" ]; then
+if [[ -f "dist/FundTrail" ]]; then
     echo "============================================================"
     echo "  Done -> dist/FundTrail   (run it on this same OS)"
     echo "  Data persists in the per-user app data folder:"
