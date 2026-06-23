@@ -1118,6 +1118,29 @@ def ensure_complaint_columns():
     })
 
 
+def _mrm_row_from_hold_txn(t, poh, refund_date_fn):
+    """Build an MRMTracking row seeded from one hold transaction, or None if no
+    stage could be dated. Mirrors the legacy refund/court -> MRM step mapping."""
+    ref_status = (poh.refund_status if poh else None) or t.refund_status
+    ref_amount = poh.refund_amount if (poh and poh.refund_amount is not None) else t.refund_amount
+    row = MRMTracking(ack_no=t.ack_no, txn_id=t.put_on_hold_txn_id)
+    if t.put_on_hold_date:
+        row.step1 = str(t.put_on_hold_date)
+    if ref_status == "Refunded":
+        setattr(row, f"step{MRM_REFUND_STEP}", refund_date_fn(poh))
+        row.refund_type = "FULL"
+        row.refund_amount = ref_amount
+        t.refund_type = "FULL"
+    elif ref_status == STATUS_PARTIALLY_REFUNDED:
+        setattr(row, f"step{MRM_REFUND_STEP}", refund_date_fn(poh))
+        row.refund_type = "PARTIAL"
+        row.refund_amount = ref_amount
+        t.refund_type = "PARTIAL"
+    if any(getattr(row, f"step{i}") for i in range(1, len(MRM_STEPS) + 1)):
+        return row
+    return None
+
+
 def ensure_mrm_backfill():
     """Seed MRMTracking from pre-existing refund/court data. Idempotent: only
     creates a row for a (ack_no, txn_id) that has none yet, so officer edits made
@@ -1153,25 +1176,8 @@ def ensure_mrm_backfill():
             key = (t.ack_no, t.put_on_hold_txn_id)
             if None in key or key in existing:
                 continue
-            poh = poh_map.get(key)
-            ref_status = (poh.refund_status if poh else None) or t.refund_status
-            ref_amount = poh.refund_amount if (poh and poh.refund_amount is not None) else t.refund_amount
-
-            row = MRMTracking(ack_no=t.ack_no, txn_id=t.put_on_hold_txn_id)
-            if t.put_on_hold_date:
-                row.step1 = str(t.put_on_hold_date)
-            if ref_status == "Refunded":
-                setattr(row, f"step{MRM_REFUND_STEP}", _refund_date(poh))
-                row.refund_type = "FULL"
-                row.refund_amount = ref_amount
-                t.refund_type = "FULL"
-            elif ref_status == STATUS_PARTIALLY_REFUNDED:
-                setattr(row, f"step{MRM_REFUND_STEP}", _refund_date(poh))
-                row.refund_type = "PARTIAL"
-                row.refund_amount = ref_amount
-                t.refund_type = "PARTIAL"
-
-            if any(getattr(row, f"step{i}") for i in range(1, len(MRM_STEPS) + 1)):
+            row = _mrm_row_from_hold_txn(t, poh_map.get(key), _refund_date)
+            if row is not None:
                 db.session.add(row)
                 existing.add(key)
                 created += 1
