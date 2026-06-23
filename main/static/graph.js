@@ -1220,7 +1220,6 @@ function drawTree(root) {
       });
     }
 
-
     // 💥: Burst transaction node (20+ children)
     const totalChildren = (d.children?.length || 0) + (d._children?.length || 0);
 
@@ -1502,7 +1501,6 @@ function drawTree(root) {
       addIcon(n, x, iconY, icon.emoji, icon.onClick);
     });
 
-
     let clickTimer;
     n.on('click', function (event) {
       if (event.target.classList.contains('icon')) return;
@@ -1566,7 +1564,6 @@ function drawTree(root) {
             }
           });
         }
-
 
         // If phone or branch missing, fetch and update elements
         if (d.data.ifsc && (!branchPhoneCache.get(d.data.ifsc) || !branchCache.get(d.data.ifsc) || branchCache.get(d.data.ifsc) === 'Unknown')) {
@@ -1734,167 +1731,6 @@ function addIcon(container, x, y, emoji, onClick) {
     .style('font-size', '18px').style('cursor', 'pointer').style('fill', '#000')
     .text(emoji).on('click', onClick);
 }
-
-// Add event listener for Download PDF button (using pdfmake)
-(function () {
-  const downloadBtn = document.getElementById('downloadDetailsPdf');
-  if (!downloadBtn) return;
-
-  function attachListener() {
-    if (typeof pdfMake !== 'undefined') {
-      console.log('pdfMake library loaded successfully.');
-      downloadBtn.addEventListener('click', async function () {
-        console.log('Download PDF button clicked.');
-        const element = document.getElementById('detailsContent');
-        if (!element || element.innerHTML.trim() === '') {
-          console.log('No content to download.');
-          alert('No transaction details available to download.');
-          return;
-        }
-        console.log('Details element found, innerHTML length:', element.innerHTML.length);
-
-        // Parse details from .detail-row elements
-        console.log('Starting to query .detail-row elements.');
-        const detailRows = element.querySelectorAll('.detail-row');
-        console.log('Found', detailRows.length, 'detail rows.');
-        const rows = [];
-        detailRows.forEach((row, index) => {
-          console.log(`Processing row ${index}:`, row);
-          const labelSpan = row.querySelector('.label');
-          if (labelSpan) {
-            const labelText = labelSpan.textContent.trim();
-            const fullText = row.textContent.trim();
-            const valueText = fullText.replace(labelText, '').trim();
-            console.log(`Row ${index} label: "${labelText}", value: "${valueText}"`);
-            if (valueText) {
-              rows.push([labelText, valueText]);
-            }
-          }
-        });
-
-        if (rows.length === 0) {
-          console.log('No rows parsed, alerting.');
-          alert('No transaction details available to download.');
-          return;
-        }
-
-        console.log('Parsed', rows.length, 'detail rows:', rows);
-
-        // Load logo as base64 for PDF
-        const logoUrl = globalThis.location.origin + '/static/tn_police_logo.png';
-        let logoBase64 = null;
-        try {
-          const response = await fetch(logoUrl);
-          const blob = await response.blob();
-          const reader = new FileReader();
-          logoBase64 = await new Promise((resolve) => {
-            reader.onloadend = () => resolve(reader.result);
-            reader.readAsDataURL(blob);
-          });
-          console.log('Logo loaded for PDF.');
-        } catch (error) {
-          console.warn('Failed to load logo for PDF:', error);
-        }
-
-        const currentDate = new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
-
-        const docDefinition = {
-          pageSize: 'A4',
-          pageOrientation: 'landscape',
-          header: function (currentPage, pageCount) {
-            return {
-              margin: [40, 20, 40, 10],
-              columns: [
-                {
-                  image: logoBase64 ? 'logo' : null,
-                  width: 50,
-                  alignment: 'left'
-                },
-                {
-                  stack: [
-                    { text: 'Fund Trail System', style: 'title' },
-                    { text: 'Transaction Details Report', style: 'subtitle' }
-                  ],
-                  alignment: 'center',
-                  margin: [0, 0, 0, 5]
-                },
-                {
-                  text: `Page ${currentPage} of ${pageCount}`,
-                  alignment: 'right',
-                  style: 'pageNumber'
-                }
-              ]
-            };
-          },
-          footer: function (currentPage, pageCount) {
-            return {
-              margin: [40, 10, 40, 20],
-              columns: [
-                { text: 'Generated on ' + currentDate, alignment: 'left', style: 'footerText' },
-                { text: 'Confidential - For Official Use Only', alignment: 'center', style: 'footerText' },
-                { text: 'Tamil Nadu Police', alignment: 'right', style: 'footerText' }
-              ]
-            };
-          },
-          content: [
-            { text: `Acknowledgement No: ${ackNo || 'Unknown'}`, style: 'ackNo', margin: [0, 20, 0, 30] },
-            {
-              table: {
-                headerRows: 1,
-                widths: ['*', '*'],
-                body: [
-                  [{ text: 'Field', style: 'tableHeader' }, { text: 'Value', style: 'tableHeader' }],
-                  ...rows.map(row => [row[0], row[1]])
-                ]
-              },
-              layout: {
-                fillColor: function (rowIndex) {
-                  if (rowIndex === 0) return '#3b82f6';
-                  return (rowIndex % 2 === 1) ? '#f8fafc' : null;
-                },
-                hLineColor: function (i, node) { return '#d1d5db'; },
-                vLineColor: function (i, node) { return '#d1d5db'; },
-                hLineWidth: function (i, node) { return 0.5; },
-                vLineWidth: function (i, node) { return 0.5; },
-                paddingLeft: function (i, node) { return 8; },
-                paddingRight: function (i, node) { return 8; },
-                paddingTop: function (i, node) { return 6; },
-                paddingBottom: function (i, node) { return 6; }
-              },
-              margin: [0, 0, 0, 0]
-            }
-          ],
-          styles: {
-            title: { fontSize: 16, bold: true, color: '#1f2937' },
-            subtitle: { fontSize: 12, bold: false, color: '#6b7280', italics: true },
-            ackNo: { fontSize: 14, bold: true, color: '#3b82f6', alignment: 'center' },
-            tableHeader: { bold: true, fontSize: 11, color: 'white' },
-            pageNumber: { fontSize: 9, color: '#6b7280' },
-            footerText: { fontSize: 9, color: '#9ca3af', italics: true }
-          },
-          defaultStyle: {
-            font: 'Roboto',
-            fontSize: 10,
-            lineHeight: 1.2
-          },
-          images: {
-            logo: logoBase64
-          }
-        };
-
-        console.log('PDF document definition created.');
-        console.log('Calling pdfMake.createPdf.download...');
-        pdfMake.createPdf(docDefinition).download(`transaction_details_${ackNo || 'unknown'}.pdf`);
-        console.log('PDF download initiated.');
-      });
-    } else {
-      console.log('pdfMake not yet loaded, polling...');
-      setTimeout(attachListener, 100);
-    }
-  }
-
-  attachListener();
-})();
 
 function downloadHoldGraphPdf(path, ackNo) {
   // Exclude the root 'Flow' node from the path
