@@ -1558,23 +1558,7 @@ function drawTree(root) {
               body: JSON.stringify({ txn_id: txnId, name, aadhar, mobile, address }),
             })
               .then((res) => res.json())
-              .then((data) => {
-                if (data.status === "success") {
-                  alert("KYC saved successfully!");
-                  d.data.kyc_name = name;
-                  d.data.kyc_aadhar = aadhar;
-                  d.data.kyc_mobile = mobile;
-                  d.data.kyc_address = address;
-                  // Disable inputs after saving and show Edit button
-                  setKycInputsDisabled(true);
-                  const saveBtn = document.getElementById('saveKycBtn');
-                  const editBtn = document.getElementById('editKycBtn');
-                  if (saveBtn) saveBtn.style.display = "none";
-                  if (editBtn && !isViewer) editBtn.style.display = "block";
-                } else {
-                  alert("Error saving KYC: " + data.message);
-                }
-              });
+              .then((data) => applyKycSaveResult(data, { name, aadhar, mobile, address }, d));
           };
 
           // Remove old listener and add new one
@@ -1624,6 +1608,24 @@ function addIcon(container, x, y, emoji, onClick) {
     .attr('class', 'icon')
     .style('font-size', '18px').style('cursor', 'pointer').style('fill', '#000')
     .text(emoji).on('click', onClick);
+}
+
+// Apply the /save_kyc response: update the node datum and reset the KYC panel.
+function applyKycSaveResult(data, kyc, node) {
+  if (data.status === "success") {
+    alert("KYC saved successfully!");
+    node.data.kyc_name = kyc.name;
+    node.data.kyc_aadhar = kyc.aadhar;
+    node.data.kyc_mobile = kyc.mobile;
+    node.data.kyc_address = kyc.address;
+    setKycInputsDisabled(true);
+    const saveBtn = document.getElementById('saveKycBtn');
+    const editBtn = document.getElementById('editKycBtn');
+    if (saveBtn) saveBtn.style.display = "none";
+    if (editBtn && !isViewer) editBtn.style.display = "block";
+  } else {
+    alert("Error saving KYC: " + data.message);
+  }
 }
 
 // Enable/disable all KYC input fields together.
