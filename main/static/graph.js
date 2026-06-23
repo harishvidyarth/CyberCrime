@@ -1555,7 +1555,7 @@ function drawTree(root) {
               const accountsInPath = path
                 .filter(n => n.data && n.data.name && n.data.name !== 'Flow' && (n.data.layer === undefined || n.data.layer > 0))
                 .map(n => n.data.name);
-              const isPoh = d.data.hold_info ? true : false;
+              const isPoh = Boolean(d.data.hold_info);
               if (typeof window.openLetterModal === 'function') {
                 window.openLetterModal(accountsInPath.join(', '), 'suspect', isPoh);
               }
