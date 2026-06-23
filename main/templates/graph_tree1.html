@@ -1957,7 +1957,6 @@
           `;
           transactions.forEach(transaction => {
             const rowStyle = transaction.is_atm ? 'background-color: #dbeafe;' : '';
-            const atmIndicator = transaction.is_atm ? 'ATM' : '';
             html += `
               <tr style="${rowStyle}">
                   <td style="border:1px solid #e5e7eb; padding:8px; text-align:center;">${escHtml(transaction.transaction_type || 'N/A')}</td>
