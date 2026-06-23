@@ -1459,9 +1459,7 @@ function drawTree(root) {
             const acc = genPathBtn.dataset.account;
             const path = findPathToAccount(acc);
             if (path) {
-              const accountsInPath = path
-                .filter(n => n.data?.name && n.data.name !== 'Flow' && (n.data.layer === undefined || n.data.layer > 0))
-                .map(n => n.data.name);
+              const accountsInPath = collectAccountsInPath(path);
               const isPoh = Boolean(d.data.hold_info);
               if (typeof globalThis.openLetterModal === 'function') {
                 globalThis.openLetterModal(accountsInPath.join(', '), 'suspect', isPoh);
@@ -1635,6 +1633,13 @@ function addIcon(container, x, y, emoji, onClick) {
     .attr('class', 'icon')
     .style('font-size', '18px').style('cursor', 'pointer').style('fill', '#000')
     .text(emoji).on('click', onClick);
+}
+
+// Accounts along a root path (excludes the synthetic 'Flow' root and layer<=0).
+function collectAccountsInPath(path) {
+  return path
+    .filter(n => n.data?.name && n.data.name !== 'Flow' && (n.data.layer === undefined || n.data.layer > 0))
+    .map(n => n.data.name);
 }
 
 // ── Status of MRM (Money Restoration Module): 7-stage sequential workflow ──
