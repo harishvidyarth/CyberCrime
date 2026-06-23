@@ -1582,7 +1582,7 @@
 
     async function generateLettersForType(type) {
       // gather accounts: selected checkboxes or manual input
-      const selectedAccounts = Array.from(document.querySelectorAll('.hold-row-select:checked')).map(cb => cb.getAttribute('data-account-number')).filter(Boolean);
+      const selectedAccounts = Array.from(document.querySelectorAll('.hold-row-select:checked')).map(cb => cb.dataset.accountNumber).filter(Boolean);
       const manualAcc = (document.getElementById('letter_account_input') || {}).value || '';
       let accounts = [];
       if (selectedAccounts.length) {
@@ -1645,7 +1645,7 @@
       holdLetterSuspectBtn.onclick = () => {
         showIconName('Generate Suspected Account Letter');
         // Pre-fill with selected account if any
-        const selected = Array.from(document.querySelectorAll('.hold-row-select:checked')).map(cb => cb.getAttribute('data-account-number'));
+        const selected = Array.from(document.querySelectorAll('.hold-row-select:checked')).map(cb => cb.dataset.accountNumber);
         const manual = (document.getElementById('letter_account_input') || {}).value || '';
         const firstAcc = manual || (selected.length ? selected[0] : '');
         openLetterModal(firstAcc, 'suspect', true);
@@ -1655,7 +1655,7 @@
       holdLetterVictimBtn.onclick = () => {
         showIconName('Generate Victim Account Letter');
         // Pre-fill with selected account if any
-        const selected = Array.from(document.querySelectorAll('.hold-row-select:checked')).map(cb => cb.getAttribute('data-account-number'));
+        const selected = Array.from(document.querySelectorAll('.hold-row-select:checked')).map(cb => cb.dataset.accountNumber);
         const manual = (document.getElementById('letter_account_input') || {}).value || '';
         const firstAcc = manual || (selected.length ? selected[0] : '');
         openLetterModal(firstAcc, 'victim');
@@ -1749,7 +1749,7 @@
         };
 
         // Gather selected accounts from hold table (if modal was opened from it)
-        const selectedAccounts = Array.from(document.querySelectorAll('.hold-row-select:checked')).map(cb => cb.getAttribute('data-account-number')).filter(Boolean);
+        const selectedAccounts = Array.from(document.querySelectorAll('.hold-row-select:checked')).map(cb => cb.dataset.accountNumber).filter(Boolean);
         // Also allow manual account entered in the modal (visible input) or hidden input (populated by openLetterModal)
         const visibleManualAcc = (document.getElementById('letter_account_input') || {}).value || '';
         const hiddenManualAcc = (document.getElementById('letter_account') || {}).value || '';
@@ -1911,7 +1911,7 @@
       // Add click handlers for state links
       document.querySelectorAll('.state-link').forEach(link => {
         link.addEventListener('click', function () {
-          const state = this.getAttribute('data-state');
+          const state = this.dataset.state;
           showVictimDetails(state);
         });
       });

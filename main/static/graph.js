@@ -163,7 +163,7 @@ function renderHoldTable(rows) {
   holdTableBody.querySelectorAll('.hold-account-link').forEach(link => {
     link.addEventListener('click', (e) => {
       e.preventDefault();
-      const acc = link.getAttribute('data-account-number');
+      const acc = link.dataset.accountNumber;
       expandHoldAccount(acc);
     });
   });
@@ -273,7 +273,7 @@ function applyHoldFilters() {
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.className = 'hold-row-select';
-    checkbox.setAttribute('data-account-number', row.account_number || '');
+    checkbox.dataset.accountNumber = row.account_number || '';
     tdCheck.appendChild(checkbox);
     tr.appendChild(tdCheck);
 
@@ -287,7 +287,7 @@ function applyHoldFilters() {
     const link = document.createElement('a');
     link.href = '#';
     link.className = 'hold-account-link';
-    link.setAttribute('data-account-number', row.account_number || '');
+    link.dataset.accountNumber = row.account_number || '';
     link.textContent = row.account_number || 'N/A';
     tdAccount.appendChild(link);
     tr.appendChild(tdAccount);
@@ -318,7 +318,7 @@ function applyHoldFilters() {
   holdTableBody.querySelectorAll('.hold-account-link').forEach(link => {
     link.addEventListener('click', (e) => {
       e.preventDefault();
-      const acc = link.getAttribute('data-account-number');
+      const acc = link.dataset.accountNumber;
       expandHoldAccount(acc);
     });
   });
@@ -377,12 +377,12 @@ function showHoldFilterMenu(button) {
   sortDiv.className = 'menu-sort';
   const ascBtn = document.createElement('button');
   ascBtn.type = 'button';
-  ascBtn.setAttribute('data-sort', 'asc');
+  ascBtn.dataset.sort = 'asc';
   ascBtn.textContent = 'Ascending ↑';
   sortDiv.appendChild(ascBtn);
   const descBtn = document.createElement('button');
   descBtn.type = 'button';
-  descBtn.setAttribute('data-sort', 'desc');
+  descBtn.dataset.sort = 'desc';
   descBtn.textContent = 'Descending ↓';
   sortDiv.appendChild(descBtn);
   holdFilterMenu.appendChild(sortDiv);
@@ -392,12 +392,12 @@ function showHoldFilterMenu(button) {
   actionsDiv.className = 'menu-actions';
   const selectAllBtn = document.createElement('button');
   selectAllBtn.type = 'button';
-  selectAllBtn.setAttribute('data-action', 'select-all');
+  selectAllBtn.dataset.action = 'select-all';
   selectAllBtn.textContent = 'Select All';
   actionsDiv.appendChild(selectAllBtn);
   const clearAllBtn = document.createElement('button');
   clearAllBtn.type = 'button';
-  clearAllBtn.setAttribute('data-action', 'clear-all');
+  clearAllBtn.dataset.action = 'clear-all';
   clearAllBtn.textContent = 'Clear';
   actionsDiv.appendChild(clearAllBtn);
   holdFilterMenu.appendChild(actionsDiv);
@@ -425,13 +425,13 @@ function showHoldFilterMenu(button) {
   const resetBtn = document.createElement('button');
   resetBtn.className = 'clear-btn';
   resetBtn.type = 'button';
-  resetBtn.setAttribute('data-action', 'reset');
+  resetBtn.dataset.action = 'reset';
   resetBtn.textContent = 'Reset';
   footerDiv.appendChild(resetBtn);
   const applyBtn = document.createElement('button');
   applyBtn.className = 'apply-btn';
   applyBtn.type = 'button';
-  applyBtn.setAttribute('data-action', 'apply');
+  applyBtn.dataset.action = 'apply';
   applyBtn.textContent = 'Apply';
   footerDiv.appendChild(applyBtn);
   holdFilterMenu.appendChild(footerDiv);
@@ -1553,7 +1553,7 @@ function drawTree(root) {
         const genPathBtn = detailsContent.querySelector('.generate-path-letters-btn');
         if (genPathBtn) {
           genPathBtn.addEventListener('click', () => {
-            const acc = genPathBtn.getAttribute('data-account');
+            const acc = genPathBtn.dataset.account;
             const path = findPathToAccount(acc);
             if (path) {
               const accountsInPath = path
