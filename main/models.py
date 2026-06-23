@@ -31,7 +31,7 @@ def validate_password(password):
         raise ValueError("Password must contain uppercase letter")
     if not re.search(r"[a-z]", password):
         raise ValueError("Password must contain lowercase letter")
-    if not re.search(r"[0-9]", password):
+    if not re.search(r"\d", password, re.ASCII):  # re.ASCII keeps \d == [0-9] (no Unicode digits)
         raise ValueError("Password must contain number")
     if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
         raise ValueError("Password must contain special character")

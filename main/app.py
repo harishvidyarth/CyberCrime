@@ -171,7 +171,7 @@ log_file_path = os.path.join(log_dir, "app.log") if log_dir else None
 
 try:
     handler = RotatingFileHandler(log_file_path, maxBytes=10000000, backupCount=5)
-except (OSError, PermissionError):
+except OSError:
     handler = logging.StreamHandler()
 handler.setLevel(logging.INFO)
 
@@ -225,7 +225,7 @@ logger.addHandler(handler)
 # (or a watcher script / mail hook) can monitor instead of grepping app.log.
 try:
     alert_handler = RotatingFileHandler(os.path.join(log_dir, "alerts.log"), maxBytes=1000000, backupCount=2)
-except (TypeError, OSError, PermissionError):
+except (TypeError, OSError):
     alert_handler = logging.StreamHandler()
 alert_handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
 alert_logger = logging.getLogger("fundtrail.alerts")
@@ -369,7 +369,7 @@ def generate_csp_nonce():
 @app.context_processor
 def inject_csp_nonce():
     """Inject CSP nonce into templates"""
-    return dict(csp_nonce=g.csp_nonce)
+    return {"csp_nonce": g.csp_nonce}
 
 
 @app.after_request
@@ -770,6 +770,7 @@ def _ensure_secure_dir(path):
 def _ensure_secure_file(path):
     if not os.path.exists(path):
         with open(path, "a"):
+            # touch — create the empty file if it does not yet exist
             pass
     if _is_posix():
         try:
@@ -1194,7 +1195,7 @@ def generate_secure_password(length=16):
     safe_symbols = "!@#$%&*?"
     alphabet = string.ascii_letters + string.digits + safe_symbols
     while True:
-        password = "".join(secrets.choice(alphabet) for i in range(length))
+        password = "".join(secrets.choice(alphabet) for _ in range(length))
         if (
             any(c.islower() for c in password)
             and any(c.isupper() for c in password)
@@ -2029,7 +2030,7 @@ def upload_excel():
                 return 0.0
             try:
                 return float(str(value).replace(",", "").strip())
-            except:
+            except Exception:
                 return 0.0
 
         def clean_location(value):
@@ -3143,7 +3144,6 @@ def atm_data(ack_no):
             # Normalize ACK numbers for comparison
             df["ack_str"] = df[ack_col].astype(str).str.strip()
             # Filter logic can be added here if needed, currently returns all for the file
-            pass
 
         df = df.fillna("")
 
@@ -4350,9 +4350,9 @@ def generate_letter_docx():
 
                 if target_table:
                     tr = target_table.rows[0]._tr
-                    trPr = tr.get_or_add_trPr()
-                    tblHeader = OxmlElement("w:tblHeader")
-                    trPr.append(tblHeader)
+                    tr_pr = tr.get_or_add_trPr()
+                    tbl_header = OxmlElement("w:tblHeader")
+                    tr_pr.append(tbl_header)
                     for i in range(len(target_table.rows) - 1, 0, -1):
                         row = target_table.rows[i]
                         tbl = row._element
@@ -4374,9 +4374,9 @@ def generate_letter_docx():
                         target_table = doc.add_table(rows=1, cols=6)
                         target_table.style = "Table Grid"
                         tr = target_table.rows[0]._tr
-                        trPr = tr.get_or_add_trPr()
-                        tblHeader = OxmlElement("w:tblHeader")
-                        trPr.append(tblHeader)
+                        tr_pr = tr.get_or_add_trPr()
+                        tbl_header = OxmlElement("w:tblHeader")
+                        tr_pr.append(tbl_header)
                         hdr_cells = target_table.rows[0].cells
                         headers = [
                             "S. No.",
@@ -4423,10 +4423,10 @@ def generate_letter_docx():
                     from docx.oxml.ns import qn as _qn
 
                     _tbl_el = target_table._tbl
-                    _tblPr = _tbl_el.tblPr
-                    if _tblPr is None:
-                        _tblPr = OxmlElement("w:tblPr")
-                        _tbl_el.insert(0, _tblPr)
+                    _tbl_pr = _tbl_el.tblPr
+                    if _tbl_pr is None:
+                        _tbl_pr = OxmlElement("w:tblPr")
+                        _tbl_el.insert(0, _tbl_pr)
                     _borders = OxmlElement("w:tblBorders")
                     for _edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
                         _e = OxmlElement(f"w:{_edge}")
@@ -4435,7 +4435,7 @@ def generate_letter_docx():
                         _e.set(_qn("w:space"), "0")
                         _e.set(_qn("w:color"), "000000")
                         _borders.append(_e)
-                    _tblPr.append(_borders)
+                    _tbl_pr.append(_borders)
 
                 if is_poh or letter_type == "suspect":
                     subfolder_local = "suspect letter"
@@ -4533,7 +4533,7 @@ def view_all_complaints():
             )
 
         ack_set = upload_id_to_acks.get(c.id, set())
-        c.ack_nos = sorted(list(ack_set)) if ack_set else []
+        c.ack_nos = sorted(ack_set) if ack_set else []
         # logger.debug(f"File: {c.filename}, ID: {c.id}, ACK numbers: {c.ack_nos}")
 
     # Deduplicate by ACK number (keep the latest upload per ACK based on ordering)
@@ -4997,7 +4997,7 @@ def download_logs():
         # PDF Generation
         buf = io.BytesIO()
         c = canvas.Canvas(buf, pagesize=landscape(A4))
-        width, height = landscape(A4)
+        _, height = landscape(A4)
         y = height - 50
 
         # Title

@@ -17,8 +17,11 @@ depends_on = None
 
 
 def upgrade():
+    # Merge migration: unifies two divergent migration heads.
+    # It introduces no schema changes of its own, so the body is intentionally empty.
     pass
 
 
 def downgrade():
+    # No-op: a merge revision carries no schema changes, so there is nothing to reverse.
     pass

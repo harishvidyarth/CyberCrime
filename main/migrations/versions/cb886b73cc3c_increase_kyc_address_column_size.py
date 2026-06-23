@@ -17,8 +17,12 @@ depends_on = None
 
 
 def upgrade():
+    # Intentionally empty under Alembic: the kyc_address column size is enforced at
+    # runtime by the app's ensure_columns() bootstrap (see ensure_transaction_columns
+    # in app.py), so no DDL is applied here. This revision only advances history.
     pass
 
 
 def downgrade():
+    # No-op: the upgrade applies no DDL, so there is nothing to reverse.
     pass
