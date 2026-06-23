@@ -220,7 +220,7 @@
     function next(i) {
       if (i >= files.length) {
         btn.innerHTML = failed ? ('Done — ' + failed + ' failed. Reloading…') : 'All uploaded. Reloading…';
-        setTimeout(function () { window.location.reload(); }, 1200);
+        setTimeout(function () { globalThis.location.reload(); }, 1200);
         return;
       }
       var fd = new FormData();
