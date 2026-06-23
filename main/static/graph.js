@@ -7,11 +7,11 @@ const isViewer = typeof globalThis.window === "undefined" ? false : Boolean(glob
 function escapeHtml(unsafe) {
   if (unsafe === null || unsafe === undefined) return '';
   return String(unsafe)
-    .replaceAll(/&/g, "&amp;")
-    .replaceAll(/</g, "&lt;")
-    .replaceAll(/>/g, "&gt;")
-    .replaceAll(/"/g, "&quot;")
-    .replaceAll(/'/g, "&#039;");
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 async function fetchBranchInfo(ifsc) {
