@@ -29,6 +29,6 @@ if [ -f "dist/FundTrail" ]; then
     echo "  It survives rebuilds and app moves."
     echo "============================================================"
 else
-    echo "Build did NOT produce dist/FundTrail — scroll up for the error."
+    echo "Build did NOT produce dist/FundTrail — scroll up for the error." >&2
     echo "Tip: if a module is missing, add it to hiddenimports in FundTrail.spec."
 fi

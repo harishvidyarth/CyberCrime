@@ -49,7 +49,7 @@ linux_install() {
         zypper) _sudo zypper install -y "$pkg" ;;
         apk)    _sudo apk add --no-cache "$pkg" ;;
         *)
-            echo "  ERROR: No supported package manager found."
+            echo "  ERROR: No supported package manager found." >&2
             echo "  Please install $pkg manually, then re-run this script."
             exit 1 ;;
     esac
@@ -62,7 +62,7 @@ ensure_homebrew() {
     if   [[ -f /opt/homebrew/bin/brew ]]; then eval "$(/opt/homebrew/bin/brew shellenv)"
     elif [[ -f /usr/local/bin/brew    ]]; then eval "$(/usr/local/bin/brew shellenv)"; fi
     if ! command -v brew &>/dev/null; then
-        echo "ERROR: Homebrew installation failed. Install manually: https://brew.sh"; exit 1
+        echo "ERROR: Homebrew installation failed. Install manually: https://brew.sh" >&2; exit 1
     fi
     echo "Homebrew installed."
 }
@@ -80,7 +80,7 @@ install_docker() {
         echo "Docker installed."
         echo ""
         echo "NOTE: Log out and back in (or run 'newgrp docker') if you get a"
-        echo "  permission error on the first run after install."
+        echo "  permission error on the first run after install." >&2
         echo ""
     elif [[ "$OS" == "mac" ]]; then
         ensure_homebrew
@@ -92,7 +92,7 @@ install_docker() {
         for _ in $(seq 1 30); do docker_running && break; echo -n "."; sleep 3; done
         echo ""
     else
-        echo "ERROR: Unsupported OS. Install Docker manually: https://docs.docker.com/get-docker/"
+        echo "ERROR: Unsupported OS. Install Docker manually: https://docs.docker.com/get-docker/" >&2
         exit 1
     fi
 }
@@ -149,7 +149,7 @@ do_start() {
             sleep 2
         fi
         if ! docker_running; then
-            echo "ERROR: Docker daemon still not reachable."
+            echo "ERROR: Docker daemon still not reachable." >&2
             echo "  Please start Docker and re-run this script."
             exit 1
         fi
