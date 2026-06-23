@@ -1319,7 +1319,7 @@ function drawTree(root) {
               return;
             }
             fetch(`/mrm_timeline/${encodeURIComponent(ackNo)}/${encodeURIComponent(holdTxnId)}`)
-              .then(r => (r.ok ? r.json() : Promise.reject()))
+              .then(r => (r.ok ? r.json() : Promise.reject(new Error('MRM timeline request failed'))))
               .then(renderMrm)
               .catch(() => { mrmContainer.textContent = 'Failed to load MRM status.'; });
           }
