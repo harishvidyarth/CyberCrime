@@ -1079,7 +1079,8 @@ function drawTree(root) {
         .style('fill', '#1f2937')
         .text(`Bank: ${bankName}`);
 
-    } if (d.data.layer > 2) {
+    }
+    if (d.data.layer > 2) {
 
       const isRepeated = d.data.transactions_from_parent &&
         d.data.transactions_from_parent.length > 1;
