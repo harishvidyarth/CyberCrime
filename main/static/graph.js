@@ -1329,9 +1329,12 @@ function drawTree(root) {
             let html = '<ol style="list-style:none; margin:0; padding:0;">';
             steps.forEach(s => {
               const isNext = s.index === mrm.next_step;
+              const markInactive = isNext
+                ? '<span style="color:#2563eb;">●</span>'
+                : '<span style="color:#cbd5e1;">○</span>';
               const mark = s.done
                 ? '<span style="color:#10b981; font-weight:700;">✓</span>'
-                : (isNext ? '<span style="color:#2563eb;">●</span>' : '<span style="color:#cbd5e1;">○</span>');
+                : markInactive;
               const color = s.done ? '#0f172a' : (isNext ? '#0f172a' : '#94a3b8');
               const meta = s.done
                 ? `<div style="color:#6b7280; font-size:11.5px; margin-left:20px;">Completed: ${escapeHtml(s.date)}</div>`
@@ -1846,7 +1849,8 @@ function addIcon(container, x, y, emoji, onClick) {
               },
               layout: {
                 fillColor: function (rowIndex) {
-                  return (rowIndex === 0) ? '#3b82f6' : ((rowIndex % 2 === 1) ? '#f8fafc' : null);
+                  if (rowIndex === 0) return '#3b82f6';
+                  return (rowIndex % 2 === 1) ? '#f8fafc' : null;
                 },
                 hLineColor: function (i, node) { return '#d1d5db'; },
                 vLineColor: function (i, node) { return '#d1d5db'; },

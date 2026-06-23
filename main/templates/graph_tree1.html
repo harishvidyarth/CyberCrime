@@ -1529,7 +1529,8 @@
     if (repeatAccountsBtn) {
       repeatAccountsBtn.onclick = () => {
         const n = (typeof findRepeatedAccounts === 'function') ? findRepeatedAccounts() : 0;
-        showIconName(n ? (n + " Repeated Account" + (n > 1 ? "s" : "")) : "No Repeated Accounts");
+        const repeatSuffix = n > 1 ? "s" : "";
+        showIconName(n ? (n + " Repeated Account" + repeatSuffix) : "No Repeated Accounts");
       };
     }
 
