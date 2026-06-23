@@ -1192,7 +1192,7 @@
       const column = button.dataset.column;
 
       const allValues = [...new Set(atmRowsData.map(row => String(row[column] ?? '').trim()))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-      const selected = atmFilters[column] ? new Set([...atmFilters[column]]) : new Set(allValues);
+      const selected = atmFilters[column] ? new Set(atmFilters[column]) : new Set(allValues);
 
       const bodyHtml = allValues.map(val => `
         <label>
