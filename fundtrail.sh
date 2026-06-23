@@ -124,12 +124,10 @@ do_stop() {
 # ── START action ───────────────────────────────────────────────────────────
 do_start() {
     # Step 1 — ensure curl/wget on Linux
-    if [[ "$OS" == "linux" ]]; then
-        if ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
-            echo "Neither curl nor wget found — installing curl..."
-            linux_install curl
-            echo "curl installed."
-        fi
+    if [[ "$OS" == "linux" ]] && ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
+        echo "Neither curl nor wget found — installing curl..."
+        linux_install curl
+        echo "curl installed."
     fi
 
     # Step 2 — install Docker if missing
