@@ -29,7 +29,9 @@ async function fetchBranchInfo(ifsc) {
       branch = data?.BRANCH || data?.Branch || data?.BRANCH_NAME || data['Branch Name'] || data?.BranchName || '';
       phone = data?.PHONE || data?.Phone || data?.Contact || data?.Telephone || data['Phone No'] || data['Contact Number'] || data['PhoneNumber'] || '';
     }
-  } catch (_) { }
+  } catch (err) {
+    console.debug('fetchBranchInfo: parse failed', err);
+  }
   const finalBranch = branch && String(branch).trim() ? String(branch).trim() : 'Unknown';
   const finalPhone = phone || '';
   branchCache.set(key, finalBranch);
