@@ -1,7 +1,7 @@
 // Fetching Branch data from IFSC Code. calling Razorpay IFSC API
 const branchCache = new Map();
 const branchPhoneCache = new Map();
-const isViewer = typeof globalThis.window === "undefined" ? false : Boolean(globalThis.isViewerRole);
+const isViewer = globalThis.window === undefined ? false : Boolean(globalThis.isViewerRole);
 
 // Sanitize HTML to prevent XSS
 function escapeHtml(unsafe) {
