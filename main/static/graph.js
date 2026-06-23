@@ -1300,6 +1300,7 @@ function drawTree(root) {
           const mrmContainer = document.getElementById('mrmContainer');
           const holdInfo = d.data.hold_info || {};
           const holdTxnId = holdInfo.txn_id;
+          const mrmCtx = { mrmContainer, holdTxnId, d };
 
           // Doc icon toggles the MRM section; (re)load its state each time it opens.
           if (toggleBtn && formSection) {
@@ -1307,107 +1308,8 @@ function drawTree(root) {
               const isHidden = formSection.style.display === 'none' || formSection.style.display === '';
               formSection.style.display = isHidden ? 'block' : 'none';
               toggleBtn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
-              if (isHidden) loadMrm();
+              if (isHidden) loadMrm(mrmCtx);
             };
-          }
-
-          // ── Status of MRM (Money Restoration Module): 7-stage sequential workflow ──
-          function loadMrm() {
-            if (!mrmContainer || !holdTxnId) {
-              if (mrmContainer) mrmContainer.textContent = 'MRM is unavailable for this transaction.';
-              return;
-            }
-            fetch(`/mrm_timeline/${encodeURIComponent(ackNo)}/${encodeURIComponent(holdTxnId)}`)
-              .then(r => (r.ok ? r.json() : Promise.reject(new Error('MRM timeline request failed'))))
-              .then(renderMrm)
-              .catch(() => { mrmContainer.textContent = 'Failed to load MRM status.'; });
-          }
-
-          function renderMrm(mrm) {
-            const steps = mrm.steps || [];
-            let html = '<ol style="list-style:none; margin:0; padding:0;">';
-            steps.forEach(s => {
-              const isNext = s.index === mrm.next_step;
-              const markInactive = isNext
-                ? '<span style="color:#2563eb;">●</span>'
-                : '<span style="color:#cbd5e1;">○</span>';
-              const mark = s.done
-                ? '<span style="color:#10b981; font-weight:700;">✓</span>'
-                : markInactive;
-              const color = (s.done || isNext) ? '#0f172a' : '#94a3b8';
-              const meta = s.done
-                ? `<div style="color:#6b7280; font-size:11.5px; margin-left:20px;">Completed: ${escapeHtml(s.date)}</div>`
-                : '';
-              html += `<li style="padding:5px 0; border-bottom:1px solid #f1f5f9;">
-                <div style="display:flex; gap:8px; align-items:center;">${mark}
-                  <span style="font-weight:${s.done ? 600 : 500}; color:${color};">${s.index}. ${escapeHtml(s.label)}</span></div>${meta}</li>`;
-            });
-            html += '</ol>';
-
-            if (mrm.refund_type) {
-              const label = mrm.refund_type === 'FULL' ? 'Fully Refunded' : 'Partially Refunded';
-              html += `<div style="margin-top:8px; font-size:12.5px;"><b>Refund:</b> ${escapeHtml(label)} — ₹${Number(mrm.refund_amount || 0).toLocaleString('en-IN')}</div>`;
-            }
-
-            if (!isViewer && mrm.next_step) {
-              const isRefundStage = mrm.next_step === mrm.refund_step;
-              html += `<div style="margin-top:10px; padding-top:8px; border-top:1px dashed #e5e7eb;">`;
-              html += `<label style="font-weight:600; display:block; margin-bottom:4px;">Next: ${escapeHtml(mrm.next_label)}</label>`;
-              html += `<label style="font-size:11.5px; color:#6b7280;">Date of completion</label>`;
-              html += `<input id="mrmStageDate" type="date" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;">`;
-              if (isRefundStage) {
-                html += `<label style="font-size:11.5px; color:#6b7280;">Refund type</label>`;
-                html += `<select id="mrmRefundType" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;"><option value="FULL">Fully Refunded</option><option value="PARTIAL">Partially Refunded</option></select>`;
-                html += `<label style="font-size:11.5px; color:#6b7280;">Amount refunded (₹)</label>`;
-                html += `<input id="mrmRefundAmount" type="text" inputmode="decimal" placeholder="₹" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;">`;
-              }
-              html += `<button id="mrmSaveBtn" type="button" style="width:100%; background:#2563eb; color:white; border:none; padding:9px 16px; border-radius:8px; cursor:pointer; font-weight:600;">Save Status</button>`;
-              html += `</div>`;
-            } else if (!mrm.next_step) {
-              html += `<div style="margin-top:10px; color:#10b981; font-weight:600;">✓ MRM workflow complete.</div>`;
-            }
-
-            if (Array.isArray(mrm.audit) && mrm.audit.length) {
-              html += `<div style="margin-top:10px; padding-top:8px; border-top:1px solid #e5e7eb;"><div style="font-weight:600; margin-bottom:4px;">Audit trail</div>`;
-              mrm.audit.forEach(a => {
-                html += `<div style="font-size:11.5px; color:#475569; margin-bottom:3px;">${a.step}. ${escapeHtml(a.label)} — ${escapeHtml(a.date_completed)} · by ${escapeHtml(a.performed_by || '—')} <span style="color:#94a3b8;">(${escapeHtml(a.recorded_at)})</span></div>`;
-              });
-              html += `</div>`;
-            }
-
-            mrmContainer.innerHTML = html;
-            const saveBtn = document.getElementById('mrmSaveBtn');
-            if (saveBtn) saveBtn.onclick = () => saveMrm(mrm.next_step, mrm.next_step === mrm.refund_step);
-          }
-
-          function saveMrm(step, isRefundStage) {
-            const dateEl = document.getElementById('mrmStageDate');
-            const dateVal = dateEl ? dateEl.value : '';
-            if (!dateVal) { alert('Please enter the date of completion for this stage.'); return; }
-            const payload = { ack_no: ackNo, hold_txn_id: holdTxnId, step: step, date: dateVal };
-            if (isRefundStage) {
-              const typeEl = document.getElementById('mrmRefundType');
-              const amtEl = document.getElementById('mrmRefundAmount');
-              payload.refund_type = typeEl ? typeEl.value : '';
-              const rawAmt = amtEl ? amtEl.value.replace(/[^\d.]/g, '') : '';
-              if (!rawAmt) { alert('Please enter the refunded amount.'); return; }
-              payload.refund_amount = Number(rawAmt);
-            }
-            fetch('/save_mrm_status', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-              body: JSON.stringify(payload),
-            })
-              .then(res => res.json().then(data => ({ ok: res.ok, data })))
-              .then(({ ok, data }) => {
-                if (!ok || data.status !== 'success') { alert(data.message || 'Failed to save MRM status.'); return; }
-                if (isRefundStage) {
-                  d.data.hold_info.refund_status = payload.refund_type === 'FULL' ? 'Refunded' : 'Partially Refunded';
-                  d.data.hold_info.refund_amount = payload.refund_amount;
-                }
-                renderMrm(data.mrm);
-              })
-              .catch(() => alert('Failed to save MRM status.'));
           }
 
           // Attach click
@@ -1730,6 +1632,108 @@ function addIcon(container, x, y, emoji, onClick) {
     .attr('class', 'icon')
     .style('font-size', '18px').style('cursor', 'pointer').style('fill', '#000')
     .text(emoji).on('click', onClick);
+}
+
+// ── Status of MRM (Money Restoration Module): 7-stage sequential workflow ──
+function loadMrm(ctx) {
+  const { mrmContainer, holdTxnId } = ctx;
+  if (!mrmContainer || !holdTxnId) {
+    if (mrmContainer) mrmContainer.textContent = 'MRM is unavailable for this transaction.';
+    return;
+  }
+  fetch(`/mrm_timeline/${encodeURIComponent(ackNo)}/${encodeURIComponent(holdTxnId)}`)
+    .then(r => (r.ok ? r.json() : Promise.reject(new Error('MRM timeline request failed'))))
+    .then(mrm => renderMrm(mrm, ctx))
+    .catch(() => { mrmContainer.textContent = 'Failed to load MRM status.'; });
+}
+
+function renderMrm(mrm, ctx) {
+  const { mrmContainer } = ctx;
+  const steps = mrm.steps || [];
+  let html = '<ol style="list-style:none; margin:0; padding:0;">';
+  steps.forEach(s => {
+    const isNext = s.index === mrm.next_step;
+    const markInactive = isNext
+      ? '<span style="color:#2563eb;">●</span>'
+      : '<span style="color:#cbd5e1;">○</span>';
+    const mark = s.done
+      ? '<span style="color:#10b981; font-weight:700;">✓</span>'
+      : markInactive;
+    const color = (s.done || isNext) ? '#0f172a' : '#94a3b8';
+    const meta = s.done
+      ? `<div style="color:#6b7280; font-size:11.5px; margin-left:20px;">Completed: ${escapeHtml(s.date)}</div>`
+      : '';
+    html += `<li style="padding:5px 0; border-bottom:1px solid #f1f5f9;">
+                <div style="display:flex; gap:8px; align-items:center;">${mark}
+                  <span style="font-weight:${s.done ? 600 : 500}; color:${color};">${s.index}. ${escapeHtml(s.label)}</span></div>${meta}</li>`;
+  });
+  html += '</ol>';
+
+  if (mrm.refund_type) {
+    const label = mrm.refund_type === 'FULL' ? 'Fully Refunded' : 'Partially Refunded';
+    html += `<div style="margin-top:8px; font-size:12.5px;"><b>Refund:</b> ${escapeHtml(label)} — ₹${Number(mrm.refund_amount || 0).toLocaleString('en-IN')}</div>`;
+  }
+
+  if (!isViewer && mrm.next_step) {
+    const isRefundStage = mrm.next_step === mrm.refund_step;
+    html += `<div style="margin-top:10px; padding-top:8px; border-top:1px dashed #e5e7eb;">`;
+    html += `<label style="font-weight:600; display:block; margin-bottom:4px;">Next: ${escapeHtml(mrm.next_label)}</label>`;
+    html += `<label style="font-size:11.5px; color:#6b7280;">Date of completion</label>`;
+    html += `<input id="mrmStageDate" type="date" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;">`;
+    if (isRefundStage) {
+      html += `<label style="font-size:11.5px; color:#6b7280;">Refund type</label>`;
+      html += `<select id="mrmRefundType" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;"><option value="FULL">Fully Refunded</option><option value="PARTIAL">Partially Refunded</option></select>`;
+      html += `<label style="font-size:11.5px; color:#6b7280;">Amount refunded (₹)</label>`;
+      html += `<input id="mrmRefundAmount" type="text" inputmode="decimal" placeholder="₹" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;">`;
+    }
+    html += `<button id="mrmSaveBtn" type="button" style="width:100%; background:#2563eb; color:white; border:none; padding:9px 16px; border-radius:8px; cursor:pointer; font-weight:600;">Save Status</button>`;
+    html += `</div>`;
+  } else if (!mrm.next_step) {
+    html += `<div style="margin-top:10px; color:#10b981; font-weight:600;">✓ MRM workflow complete.</div>`;
+  }
+
+  if (Array.isArray(mrm.audit) && mrm.audit.length) {
+    html += `<div style="margin-top:10px; padding-top:8px; border-top:1px solid #e5e7eb;"><div style="font-weight:600; margin-bottom:4px;">Audit trail</div>`;
+    mrm.audit.forEach(a => {
+      html += `<div style="font-size:11.5px; color:#475569; margin-bottom:3px;">${a.step}. ${escapeHtml(a.label)} — ${escapeHtml(a.date_completed)} · by ${escapeHtml(a.performed_by || '—')} <span style="color:#94a3b8;">(${escapeHtml(a.recorded_at)})</span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  mrmContainer.innerHTML = html;
+  const saveBtn = document.getElementById('mrmSaveBtn');
+  if (saveBtn) saveBtn.onclick = () => saveMrm(mrm.next_step, mrm.next_step === mrm.refund_step, ctx);
+}
+
+function saveMrm(step, isRefundStage, ctx) {
+  const { holdTxnId, d } = ctx;
+  const dateEl = document.getElementById('mrmStageDate');
+  const dateVal = dateEl ? dateEl.value : '';
+  if (!dateVal) { alert('Please enter the date of completion for this stage.'); return; }
+  const payload = { ack_no: ackNo, hold_txn_id: holdTxnId, step: step, date: dateVal };
+  if (isRefundStage) {
+    const typeEl = document.getElementById('mrmRefundType');
+    const amtEl = document.getElementById('mrmRefundAmount');
+    payload.refund_type = typeEl ? typeEl.value : '';
+    const rawAmt = amtEl ? amtEl.value.replace(/[^\d.]/g, '') : '';
+    if (!rawAmt) { alert('Please enter the refunded amount.'); return; }
+    payload.refund_amount = Number(rawAmt);
+  }
+  fetch('/save_mrm_status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+    body: JSON.stringify(payload),
+  })
+    .then(res => res.json().then(data => ({ ok: res.ok, data })))
+    .then(({ ok, data }) => {
+      if (!ok || data.status !== 'success') { alert(data.message || 'Failed to save MRM status.'); return; }
+      if (isRefundStage) {
+        d.data.hold_info.refund_status = payload.refund_type === 'FULL' ? 'Refunded' : 'Partially Refunded';
+        d.data.hold_info.refund_amount = payload.refund_amount;
+      }
+      renderMrm(data.mrm, ctx);
+    })
+    .catch(() => alert('Failed to save MRM status.'));
 }
 
 function downloadHoldGraphPdf(path, ackNo) {
