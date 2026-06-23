@@ -178,7 +178,7 @@
         }, 2000);
       };
 
-      if (window.isSecureContext && navigator.clipboard) {
+      if (globalThis.isSecureContext && navigator.clipboard) {
         navigator.clipboard.writeText(box.value).then(markCopied).catch(function () {
           box.select();
           document.execCommand('copy');

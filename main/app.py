@@ -33,6 +33,7 @@ from flask import (
     flash,
     g,
     jsonify,
+    make_response,
     redirect,
     render_template,
     request,
@@ -2258,7 +2259,7 @@ def upload_excel():
                 return {}
             tmp = df.copy()
             tmp["_acc_key"] = tmp[_ACC_COL].astype(str).str.strip()
-            return {k: g for k, g in tmp.groupby("_acc_key")}
+            return dict(tmp.groupby("_acc_key"))
 
         atm_by_acc = _index_by_account(atm_df)
         chq_by_acc = _index_by_account(chq_df)
@@ -2268,7 +2269,7 @@ def upload_excel():
             _h = hold_df.copy()
             _h["_acc_key"] = _h[_ACC_COL].astype(str).str.strip()
             _h["_txn_key"] = _h["Transaction Id / UTR Number"].astype(str).str.strip()
-            hold_by_key = {k: g for k, g in _h.groupby(["_acc_key", "_txn_key"])}
+            hold_by_key = dict(_h.groupby(["_acc_key", "_txn_key"]))
 
         _EMPTY_DF = pd.DataFrame()
         transactions = []
@@ -5325,11 +5326,9 @@ def internal_error(error):
 @app.errorhandler(413)
 def request_too_large(error):
     # Triggered by MAX_CONTENT_LENGTH — keep it simple and clear.
-    return (
-        "The request was too large. Uploads are limited to 25 MB.",
-        413,
-        {"Content-Type": "text/plain; charset=utf-8"},
-    )
+    response = make_response("The request was too large. Uploads are limited to 25 MB.", 413)
+    response.headers["Content-Type"] = "text/plain; charset=utf-8"
+    return response
 
 
 # ---------------------------------------------------------------------------

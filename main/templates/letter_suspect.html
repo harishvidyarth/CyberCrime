@@ -24,7 +24,7 @@
     [data-theme="dark"] body { background: #1e293b; color: #f1f5f9; }
     [data-theme="dark"] h2, [data-theme="dark"] h3 { color: #e2e8f0; }
   </style>
-  <script nonce="{{ csp_nonce }}">(function(){var t=localStorage.getItem('ft-theme');if(t)document.documentElement.setAttribute('data-theme',t)})()</script>
+  <script nonce="{{ csp_nonce }}">(function(){var t=localStorage.getItem('ft-theme');if(t)document.documentElement.dataset.theme=t})()</script>
 </head>
 <body>
   <div class="container">

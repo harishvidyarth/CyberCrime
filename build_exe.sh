@@ -21,7 +21,7 @@ echo "Building FundTrail (this can take a few minutes)..."
 python3 -m PyInstaller --noconfirm --clean FundTrail.spec
 
 echo ""
-if [ -f "dist/FundTrail" ]; then
+if [[ -f "dist/FundTrail" ]]; then
     echo "============================================================"
     echo "  Done -> dist/FundTrail   (run it on this same OS)"
     echo "  Data persists in the per-user app data folder:"
@@ -29,6 +29,6 @@ if [ -f "dist/FundTrail" ]; then
     echo "  It survives rebuilds and app moves."
     echo "============================================================"
 else
-    echo "Build did NOT produce dist/FundTrail — scroll up for the error."
+    echo "Build did NOT produce dist/FundTrail — scroll up for the error." >&2
     echo "Tip: if a module is missing, add it to hiddenimports in FundTrail.spec."
 fi

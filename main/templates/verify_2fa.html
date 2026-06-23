@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Two-Factor Verification &mdash; FundTrail</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=2.0">
-  <script nonce="{{ csp_nonce }}">(function(){var t=localStorage.getItem('ft-theme');if(t)document.documentElement.setAttribute('data-theme',t)})()</script>
+  <script nonce="{{ csp_nonce }}">(function(){var t=localStorage.getItem('ft-theme');if(t)document.documentElement.dataset.theme=t})()</script>
   <style>
     .verify-shell{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
     .verify-card{

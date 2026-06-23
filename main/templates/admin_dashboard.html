@@ -156,8 +156,8 @@
     return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
   }
   document.querySelectorAll('.stat-value[data-amount]').forEach(function (el) {
-    var v = parseFloat(el.getAttribute('data-amount'));
-    if (!isNaN(v)) el.textContent = fmtINShort(v);
+    var v = Number.parseFloat(el.dataset.amount);
+    if (!Number.isNaN(v)) el.textContent = fmtINShort(v);
   });
 })();
 </script>

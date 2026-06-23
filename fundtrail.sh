@@ -10,6 +10,7 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 ACTION="${1:-start}"
+BORDER="+----------------------------------------------------------+"
 ENV_FILE="$REPO_DIR/.env"
 
 # ── Utility helpers ────────────────────────────────────────────────────────
@@ -49,7 +50,7 @@ linux_install() {
         zypper) _sudo zypper install -y "$pkg" ;;
         apk)    _sudo apk add --no-cache "$pkg" ;;
         *)
-            echo "  ERROR: No supported package manager found."
+            echo "  ERROR: No supported package manager found." >&2
             echo "  Please install $pkg manually, then re-run this script."
             exit 1 ;;
     esac
@@ -62,7 +63,7 @@ ensure_homebrew() {
     if   [[ -f /opt/homebrew/bin/brew ]]; then eval "$(/opt/homebrew/bin/brew shellenv)"
     elif [[ -f /usr/local/bin/brew    ]]; then eval "$(/usr/local/bin/brew shellenv)"; fi
     if ! command -v brew &>/dev/null; then
-        echo "ERROR: Homebrew installation failed. Install manually: https://brew.sh"; exit 1
+        echo "ERROR: Homebrew installation failed. Install manually: https://brew.sh" >&2; exit 1
     fi
     echo "Homebrew installed."
 }
@@ -80,7 +81,7 @@ install_docker() {
         echo "Docker installed."
         echo ""
         echo "NOTE: Log out and back in (or run 'newgrp docker') if you get a"
-        echo "  permission error on the first run after install."
+        echo "  permission error on the first run after install." >&2
         echo ""
     elif [[ "$OS" == "mac" ]]; then
         ensure_homebrew
@@ -92,7 +93,7 @@ install_docker() {
         for _ in $(seq 1 30); do docker_running && break; echo -n "."; sleep 3; done
         echo ""
     else
-        echo "ERROR: Unsupported OS. Install Docker manually: https://docs.docker.com/get-docker/"
+        echo "ERROR: Unsupported OS. Install Docker manually: https://docs.docker.com/get-docker/" >&2
         exit 1
     fi
 }
@@ -114,22 +115,20 @@ do_stop() {
     docker compose down
 
     echo ""
-    echo "+----------------------------------------------------------+"
+    echo "$BORDER"
     echo "|  FundTrail has stopped.                                  |"
     echo "|                                                          |"
     echo "|  Your case data is safe — run ./fundtrail.sh to restart. |"
-    echo "+----------------------------------------------------------+"
+    echo "$BORDER"
 }
 
 # ── START action ───────────────────────────────────────────────────────────
 do_start() {
     # Step 1 — ensure curl/wget on Linux
-    if [[ "$OS" == "linux" ]]; then
-        if ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
-            echo "Neither curl nor wget found — installing curl..."
-            linux_install curl
-            echo "curl installed."
-        fi
+    if [[ "$OS" == "linux" ]] && ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
+        echo "Neither curl nor wget found — installing curl..."
+        linux_install curl
+        echo "curl installed."
     fi
 
     # Step 2 — install Docker if missing
@@ -149,7 +148,7 @@ do_start() {
             sleep 2
         fi
         if ! docker_running; then
-            echo "ERROR: Docker daemon still not reachable."
+            echo "ERROR: Docker daemon still not reachable." >&2
             echo "  Please start Docker and re-run this script."
             exit 1
         fi
@@ -204,14 +203,14 @@ except Exception:
         | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1); exit}') || true
     [[ -z "$LAN_IP" ]] && LAN_IP="<your-machine-ip>"
 
-    echo "+----------------------------------------------------------+"
+    echo "$BORDER"
     echo "|  FundTrail is running                                    |"
     echo "|                                                          |"
     printf "|  Local:   http://127.0.0.1:5050                          |\n"
     printf "|  LAN:     http://%-39s|\n" "$LAN_IP:5050"
     echo "|                                                          |"
     echo "|  Share the LAN address with officers on the same Wi-Fi. |"
-    echo "+----------------------------------------------------------+"
+    echo "$BORDER"
     echo ""
     echo "First-time admin credentials (change these on first login):"
     echo "  docker compose exec fundtrail cat /data/INITIAL_CREDENTIALS.txt"
