@@ -1165,7 +1165,7 @@
           let v = r[key] ?? '';
           if (v === null || v === undefined) v = '';
           if (key === 'withdrawal_amount' || key === 'disputed_amount') {
-            const n = String(v).replace(/[^0-9.\-]/g, '');
+            const n = String(v).replace(/[^0-9.-]/g, '');
             const f = Number.parseFloat(n);
             td.textContent = !Number.isNaN(f) ? `₹${f.toLocaleString('en-IN')}` : String(v);
           } else if (key === 'layer') {
@@ -1174,9 +1174,9 @@
             s = s.replace(/\.0$/, '');
             td.textContent = s;
           } else if (key === 'atm_id') {
-            td.textContent = String(v).replace(/^\s*ATM\s*ID\s*[:\-]\s*/i, '');
+            td.textContent = String(v).replace(/^\s*ATM\s*ID\s*[:-]\s*/i, '');
           } else if (key === 'atm_location') {
-            td.textContent = String(v).replace(/^\s*Place\s*(?:\/Location)?\s*of\s*ATM\s*[:\-]\s*/i, '');
+            td.textContent = String(v).replace(/^\s*Place\s*(?:\/Location)?\s*of\s*ATM\s*[:-]\s*/i, '');
           } else {
             td.textContent = String(v);
           }
