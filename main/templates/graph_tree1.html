@@ -1632,7 +1632,7 @@
           document.body.appendChild(a);
           a.click();
           window.URL.revokeObjectURL(url);
-          document.body.removeChild(a);
+          a.remove();
         }
       } catch (err) {
         console.error('Error generating letters', err);
@@ -1813,7 +1813,7 @@
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
+        a.remove();
 
         closeLetterModal();
 
