@@ -10,6 +10,7 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 ACTION="${1:-start}"
+BORDER="+----------------------------------------------------------+"
 ENV_FILE="$REPO_DIR/.env"
 
 # ── Utility helpers ────────────────────────────────────────────────────────
@@ -114,11 +115,11 @@ do_stop() {
     docker compose down
 
     echo ""
-    echo "+----------------------------------------------------------+"
+    echo "$BORDER"
     echo "|  FundTrail has stopped.                                  |"
     echo "|                                                          |"
     echo "|  Your case data is safe — run ./fundtrail.sh to restart. |"
-    echo "+----------------------------------------------------------+"
+    echo "$BORDER"
 }
 
 # ── START action ───────────────────────────────────────────────────────────
@@ -202,14 +203,14 @@ except Exception:
         | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1); exit}') || true
     [[ -z "$LAN_IP" ]] && LAN_IP="<your-machine-ip>"
 
-    echo "+----------------------------------------------------------+"
+    echo "$BORDER"
     echo "|  FundTrail is running                                    |"
     echo "|                                                          |"
     printf "|  Local:   http://127.0.0.1:5050                          |\n"
     printf "|  LAN:     http://%-39s|\n" "$LAN_IP:5050"
     echo "|                                                          |"
     echo "|  Share the LAN address with officers on the same Wi-Fi. |"
-    echo "+----------------------------------------------------------+"
+    echo "$BORDER"
     echo ""
     echo "First-time admin credentials (change these on first login):"
     echo "  docker compose exec fundtrail cat /data/INITIAL_CREDENTIALS.txt"
