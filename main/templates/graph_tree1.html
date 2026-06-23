@@ -2139,7 +2139,7 @@
         var svg = svgSel(); var g = globalThis.graphG || svg.select('g');
         if (!g || g.empty()) return;
         var node = g.node(); if (!node) return;
-        var b; try { b = node.getBBox(); } catch (e) { return; }
+        var b; try { b = node.getBBox(); } catch (e) { console.debug('getBBox failed', e); return; }
         if (!b.width || !b.height) return;
         var fw = svg.node().clientWidth || 1200, fh = svg.node().clientHeight || 700;
         var scale = Math.max(0.04, Math.min(0.9 / Math.max(b.width / fw, b.height / fh), 4));
