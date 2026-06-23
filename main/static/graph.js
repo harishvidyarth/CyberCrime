@@ -7,11 +7,11 @@ const isViewer = typeof window !== "undefined" ? Boolean(window.isViewerRole) : 
 function escapeHtml(unsafe) {
   if (unsafe === null || unsafe === undefined) return '';
   return String(unsafe)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    .replaceAll(/&/g, "&amp;")
+    .replaceAll(/</g, "&lt;")
+    .replaceAll(/>/g, "&gt;")
+    .replaceAll(/"/g, "&quot;")
+    .replaceAll(/'/g, "&#039;");
 }
 
 async function fetchBranchInfo(ifsc) {

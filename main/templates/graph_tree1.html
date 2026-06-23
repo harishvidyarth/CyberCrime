@@ -1858,8 +1858,8 @@
     // inject markup. Structural HTML in the templates below stays unescaped.
     function escHtml(s) {
       return String(s == null ? '' : s)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        .replaceAll(/&/g, '&amp;').replaceAll(/</g, '&lt;').replaceAll(/>/g, '&gt;')
+        .replaceAll(/"/g, '&quot;').replaceAll(/'/g, '&#39;');
     }
 
     // Function to display the summary in the panel
