@@ -1335,7 +1335,7 @@ function drawTree(root) {
               const mark = s.done
                 ? '<span style="color:#10b981; font-weight:700;">✓</span>'
                 : markInactive;
-              const color = s.done ? '#0f172a' : (isNext ? '#0f172a' : '#94a3b8');
+              const color = (s.done || isNext) ? '#0f172a' : '#94a3b8';
               const meta = s.done
                 ? `<div style="color:#6b7280; font-size:11.5px; margin-left:20px;">Completed: ${escapeHtml(s.date)}</div>`
                 : '';
