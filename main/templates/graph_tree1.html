@@ -767,7 +767,7 @@
       </div>
     </div>
     <div class="user-info" style="display: flex; align-items: center; gap: 12px;">
-      <input id="headerSearch" class="search-input" type="text" placeholder="Search account number" list="accountList">
+      <input id="headerSearch" class="search-input" type="text" placeholder="Search account number" aria-label="Search account number" list="accountList">
       <datalist id="accountList"></datalist>
       <button id="legendToggle" class="icon-btn" title="Show Legend" aria-label="Show Legend"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2z"/><path d="M22 4h-6a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"/></svg></button>
       <a id="downloadExcelBtn" class="icon-btn" title="Download Case Excel" aria-label="Download Case Excel" href="{{ url_for('download_case_excel', ack_no=ack_no) }}" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:inherit;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></a>
@@ -813,11 +813,11 @@
         <h3>KYC Details</h3>
         <form id="kycForm">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-          <div class="detail-row"><label><b>Txn ID:</b></label><input id="kycTxnId" readonly></div>
-          <div class="detail-row"><label><b>Holder Name:</b></label><input id="kycName" required disabled></div>
-          <div class="detail-row"><label><b>Aadhaar No:</b></label><input id="kycAadhar" required disabled></div>
-          <div class="detail-row"><label><b>Mobile No:</b></label><input id="kycMobile" required disabled></div>
-          <div class="detail-row"><label><b>Address:</b></label><textarea id="kycAddress" required disabled></textarea>
+          <div class="detail-row"><label for="kycTxnId"><b>Txn ID:</b></label><input id="kycTxnId" readonly></div>
+          <div class="detail-row"><label for="kycName"><b>Holder Name:</b></label><input id="kycName" required disabled></div>
+          <div class="detail-row"><label for="kycAadhar"><b>Aadhaar No:</b></label><input id="kycAadhar" required disabled></div>
+          <div class="detail-row"><label for="kycMobile"><b>Mobile No:</b></label><input id="kycMobile" required disabled></div>
+          <div class="detail-row"><label for="kycAddress"><b>Address:</b></label><textarea id="kycAddress" required disabled></textarea>
           </div>
           <div style="margin-top: 12px;">
             <button type="button" id="editKycBtn">Edit</button>
@@ -1043,7 +1043,7 @@
           <input type="hidden" id="is_l1_grouped" name="is_l1_grouped" value="false">
           <div style="margin-top:8px; margin-bottom:6px; display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
             <div style="flex:1; min-width:220px;">
-              <label style="font-weight:700;">Letter Type: </label>
+              <label for="letter_type_select" style="font-weight:700;">Letter Type: </label>
               <select id="letter_type_select" style="padding:6px 8px; margin-left:8px;">
                 <option value="suspect">Suspect Account Letter</option>
                 <option value="victim">Victim Account Letter</option>
