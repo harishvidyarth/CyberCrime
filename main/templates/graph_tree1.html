@@ -1787,7 +1787,7 @@
           try {
             const errData = await res.json();
             errMsg = errData.error || errData.message || errMsg;
-          } catch (_) { /* response body wasn't JSON */ }
+          } catch (err) { console.debug('letter response body not JSON', err); }
           console.error('Failed to generate letters:', errMsg);
           alert(errMsg);
           return;
