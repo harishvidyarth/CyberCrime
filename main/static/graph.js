@@ -1,7 +1,7 @@
 // Fetching Branch data from IFSC Code. calling Razorpay IFSC API
 const branchCache = new Map();
 const branchPhoneCache = new Map();
-const isViewer = typeof globalThis.window !== "undefined" ? Boolean(globalThis.isViewerRole) : false;
+const isViewer = typeof globalThis.window === "undefined" ? false : Boolean(globalThis.isViewerRole);
 
 // Sanitize HTML to prevent XSS
 function escapeHtml(unsafe) {
@@ -188,7 +188,7 @@ function formatHoldValue(row, column) {
     case 'refund_amount':
       return row.refund_amount ? `₹${Number(row.refund_amount).toLocaleString('en-IN')}` : 'N/A';
     case 'layer':
-      return row.layer != null ? String(row.layer) : 'N/A';
+      return row.layer == null ? 'N/A' : String(row.layer);
     default:
       return '';
   }

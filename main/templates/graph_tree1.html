@@ -1167,7 +1167,7 @@
           if (key === 'withdrawal_amount' || key === 'disputed_amount') {
             const n = String(v).replace(/[^0-9.-]/g, '');
             const f = Number.parseFloat(n);
-            td.textContent = !Number.isNaN(f) ? `₹${f.toLocaleString('en-IN')}` : String(v);
+            td.textContent = Number.isNaN(f) ? String(v) : `₹${f.toLocaleString('en-IN')}`;
           } else if (key === 'layer') {
             // Show layer explicitly; remove trailing .0 from float values
             let s = String(v);
@@ -1483,7 +1483,7 @@
             const layerVal = node.layer ?? (node.data && node.data.layer) ?? node.data?.Layer ?? node.data?.layer;
             const layer = layerVal == null ? Number.NaN : Number(String(layerVal).replace(/[^0-9.-]/g, ''));
             // exclude layer 1 explicitly
-            if (name && (!Number.isNaN(layer) ? layer > 1 : true)) {
+            if (name && (Number.isNaN(layer) ? true : layer > 1)) {
               out.add(String(name));
             }
           }
