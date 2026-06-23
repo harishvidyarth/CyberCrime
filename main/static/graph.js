@@ -1505,20 +1505,14 @@ function drawTree(root) {
 
         // Function to disable KYC inputs
         const disableKycInputs = () => {
-          ['kycName', 'kycAadhar', 'kycMobile', 'kycAddress'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.disabled = true;
-          });
+          setKycInputsDisabled(true);
           if (saveKycBtn) saveKycBtn.style.display = "none";
           if (editKycBtn && !isViewer) editKycBtn.style.display = "block";
         };
 
         // Function to enable KYC inputs
         const enableKycInputs = () => {
-          ['kycName', 'kycAadhar', 'kycMobile', 'kycAddress'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.disabled = false;
-          });
+          setKycInputsDisabled(false);
           if (saveKycBtn) saveKycBtn.style.display = "block";
           if (editKycBtn) editKycBtn.style.display = "none";
         };
@@ -1572,10 +1566,7 @@ function drawTree(root) {
                   d.data.kyc_mobile = mobile;
                   d.data.kyc_address = address;
                   // Disable inputs after saving and show Edit button
-                  ['kycName', 'kycAadhar', 'kycMobile', 'kycAddress'].forEach(id => {
-                    const el = document.getElementById(id);
-                    if (el) el.disabled = true;
-                  });
+                  setKycInputsDisabled(true);
                   const saveBtn = document.getElementById('saveKycBtn');
                   const editBtn = document.getElementById('editKycBtn');
                   if (saveBtn) saveBtn.style.display = "none";
@@ -1633,6 +1624,14 @@ function addIcon(container, x, y, emoji, onClick) {
     .attr('class', 'icon')
     .style('font-size', '18px').style('cursor', 'pointer').style('fill', '#000')
     .text(emoji).on('click', onClick);
+}
+
+// Enable/disable all KYC input fields together.
+function setKycInputsDisabled(disabled) {
+  ['kycName', 'kycAadhar', 'kycMobile', 'kycAddress'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = disabled;
+  });
 }
 
 // Accounts along a root path (excludes the synthetic 'Flow' root and layer<=0).
