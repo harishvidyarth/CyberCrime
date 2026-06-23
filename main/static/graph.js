@@ -38,7 +38,7 @@ async function fetchBranchInfo(ifsc) {
 }
 
 async function populateBranchNames(root) {
-  if (!root || !root.descendants) return;
+  if (!root?.descendants) return;
   const nodesWithIfsc = root.descendants().filter(n => n?.data?.ifsc);
   if (nodesWithIfsc.length === 0) return;
   const uniqueIfsc = [...new Set(nodesWithIfsc.map(n => n.data.ifsc))];
@@ -534,7 +534,7 @@ function computeRepeatedAccounts(root) {
   while (stack.length) {
     const node = stack.pop();
     if (!node) continue;
-    const name = node.data && node.data.name ? String(node.data.name).trim() : '';
+    const name = node.data?.name ? String(node.data.name).trim() : '';
     if (name && name !== 'N/A' && name.toUpperCase() !== 'NA') {
       counts.set(name, (counts.get(name) || 0) + 1);
     }
@@ -694,7 +694,7 @@ function expandHoldPaths(root) {
     const holdNodes = [];
     while (stack.length) {
       const n = stack.pop();
-      if (n.data && n.data.hold_info) holdNodes.push(n);
+      if (n.data?.hold_info) holdNodes.push(n);
       if (n.children) stack.push(...n.children);
       if (n._children) stack.push(...n._children);
     }
@@ -716,7 +716,7 @@ function expandHoldPaths(root) {
 
 function cleanTreeData(root) {
   // Remove children with null or undefined accounts recursively (keep empty strings, "N/A", or "NA" as valid placeholders)
-  if (!root || !root.children) return;
+  if (!root?.children) return;
   root.children = root.children.filter(child => {
     if (!child || typeof child !== 'object' || !child.data) return false;
     const name = child.data.name;
@@ -772,7 +772,7 @@ fetch(`/graph_data/${ackNo}`)
     }
 
     const cleanedData = deepCleanData(data);
-    if (!cleanedData || !cleanedData.children || cleanedData.children.length === 0) {
+    if (!cleanedData?.children || cleanedData.children.length === 0) {
       console.log('No valid graph data found - cleanedData:', cleanedData);
       const chartEl = document.getElementById('chart');
       if (chartEl) {
@@ -786,7 +786,7 @@ fetch(`/graph_data/${ackNo}`)
     }
 
     const root = d3.hierarchy(cleanedData);
-    if (!root || !root.children || root.children.length === 0) {
+    if (!root?.children || root.children.length === 0) {
       const chartEl = document.getElementById('chart');
       if (chartEl) {
         chartEl.textContent = '';
@@ -867,16 +867,16 @@ fetch(`/graph_data/${ackNo}`)
   });
 
 function bfsAssignLayers(root) {
-  if (!root || !root.data) return;
+  if (!root?.data) return;
   const queue = [root];
   root.data.layer = 1;
   while (queue.length > 0) {
     const node = queue.shift();
-    if (!node || !node.data) continue;
+    if (!node?.data) continue;
     const currentLayer = node.data.layer || 1;
     if (node.children) {
       node.children.forEach(child => {
-        if (!child || !child.data) return;
+        if (!child?.data) return;
         child.data.layer = currentLayer + 1;
         queue.push(child);
       });
@@ -885,7 +885,7 @@ function bfsAssignLayers(root) {
   // Ensure all descendants have a layer
   if (root.descendants) {
     root.descendants().forEach(d => {
-      if (d && d.data && !d.data.layer) d.data.layer = 1;
+      if (d?.data && !d.data.layer) d.data.layer = 1;
     });
   }
 }
@@ -988,7 +988,7 @@ function toggleExpandAllNodes() {
 }
 
 function drawTree(root) {
-  if (!root || !root.children || root.children.length === 0) return;
+  if (!root?.children || root.children.length === 0) return;
   g.selectAll('*').remove();
   const layerHeight = 150;
   const maxLayer = d3.max(root.descendants(), d => d?.data?.layer || 1) || 1;
@@ -996,7 +996,7 @@ function drawTree(root) {
   svg.attr('height', Math.max(height, requiredHeight));
   try {
     root.each(d => {
-      if (!d || !d.data || !d.data.layer) return;
+      if (!d?.data || !d.data.layer) return;
       d.y = (d.data.layer - 1) * layerHeight;
     });
     const treeLayout = d3.tree().nodeSize([300, 200]);
@@ -1028,7 +1028,7 @@ function drawTree(root) {
   let victimCounter = 1;
   nodes.each(function (d) {
     const n = d3.select(this);
-    if (!d || !d.data || !d.data.layer) return;
+    if (!d?.data || !d.data.layer) return;
     const boxWidth = 250, boxHeight = 140;
 
     n.append('rect')
@@ -1040,7 +1040,7 @@ function drawTree(root) {
       .attr('fill', d => {
         // Mule/intermediary accounts that recur in the trail are marked purple so
         // the IO can spot reuse at a glance (see computeRepeatedAccounts).
-        const acct = d.data && d.data.name ? String(d.data.name).trim() : '';
+        const acct = d.data?.name ? String(d.data.name).trim() : '';
         if (acct && repeatedAccounts.has(acct)) return '#7c3aed';
         const isLeafNode = !d.children && !d._children;
         if (isLeafNode && !d.burst) return '#15803d';
@@ -1554,7 +1554,7 @@ function drawTree(root) {
             const path = findPathToAccount(acc);
             if (path) {
               const accountsInPath = path
-                .filter(n => n.data && n.data.name && n.data.name !== 'Flow' && (n.data.layer === undefined || n.data.layer > 0))
+                .filter(n => n.data?.name && n.data.name !== 'Flow' && (n.data.layer === undefined || n.data.layer > 0))
                 .map(n => n.data.name);
               const isPoh = Boolean(d.data.hold_info);
               if (typeof globalThis.openLetterModal === 'function') {
@@ -1911,7 +1911,7 @@ function downloadHoldGraphPdf(path, ackNo) {
 
     // Extract Hold Amount for the last node
     let holdAmount = null;
-    if (isLast && d.hold_info && d.hold_info.amount) {
+    if (isLast && d.hold_info?.amount) {
       holdAmount = d.hold_info.amount;
     }
 
@@ -1937,7 +1937,7 @@ function downloadHoldGraphPdf(path, ackNo) {
   // Always send the CSRF token (fall back to the hidden form field if the global is unset).
   const _csrf = (typeof csrfToken !== 'undefined' && csrfToken)
     ? csrfToken
-    : ((document.querySelector('input[name="csrf_token"]') || {}).value || '');
+    : (document.querySelector('input[name="csrf_token"]')?.value || '');
   const headers = {
     'Content-Type': 'application/json',
     'X-CSRFToken': _csrf
