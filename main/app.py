@@ -2258,7 +2258,7 @@ def upload_excel():
                 return {}
             tmp = df.copy()
             tmp["_acc_key"] = tmp[_ACC_COL].astype(str).str.strip()
-            return {k: g for k, g in tmp.groupby("_acc_key")}
+            return dict(tmp.groupby("_acc_key"))
 
         atm_by_acc = _index_by_account(atm_df)
         chq_by_acc = _index_by_account(chq_df)
@@ -2268,7 +2268,7 @@ def upload_excel():
             _h = hold_df.copy()
             _h["_acc_key"] = _h[_ACC_COL].astype(str).str.strip()
             _h["_txn_key"] = _h["Transaction Id / UTR Number"].astype(str).str.strip()
-            hold_by_key = {k: g for k, g in _h.groupby(["_acc_key", "_txn_key"])}
+            hold_by_key = dict(_h.groupby(["_acc_key", "_txn_key"]))
 
         _EMPTY_DF = pd.DataFrame()
         transactions = []
