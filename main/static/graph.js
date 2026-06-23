@@ -996,7 +996,7 @@ function drawTree(root) {
   svg.attr('height', Math.max(height, requiredHeight));
   try {
     root.each(d => {
-      if (!d?.data || !d.data.layer) return;
+      if (!d?.data?.layer) return;
       d.y = (d.data.layer - 1) * layerHeight;
     });
     const treeLayout = d3.tree().nodeSize([300, 200]);
@@ -1028,7 +1028,7 @@ function drawTree(root) {
   let victimCounter = 1;
   nodes.each(function (d) {
     const n = d3.select(this);
-    if (!d?.data || !d.data.layer) return;
+    if (!d?.data?.layer) return;
     const boxWidth = 250, boxHeight = 140;
 
     n.append('rect')
