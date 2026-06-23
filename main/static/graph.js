@@ -1707,7 +1707,7 @@ function drawTree(root) {
 
   // ✅ Center the tree only on the first draw
   if (isFirstDraw) {
-    const initialScale = 1.0;
+    const initialScale = 1;
     const centerX = (width / 2) - root.x;
     const centerY = 80;
 

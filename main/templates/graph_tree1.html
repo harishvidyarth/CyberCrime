@@ -1432,7 +1432,7 @@
           const centerY = 80;
           svgEl.transition().duration(500).call(
             d3.zoom().on('zoom', e => gSel.attr('transform', e.transform)).transform,
-            d3.zoomIdentity.translate(centerX, centerY).scale(1.0)
+            d3.zoomIdentity.translate(centerX, centerY).scale(1)
           );
         }
         const evt = new MouseEvent("dblclick", { bubbles: true, cancelable: true });
