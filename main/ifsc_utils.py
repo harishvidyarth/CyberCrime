@@ -19,10 +19,8 @@ PKL_PATHS = [os.path.join(d, "IFSC_CODES.pkl") for d in _DIRS]
 POSSIBLE_PATHS = [os.path.join(d, "IFSC_CODES.xlsx") for d in _DIRS]
 
 
-@lru_cache(maxsize=1)
-def load_ifsc_table():
-    """Return {IFSC_UPPER: {BANK, BRANCH, STATE, PHONE, ...}} from the first source found."""
-    # 1. Pickle: already a dict, no parsing needed.
+def _load_ifsc_from_pickle():
+    """First valid {IFSC: row} pickle, else None."""
     for p in PKL_PATHS:
         if os.path.exists(p):
             try:
@@ -32,8 +30,11 @@ def load_ifsc_table():
                     return table
             except Exception as e:
                 print(f"IFSC: could not load pickle {p}: {e}")
+    return None
 
-    # 2. JSON cache (written by the Excel step below).
+
+def _load_ifsc_from_json():
+    """First JSON cache that loads, else None."""
     for p in POSSIBLE_PATHS:
         json_path = os.path.splitext(p)[0] + ".json"
         if os.path.exists(json_path):
@@ -42,56 +43,80 @@ def load_ifsc_table():
                     return json.load(f)
             except Exception:
                 pass
+    return None
 
-    # 3. Excel (slow) — parse, normalise key columns, cache to JSON for next time.
+
+def _detect_ifsc_columns(df, cols):
+    """Resolve (ifsc, branch, phone) column names from a dataframe."""
+    ifsc_col = next((cols[c] for c in ("IFSC", "Ifsc Code", "Ifsc", "IFSC Code") if c in cols), None) or next(
+        (c for c in df.columns if "ifsc" in c.lower()), None
+    )
+    branch_col = next(
+        (c for c in ("BRANCH", "Branch", "BRANCH_NAME", "Branch Name", "BranchName", "BRANCH NAME") if c in cols),
+        None,
+    ) or next((c for c in df.columns if "branch" in str(c).lower()), None)
+    phone_col = next(
+        (c for c in ("Phone", "PHONE", "Contact", "Telephone", "Contact Number", "Phone No", "PhoneNumber") if c in cols),
+        None,
+    ) or next((c for c in df.columns if any(t in str(c).lower() for t in ("phone", "contact", "tel"))), None)
+    return ifsc_col, branch_col, phone_col
+
+
+def _build_ifsc_mapping(df, ifsc_col, branch_col, phone_col):
+    """Build {IFSC_UPPER: rowdict} from a parsed dataframe."""
+    mapping = {}
+    for row in df.to_dict("records"):
+        ifsc_val = str(row.get(ifsc_col, "")).strip()
+        if not ifsc_val:
+            continue
+        rowdict = {str(k).strip(): (v if v is not None else "") for k, v in row.items()}
+        rowdict["BRANCH"] = str(row.get(branch_col, "")).strip() if branch_col else ""
+        rowdict["PHONE"] = str(row.get(phone_col, "")).strip() if phone_col else ""
+        mapping[ifsc_val.upper()] = rowdict
+    return mapping
+
+
+def _cache_ifsc_json(p, mapping):
+    """Persist the parsed mapping next to the source for next time."""
+    try:
+        with open(os.path.splitext(p)[0] + ".json", "w") as f:
+            json.dump(mapping, f)
+    except Exception as e:
+        print(f"IFSC: could not cache JSON: {e}")
+
+
+def _load_ifsc_from_excel():
+    """Parse the first available Excel source, cache to JSON, else None."""
     for p in POSSIBLE_PATHS:
         if not os.path.exists(p):
             continue
         try:
             df = pd.read_excel(p, dtype=str).fillna("")
             cols = {c.strip(): c for c in df.columns}
-
-            ifsc_col = next((cols[c] for c in ("IFSC", "Ifsc Code", "Ifsc", "IFSC Code") if c in cols), None) or next(
-                (c for c in df.columns if "ifsc" in c.lower()), None
-            )
+            ifsc_col, branch_col, phone_col = _detect_ifsc_columns(df, cols)
             if not ifsc_col:
                 continue
-            branch_col = next(
-                (
-                    c
-                    for c in ("BRANCH", "Branch", "BRANCH_NAME", "Branch Name", "BranchName", "BRANCH NAME")
-                    if c in cols
-                ),
-                None,
-            ) or next((c for c in df.columns if "branch" in str(c).lower()), None)
-            phone_col = next(
-                (
-                    c
-                    for c in ("Phone", "PHONE", "Contact", "Telephone", "Contact Number", "Phone No", "PhoneNumber")
-                    if c in cols
-                ),
-                None,
-            ) or next((c for c in df.columns if any(t in str(c).lower() for t in ("phone", "contact", "tel"))), None)
-
-            mapping = {}
-            for row in df.to_dict("records"):
-                ifsc_val = str(row.get(ifsc_col, "")).strip()
-                if not ifsc_val:
-                    continue
-                rowdict = {str(k).strip(): (v if v is not None else "") for k, v in row.items()}
-                rowdict["BRANCH"] = str(row.get(branch_col, "")).strip() if branch_col else ""
-                rowdict["PHONE"] = str(row.get(phone_col, "")).strip() if phone_col else ""
-                mapping[ifsc_val.upper()] = rowdict
-
-            try:
-                with open(os.path.splitext(p)[0] + ".json", "w") as f:
-                    json.dump(mapping, f)
-            except Exception as e:
-                print(f"IFSC: could not cache JSON: {e}")
+            mapping = _build_ifsc_mapping(df, ifsc_col, branch_col, phone_col)
+            _cache_ifsc_json(p, mapping)
             return mapping
         except Exception as e:
             print(f"IFSC: could not load Excel {p}: {e}")
+    return None
 
+
+@lru_cache(maxsize=1)
+def load_ifsc_table():
+    """Return {IFSC_UPPER: {BANK, BRANCH, STATE, PHONE, ...}} from the first source found
+    (pickle -> JSON cache -> Excel)."""
+    table = _load_ifsc_from_pickle()
+    if table is not None:
+        return table
+    table = _load_ifsc_from_json()
+    if table is not None:
+        return table
+    table = _load_ifsc_from_excel()
+    if table is not None:
+        return table
     return {}
 
 
