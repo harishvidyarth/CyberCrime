@@ -897,7 +897,7 @@ function getTotalRepeatedAmount(txns) {
     new Map(txns.map(txn => [txn.txn_id, txn])).values()
   );
 
-  return uniqueTxns.reduce((sum, txn) => sum + (parseFloat(txn.amount) || 0), 0);
+  return uniqueTxns.reduce((sum, txn) => sum + (Number.parseFloat(txn.amount) || 0), 0);
 }
 
 function toggleCollapse(d) {
@@ -1182,7 +1182,7 @@ function drawTree(root) {
         const w = this.getBBox().width;
         const limit = adjustedWidth - padding;
         if (w > limit) {
-          const fs = parseFloat(el.style('font-size')) || 12;
+          const fs = Number.parseFloat(el.style('font-size')) || 12;
           const ratio = Math.max(0.75, Math.min(1, limit / w));
           const newFs = Math.max(10, Math.floor(fs * ratio));
           el.style('font-size', `${newFs}px`);
@@ -1738,7 +1738,7 @@ function getTotalRepeatedAmount(txns) {
     new Map(txns.map(txn => [txn.txn_id, txn])).values()
   );
 
-  return uniqueTxns.reduce((sum, txn) => sum + (parseFloat(txn.amount) || 0), 0);
+  return uniqueTxns.reduce((sum, txn) => sum + (Number.parseFloat(txn.amount) || 0), 0);
 }
 
 // Add event listener for Download PDF button (using pdfmake)

@@ -1166,7 +1166,7 @@
           if (v === null || v === undefined) v = '';
           if (key === 'withdrawal_amount' || key === 'disputed_amount') {
             const n = String(v).replace(/[^0-9.\-]/g, '');
-            const f = parseFloat(n);
+            const f = Number.parseFloat(n);
             td.textContent = !Number.isNaN(f) ? `₹${f.toLocaleString('en-IN')}` : String(v);
           } else if (key === 'layer') {
             // Show layer explicitly; remove trailing .0 from float values
@@ -1481,7 +1481,7 @@
           for (const node of chain) {
             const name = node.name || (node.data && (node.data.name || node.data.account_number || node.data.account_no));
             const layerVal = node.layer ?? (node.data && node.data.layer) ?? node.data?.Layer ?? node.data?.layer;
-            const layer = layerVal == null ? NaN : Number(String(layerVal).replace(/[^0-9.-]/g, ''));
+            const layer = layerVal == null ? Number.NaN : Number(String(layerVal).replace(/[^0-9.-]/g, ''));
             // exclude layer 1 explicitly
             if (name && (!Number.isNaN(layer) ? layer > 1 : true)) {
               out.add(String(name));
@@ -1995,7 +1995,7 @@
         const backBtn = summaryContent.querySelector('.back-to-states');
         if (backBtn) backBtn.addEventListener('click', () => { displaySummary([]); fetchStatewiseSummary(); });
         summaryContent.querySelectorAll('.page-btn').forEach(btn => {
-          btn.addEventListener('click', () => loadPage(parseInt(btn.dataset.page, 10)));
+          btn.addEventListener('click', () => loadPage(Number.parseInt(btn.dataset.page, 10)));
         });
       } catch (error) {
         console.error('Error fetching transaction details:', error);
