@@ -1801,7 +1801,7 @@
         // Use filename from Content-Disposition header if available, else default
         let filename = `Letters_${ackNo}.zip`;
         const disposition = res.headers.get('Content-Disposition');
-        if (disposition && disposition.indexOf('attachment') !== -1) {
+        if (disposition && disposition.includes('attachment')) {
           const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
           const matches = filenameRegex.exec(disposition);
           if (matches != null && matches[1]) {
