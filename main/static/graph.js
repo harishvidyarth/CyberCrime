@@ -1512,7 +1512,7 @@ function drawTree(root) {
         toggleCollapse(d);
         drawTree(currentRoot);
       }, 250);
-    }).on('dblclick', () => {
+    }).on('dblclick', (event) => {
       event.stopPropagation();
       clearTimeout(clickTimer);
       if (d.data.ifsc) {
