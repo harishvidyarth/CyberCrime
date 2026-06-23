@@ -1089,7 +1089,7 @@
     const csrfToken = "{{ csrf_token() }}";
     const ackNo = "{{ ack_no }}";
     // Expose viewer role to JS for read-only behavior
-    window.isViewerRole = "{{ role }}" === "Viewer";
+    globalThis.isViewerRole = "{{ role }}" === "Viewer";
 
 
     let toastTimer = null;
@@ -1222,8 +1222,8 @@
       `;
 
       const rect = button.getBoundingClientRect();
-      atmFilterMenu.style.top = `${rect.bottom + window.scrollY + 4}px`;
-      atmFilterMenu.style.left = `${rect.left + window.scrollX}px`;
+      atmFilterMenu.style.top = `${rect.bottom + globalThis.scrollY + 4}px`;
+      atmFilterMenu.style.left = `${rect.left + globalThis.scrollX}px`;
       atmFilterMenu.style.display = 'block';
       atmFilterMenu.setAttribute('aria-hidden', 'false');
 
@@ -1377,7 +1377,7 @@
     function buildAccountOptions() {
       const list = document.getElementById("accountList");
       if (!list || list.children.length) return;
-      const data = window.graphData;
+      const data = globalThis.graphData;
       if (!data) return;
       const seen = new Set();
       const stack = [data];
@@ -1473,7 +1473,7 @@
     function expandAccountsFromSelections(selectedAccounts) {
       console.debug('Expanding selected accounts:', selectedAccounts);
       const out = new Set();
-      const root = window.graphData;
+      const root = globalThis.graphData;
       if (!root) return selectedAccounts;
       for (const acc of selectedAccounts) {
         const chain = getAncestorsByAccount(root, acc);
@@ -1624,14 +1624,14 @@
             continue;
           }
           const blob = await res.blob();
-          const url = window.URL.createObjectURL(blob);
+          const url = globalThis.URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.style.display = 'none';
           a.href = url;
           a.download = `${type}_Letter_${acc}.zip`;
           document.body.appendChild(a);
           a.click();
-          window.URL.revokeObjectURL(url);
+          globalThis.URL.revokeObjectURL(url);
           a.remove();
         }
       } catch (err) {
@@ -1793,7 +1793,7 @@
         }
 
         const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
+        const url = globalThis.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
@@ -1812,7 +1812,7 @@
         a.download = filename;
         document.body.appendChild(a);
         a.click();
-        window.URL.revokeObjectURL(url);
+        globalThis.URL.revokeObjectURL(url);
         a.remove();
 
         closeLetterModal();
@@ -2129,13 +2129,13 @@
   </div>
   <script nonce="{{ csp_nonce }}">
     (function () {
-      function svgSel() { return window.graphSvg || d3.select('#treeSvg'); }
-      function zb() { return window.zoomBehavior; }
+      function svgSel() { return globalThis.graphSvg || d3.select('#treeSvg'); }
+      function zb() { return globalThis.zoomBehavior; }
       function bind(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener('click', fn); }
       function zoomBy(f) { if (zb()) svgSel().transition().duration(180).call(zb().scaleBy, f); }
       function panBy(dx, dy) { if (zb()) svgSel().transition().duration(150).call(zb().translateBy, dx, dy); }
       function fitToScreen() {
-        var svg = svgSel(); var g = window.graphG || svg.select('g');
+        var svg = svgSel(); var g = globalThis.graphG || svg.select('g');
         if (!g || g.empty()) return;
         var node = g.node(); if (!node) return;
         var b; try { b = node.getBBox(); } catch (e) { return; }

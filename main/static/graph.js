@@ -1,7 +1,7 @@
 // Fetching Branch data from IFSC Code. calling Razorpay IFSC API
 const branchCache = new Map();
 const branchPhoneCache = new Map();
-const isViewer = typeof window !== "undefined" ? Boolean(window.isViewerRole) : false;
+const isViewer = typeof globalThis.window !== "undefined" ? Boolean(globalThis.isViewerRole) : false;
 
 // Sanitize HTML to prevent XSS
 function escapeHtml(unsafe) {
@@ -98,10 +98,10 @@ svg = d3.select('#treeSvg');
 g = svg.append('g').attr('transform', 'translate(80,80)');
 // Wider zoom-out range so very wide cases (many sibling accounts) fit on screen.
 // Stored on window so the on-screen +/- / fit / pad controls can drive it.
-window.zoomBehavior = d3.zoom().scaleExtent([0.04, 4]).on('zoom', e => g.attr('transform', e.transform));
-svg.call(window.zoomBehavior);
-window.graphSvg = svg;
-window.graphG = g;
+globalThis.zoomBehavior = d3.zoom().scaleExtent([0.04, 4]).on('zoom', e => g.attr('transform', e.transform));
+svg.call(globalThis.zoomBehavior);
+globalThis.graphSvg = svg;
+globalThis.graphG = g;
 
 async function openHoldPopup() {
   if (!holdModalOverlay) return;
@@ -437,8 +437,8 @@ function showHoldFilterMenu(button) {
   holdFilterMenu.appendChild(footerDiv);
 
   const rect = button.getBoundingClientRect();
-  holdFilterMenu.style.top = `${rect.bottom + window.scrollY + 4}px`;
-  holdFilterMenu.style.left = `${rect.left + window.scrollX}px`;
+  holdFilterMenu.style.top = `${rect.bottom + globalThis.scrollY + 4}px`;
+  holdFilterMenu.style.left = `${rect.left + globalThis.scrollX}px`;
   holdFilterMenu.style.display = 'block';
   holdFilterMenu.setAttribute('aria-hidden', 'false');
 
@@ -730,11 +730,11 @@ function cleanTreeData(root) {
 
 function resizeTree() {
   const headerH = document.querySelector('header')?.clientHeight || 0;
-  width = window.innerWidth;
-  height = window.innerHeight - headerH;
+  width = globalThis.innerWidth;
+  height = globalThis.innerHeight - headerH;
   svg.attr('width', width).attr('height', height);
 }
-window.addEventListener('resize', () => {
+globalThis.addEventListener('resize', () => {
   resizeTree();
   drawTree(currentRoot);
 });
@@ -760,7 +760,7 @@ fetch(`/graph_data/${ackNo}`)
       }
       return;
     }
-    window.graphData = data; // Set global for statewise summary modal
+    globalThis.graphData = data; // Set global for statewise summary modal
 
     // Deep clean the data before creating hierarchy
     function deepCleanData(node) {
@@ -1536,7 +1536,7 @@ function drawTree(root) {
           // a Put-on-Hold account (Layer-1 letters are generated from the toolbar's
           // per-bank button). For ordinary accounts the button is hidden, so there's
           // no empty-ZIP / "Bad Request" path.
-          if (d.data.name && d.data.hold_info && typeof window.openLetterModal === 'function' && !isViewer) {
+          if (d.data.name && d.data.hold_info && typeof globalThis.openLetterModal === 'function' && !isViewer) {
             baseHtml += `
             <div style="text-align:center; margin-top:15px; margin-bottom: 5px;">
               <button class="generate-path-letters-btn" style="background:#10b981; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold; width:100%; box-shadow:0 2px 4px rgba(0,0,0,0.1);" data-account="${escapeHtml(d.data.name)}">
@@ -1557,8 +1557,8 @@ function drawTree(root) {
                 .filter(n => n.data && n.data.name && n.data.name !== 'Flow' && (n.data.layer === undefined || n.data.layer > 0))
                 .map(n => n.data.name);
               const isPoh = Boolean(d.data.hold_info);
-              if (typeof window.openLetterModal === 'function') {
-                window.openLetterModal(accountsInPath.join(', '), 'suspect', isPoh);
+              if (typeof globalThis.openLetterModal === 'function') {
+                globalThis.openLetterModal(accountsInPath.join(', '), 'suspect', isPoh);
               }
             }
           });
@@ -1778,7 +1778,7 @@ function addIcon(container, x, y, emoji, onClick) {
         console.log('Parsed', rows.length, 'detail rows:', rows);
 
         // Load logo as base64 for PDF
-        const logoUrl = window.location.origin + '/static/tn_police_logo.png';
+        const logoUrl = globalThis.location.origin + '/static/tn_police_logo.png';
         let logoBase64 = null;
         try {
           const response = await fetch(logoUrl);
@@ -1955,14 +1955,14 @@ function downloadHoldGraphPdf(path, ackNo) {
       return response.blob();
     })
     .then(blob => {
-      const url = window.URL.createObjectURL(blob);
+      const url = globalThis.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `FundTrail_${ackNo}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      window.URL.revokeObjectURL(url);
+      globalThis.URL.revokeObjectURL(url);
     })
     .catch(error => {
       console.error('Error generating PDF via backend:', error);
