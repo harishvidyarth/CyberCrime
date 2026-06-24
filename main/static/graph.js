@@ -774,7 +774,7 @@ async function loadGraphData() {
 
     const cleanedData = deepCleanData(data);
     if (!cleanedData?.children || cleanedData.children.length === 0) {
-      console.log('No valid graph data found - cleanedData:', cleanedData);
+      console.log('No valid graph data found.');
       const chartEl = document.getElementById('chart');
       if (chartEl) {
         chartEl.textContent = '';
