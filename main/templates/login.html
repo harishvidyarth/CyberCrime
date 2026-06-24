@@ -234,29 +234,28 @@
       });
     })();
 
+    function resetCopyButton(btn, prevText) {
+      btn.textContent = prevText;
+      btn.style.color = '';
+      btn.style.borderColor = '';
+    }
+
     // Copy to clipboard functionality for initial credentials
-    (function () {
-      var buttons = document.querySelectorAll('.copy-init-btn');
-      buttons.forEach(function (btn) {
-        btn.addEventListener('click', function () {
-          var targetId = btn.getAttribute('data-target');
-          var el = document.getElementById(targetId);
-          if (!el) return;
-          var val = el.textContent || '';
-          navigator.clipboard.writeText(val).then(function () {
-            var prevText = btn.textContent;
-            btn.textContent = 'Copied!';
-            btn.style.color = 'var(--brand-600)';
-            btn.style.borderColor = 'var(--brand-400)';
-            setTimeout(function () {
-              btn.textContent = prevText;
-              btn.style.color = '';
-              btn.style.borderColor = '';
-            }, 2000);
-          });
+    document.querySelectorAll('.copy-init-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var targetId = btn.dataset.target;
+        var el = document.getElementById(targetId);
+        if (!el) return;
+        var val = el.textContent || '';
+        navigator.clipboard.writeText(val).then(function () {
+          var prevText = btn.textContent;
+          btn.textContent = 'Copied!';
+          btn.style.color = 'var(--brand-600)';
+          btn.style.borderColor = 'var(--brand-400)';
+          setTimeout(function () { resetCopyButton(btn, prevText); }, 2000);
         });
       });
-    })();
+    });
   </script>
 </body>
 </html>

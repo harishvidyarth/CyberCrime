@@ -336,7 +336,7 @@ def _sentry_scrub(obj, _depth=0):
     if _depth > 12:
         return obj
     if isinstance(obj, dict):
-        for key, value in list(obj.items()):
+        for key, value in obj.items():
             if _sentry_key_is_sensitive(key):
                 obj[key] = _SENTRY_FILTERED
             else:
@@ -1582,14 +1582,14 @@ def login():
                         if "admin" in role_part:
                             initial_creds["Admin"] = ("admin", pwd_part)
                         elif "officer" in role_part:
-                            initial_creds["Investigative Officer"] = ("officer", pwd_part)
+                            initial_creds[ROLE_INVESTIGATIVE_OFFICER] = ("officer", pwd_part)
         except Exception as e:
             app.logger.warning("Could not read INITIAL_CREDENTIALS.txt: %s", e)
 
     # In debug/dev mode, if the credentials file has been deleted, fallback to dev seed credentials
     if not initial_creds and app.config.get("DEBUG"):
         initial_creds["Admin"] = ("admin", "Admin@123456")
-        initial_creds["Investigative Officer"] = ("officer1", "Officer@123456")
+        initial_creds[ROLE_INVESTIGATIVE_OFFICER] = ("officer1", "Officer@123456")
 
     return render_template("login.html", error=error, initial_creds=initial_creds)
 
@@ -1996,11 +1996,7 @@ def upload_excel():
     except OSError:
         _magic = b""
 
-    is_valid_sig = False
-    if is_xlsx and _magic[:2] == b"PK":
-        is_valid_sig = True
-    elif is_xls and _magic[:4] == b"\xD0\xCF\x11\xE0":
-        is_valid_sig = True
+    is_valid_sig = (is_xlsx and _magic[:2] == b"PK") or (is_xls and _magic[:4] == b"\xD0\xCF\x11\xE0")
 
     if not is_valid_sig:
         try:
@@ -2263,11 +2259,6 @@ def upload_excel():
                         return s
 
             # Fuzzy matching: Look for columns containing UTR and Number 2 in normalized form
-            def norm(s):
-                s = str(s).replace("\u00a0", " ")
-                s = re.sub(COLUMN_NAME_NORM_RE, " ", s).lower().strip()
-                return s
-
             for col in row.index:
                 nc = norm(col)
                 # Match columns that have UTR and (NUMBER 2 or ends with 2) and (TRANSACTION or TXN or ID)
@@ -2302,11 +2293,6 @@ def upload_excel():
                     return col
 
             # Then try fuzzy matching with normalized names
-            def norm(s):
-                s = str(s).replace("\u00a0", " ")
-                s = re.sub(COLUMN_NAME_NORM_RE, " ", s).lower().strip()
-                return s
-
             known_normalized = [
                 "transaction id utr number2",
                 "transaction id utr number 2",

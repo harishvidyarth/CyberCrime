@@ -34,7 +34,7 @@
     {% if is_admin_user %}
     <a class="nav-item {{ 'active' if ep == 'admin_dashboard' }}" href="{{ url_for('admin_dashboard') }}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
-      <span class="nav-label">Dashboard</span>
+      <span class="nav-label">Admin Dashboard</span>
     </a>
     <div class="nav-section">Cases</div>
     <a class="nav-item {{ 'active' if ep == 'view_all_complaints' }}" href="{{ url_for('view_all_complaints') }}">
@@ -78,7 +78,7 @@
     {% else %}
     <a class="nav-item {{ 'active' if ep == 'index' }}" href="{{ url_for('index') }}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
-      <span class="nav-label">Dashboard</span>
+      <span class="nav-label">Officer Dashboard</span>
     </a>
     <a class="nav-item {{ 'active' if ep == 'complaints' }}" href="{{ url_for('complaints') }}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
@@ -148,7 +148,7 @@
 </main>
 
 <!-- Feature B11: idle-session warning modal -->
-<div class="modal-backdrop" id="idleModal" role="dialog" aria-modal="true" aria-labelledby="idleTitle">
+<dialog class="modal-backdrop" id="idleModal" aria-labelledby="idleTitle">
   <div class="modal">
     <div class="modal-header"><h2 id="idleTitle" class="card-title">Still there?</h2></div>
     <div class="modal-body">
@@ -160,7 +160,7 @@
       <button class="btn btn-primary" id="idleStay" data-modal-close>Stay signed in</button>
     </div>
   </div>
-</div>
+</dialog>
 
 <script src="{{ url_for('static', filename='app.js') }}?v=2.0" defer></script>
 {% block scripts %}{% endblock %}

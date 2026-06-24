@@ -26,6 +26,7 @@ BIN="$BINDIR/${APP_NAME}"          # the launcher executable inside it
 APP="dist/${APP_NAME}.app"
 DMG="dist/${APP_NAME}.dmg"
 ICON_SRC="main/static/logo.png"
+ICON_DEST="dist/FundTrail.icns"
 
 [[ -f "$BIN" ]] || { echo "ERROR: $BIN not found. Run ./build_exe.sh first." >&2; exit 1; }
 
@@ -40,12 +41,12 @@ make_icns() {
     sips -s format png -z $s $s             "$ICON_SRC" --out "$iconset/icon_${s}x${s}.png"    >/dev/null 2>&1
     sips -s format png -z $((s*2)) $((s*2)) "$ICON_SRC" --out "$iconset/icon_${s}x${s}@2x.png" >/dev/null 2>&1
   done
-  iconutil -c icns "$iconset" -o "dist/FundTrail.icns" >/dev/null 2>&1
+  iconutil -c icns "$iconset" -o "$ICON_DEST" >/dev/null 2>&1
 }
-if [[ -f "$ICON_SRC" ]] && make_icns && [[ -f "dist/FundTrail.icns" ]]; then
-  echo "  icon: dist/FundTrail.icns"
+if [[ -f "$ICON_SRC" ]] && make_icns && [[ -f "$ICON_DEST" ]]; then
+  echo "  icon: $ICON_DEST"
 else
-  rm -f "dist/FundTrail.icns"
+  rm -f "$ICON_DEST"
   echo "  WARNING: could not build icon from ${ICON_SRC}; continuing without a custom icon."
 fi
 
@@ -54,7 +55,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp -R "$BINDIR/." "$APP/Contents/MacOS/"
 chmod +x "$APP/Contents/MacOS/${APP_NAME}"
-[[ -f "dist/FundTrail.icns" ]] && cp "dist/FundTrail.icns" "$APP/Contents/Resources/FundTrail.icns"
+[[ -f "$ICON_DEST" ]] && cp "$ICON_DEST" "$APP/Contents/Resources/FundTrail.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

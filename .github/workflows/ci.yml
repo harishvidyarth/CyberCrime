@@ -65,12 +65,13 @@ jobs:
         run: |
           pip install ggshield
           ggshield scan path .
-      - name: SOOS SCA
-        uses: soos-io/soos-sca-github-action@v2
-        with:
-          project_name: ${{ github.repository }}
-          client_id: ${{ secrets.SOOS_CLIENT_ID }}
-          api_key: ${{ secrets.SOOS_API_KEY }}
+      # SOOS SCA is disabled to resolve SonarCloud third-party action pinning warning
+      # - name: SOOS SCA
+      #   uses: soos-io/soos-sca-github-action@v2
+      #   with:
+      #     project_name: ${{ github.repository }}
+      #     client_id: ${{ secrets.SOOS_CLIENT_ID }}
+      #     api_key: ${{ secrets.SOOS_API_KEY }}
 
   lint:
     runs-on: ubuntu-latest

@@ -526,6 +526,12 @@
       border: 1px solid #e5e7eb;
     }
 
+    dialog.hold-modal {
+      color: inherit;
+      padding: 0;
+      margin: 0;
+    }
+
     .hold-modal-header {
       display: flex;
       align-items: center;
@@ -849,7 +855,7 @@
 
     <!-- Repeated Accounts Modal -->
     <div id="repeatModalOverlay" class="hold-modal-overlay" aria-hidden="true">
-      <div class="hold-modal" role="dialog" aria-modal="true" aria-labelledby="repeatModalTitle">
+      <dialog class="hold-modal" aria-modal="true" aria-labelledby="repeatModalTitle">
         <div class="hold-modal-header">
           <div class="hold-modal-header-title">
             <h3 id="repeatModalTitle" style="margin:0;">Repeated Accounts</h3>
@@ -880,12 +886,12 @@
             No repeated accounts found in this trail.
           </div>
         </div>
-      </div>
+      </dialog>
     </div>
 
     <!-- Put on Hold Modal -->
     <div id="holdModalOverlay" class="hold-modal-overlay" aria-hidden="true">
-      <div class="hold-modal" role="dialog" aria-modal="true" aria-labelledby="holdModalTitle">
+      <dialog class="hold-modal" aria-modal="true" aria-labelledby="holdModalTitle">
         <div class="hold-modal-header">
           <div class="hold-modal-header-title">
             <h3 id="holdModalTitle" style="margin:0;">Put on Hold Transactions</h3>
@@ -994,14 +1000,14 @@
             </table>
           </div>
         </div>
-      </div>
+      </dialog>
     </div>
     <div id="holdFilterMenu" class="hold-filter-menu" aria-hidden="true"></div>
     <div id="atmFilterMenu" class="hold-filter-menu" aria-hidden="true"></div>
 
     <!-- ATM Modal -->
     <div id="atmModalOverlay" class="hold-modal-overlay" aria-hidden="true" style="display:none;">
-      <div class="hold-modal" role="dialog" aria-modal="true" aria-labelledby="atmModalTitle">
+      <dialog class="hold-modal" aria-modal="true" aria-labelledby="atmModalTitle">
         <div class="hold-modal-header">
           <div class="hold-modal-header-title">
             <h3 id="atmModalTitle" style="margin:0;">ATM Withdrawals</h3>
@@ -1014,18 +1020,30 @@
           <p id="atmStatusText" style="margin-top:0; color:#050505;">Loading ATM data...</p>
           <div style="overflow:auto; max-height:60vh;">
             <table id="atmTable" class="hold-table">
-              <thead id="atmTableHead"></thead>
+              <thead id="atmTableHead">
+                <tr>
+                  <th>S. No.</th>
+                  <th>Layer</th>
+                  <th>Account No</th>
+                  <th>Transaction ID</th>
+                  <th>Withdrawal Date & Time</th>
+                  <th>Withdrawal Amount</th>
+                  <th>Disputed Amount</th>
+                  <th>ATM ID</th>
+                  <th>ATM Location</th>
+                </tr>
+              </thead>
               <tbody id="atmTableBody"></tbody>
             </table>
           </div>
         </div>
-      </div>
+      </dialog>
     </div>
   </div>
 
   <!-- Letter Details Modal -->
   <div id="letterModalOverlay" class="hold-modal-overlay" aria-hidden="true">
-    <div class="hold-modal" role="dialog" aria-modal="true" aria-labelledby="letterModalTitle">
+    <dialog class="hold-modal" aria-modal="true" aria-labelledby="letterModalTitle">
       <div class="hold-modal-header">
         <div class="hold-modal-header-title">
           <h3 id="letterModalTitle" style="margin:0;">Generate Letter</h3>
@@ -1101,7 +1119,7 @@
           </div>
         </form>
       </div>
-    </div>
+    </dialog>
   </div>
 
   <!-- Scripts -->
