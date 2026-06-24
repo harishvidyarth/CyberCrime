@@ -23,6 +23,11 @@ python_files = ["test_*.py", "pytest_*.py"]
 [tool.coverage.run]
 source = ["main"]
 omit = ["main/migrations/*", "main/tests/*"]
+# Store file paths relative to the repo root (e.g. "main/app.py", not an absolute
+# path with a bare "app.py"). Without this, coverage.xml emits <source> as an
+# absolute path and Codecov cannot map "app.py" back to "main/app.py" in the repo
+# tree, which shows up as "no data available" even though a report was uploaded.
+relative_files = true
 
 [tool.coverage.report]
 exclude_lines = ["if __name__ == .__main__.:"]
