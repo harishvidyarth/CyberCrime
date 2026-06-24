@@ -2459,7 +2459,11 @@ def upload_excel():
                 return {}
             tmp = df.copy()
             tmp["_acc_key"] = tmp[acc_col].astype(str).str.strip()
-            return dict(tmp.groupby("_acc_key"))
+            # NB: dict(groupby) breaks on pandas >=2.x — a DataFrameGroupBy exposes a
+            # `.keys` attribute (the grouping column name, a str), so dict() treats it
+            # as a mapping and calls that str -> "'str' object is not callable". Build
+            # the {key: group_df} mapping explicitly instead.
+            return {k: v for k, v in tmp.groupby("_acc_key")}
 
         atm_by_acc = _index_by_account(atm_df)
         chq_by_acc = _index_by_account(chq_df)
@@ -2478,7 +2482,7 @@ def upload_excel():
                 _h = hold_df.copy()
                 _h["_acc_key"] = _h[hold_acc_col].astype(str).str.strip()
                 _h["_txn_key"] = _h[hold_txn_col].astype(str).str.strip()
-                hold_by_key = dict(_h.groupby(["_acc_key", "_txn_key"]))
+                hold_by_key = {k: v for k, v in _h.groupby(["_acc_key", "_txn_key"])}
 
         # Sort tx_df by Layer first so transactions are processed and added in order of layer
         if col_layer in tx_df.columns:
