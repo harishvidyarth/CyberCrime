@@ -1028,10 +1028,10 @@ def log_usage(action, filename=None, ack_no=None):
 
 
 def validate_account_number(account):
-    """Validate account number format"""
+    """Validate account number / Wallet / PG / PA ID format"""
     if not account or account == "N/A":
         return True
-    return bool(re.match(r"^\d{9,18}$", str(account)))
+    return bool(re.match(r"^[a-zA-Z0-9@/_.\-* +=:xX]{3,64}$", str(account)))
 
 
 def validate_amount(amount):
@@ -1316,47 +1316,50 @@ def generate_secure_password(length=16):
             return password
 
 
+def _migrate_single_db(old_path, table, model, key_cols):
+    import sqlite3
+    if not old_path or not os.path.exists(old_path):
+        return
+    valid_cols = {c.name for c in model.__table__.columns}
+    try:
+        conn = sqlite3.connect(old_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            # `table` is selected from a fixed allowlist above, not user input.
+            rows = conn.execute(f"SELECT * FROM {table}").fetchall()  # nosec B608
+        except sqlite3.OperationalError:
+            rows = []  # table missing in the old file
+        finally:
+            conn.close()
+
+        imported = 0
+        for r in rows:
+            d = {k: r[k] for k in r.keys() if k in valid_cols and k != "id"}
+            key = {k: d.get(k) for k in key_cols}
+            if model.query.filter_by(**key).first():
+                continue  # idempotent: already present in the main DB
+            db.session.add(model(**d))
+            imported += 1
+        db.session.commit()
+        os.rename(old_path, old_path + ".migrated")
+        if imported:
+            logger.info(f"Consolidated {imported} row(s) from {os.path.basename(old_path)} into main DB.")
+    except Exception as exc:
+        db.session.rollback()
+        logger.exception(f"DB consolidation for {old_path} failed: {exc}")
+
+
 def migrate_split_dbs_into_main():
     """One-time, idempotent consolidation: import POH/KYC rows from the old per-feature
     SQLite files (poh_refund_details.db / kyc_details.db) into the main DB now that those
     models live there. Each old file is renamed to *.migrated after a successful import
     so it is never re-read. No-op on a fresh install or once already migrated."""
-    import sqlite3
-
     jobs = [
         (poh_db_path, "poh_refund_details", POHRefundDetails, ("ack_no", "txn_id")),
         (kyc_db_path, "kyc_details", KYCDetails, ("txn_id",)),
     ]
     for old_path, table, model, key_cols in jobs:
-        if not old_path or not os.path.exists(old_path):
-            continue
-        valid_cols = {c.name for c in model.__table__.columns}
-        try:
-            conn = sqlite3.connect(old_path)
-            conn.row_factory = sqlite3.Row
-            try:
-                # `table` is selected from a fixed allowlist above, not user input.
-                rows = conn.execute(f"SELECT * FROM {table}").fetchall()  # nosec B608
-            except sqlite3.OperationalError:
-                rows = []  # table missing in the old file
-            finally:
-                conn.close()
-
-            imported = 0
-            for r in rows:
-                d = {k: r[k] for k in r.keys() if k in valid_cols and k != "id"}
-                key = {k: d.get(k) for k in key_cols}
-                if model.query.filter_by(**key).first():
-                    continue  # idempotent: already present in the main DB
-                db.session.add(model(**d))
-                imported += 1
-            db.session.commit()
-            os.rename(old_path, old_path + ".migrated")
-            if imported:
-                logger.info(f"Consolidated {imported} row(s) from {os.path.basename(old_path)} into main DB.")
-        except Exception as exc:
-            db.session.rollback()
-            logger.exception(f"DB consolidation for {old_path} failed: {exc}")
+        _migrate_single_db(old_path, table, model, key_cols)
 
 
 def backfill_complaints():
@@ -1588,12 +1591,30 @@ def login():
         except Exception as e:
             app.logger.warning("Could not read INITIAL_CREDENTIALS.txt: %s", e)
 
-    # In debug/dev mode, if the credentials file has been deleted, fallback to dev seed credentials
-    if not initial_creds and app.config.get("DEBUG"):
-        initial_creds["Admin"] = ("admin", "Admin@123456")
-        initial_creds[ROLE_INVESTIGATIVE_OFFICER] = ("officer1", "Officer@123456")
+    final_creds = {}
+    try:
+        # Only show initial credentials if the user still has must_change_password=True
+        admin_user = User.query.filter_by(username="admin", role="Admin").first()
+        if admin_user and admin_user.must_change_password:
+            if "Admin" in initial_creds:
+                final_creds["Admin"] = initial_creds["Admin"]
+            elif app.config.get("DEBUG"):
+                final_creds["Admin"] = ("admin", "Admin@123456")
 
-    return render_template("login.html", error=error, initial_creds=initial_creds)
+        officer_user = User.query.filter_by(username="officer", role=ROLE_INVESTIGATIVE_OFFICER).first()
+        if not officer_user and app.config.get("DEBUG"):
+            officer_user = User.query.filter_by(username="officer1", role=ROLE_INVESTIGATIVE_OFFICER).first()
+
+        if officer_user and officer_user.must_change_password:
+            if ROLE_INVESTIGATIVE_OFFICER in initial_creds:
+                final_creds[ROLE_INVESTIGATIVE_OFFICER] = initial_creds[ROLE_INVESTIGATIVE_OFFICER]
+            elif app.config.get("DEBUG"):
+                final_creds[ROLE_INVESTIGATIVE_OFFICER] = ("officer1", "Officer@123456")
+    except Exception as e:
+        app.logger.warning("Could not filter initial credentials: %s", e)
+        final_creds = initial_creds
+
+    return render_template("login.html", error=error, initial_creds=final_creds)
 
 
 def _establish_session(user, role, prev_login):
