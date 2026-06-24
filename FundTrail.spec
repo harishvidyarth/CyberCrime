@@ -21,7 +21,7 @@ datas = [
 # Packages that ship data files PyInstaller misses unless asked. openpyxl ships
 # theme/style XML that pd.read_excel() needs at runtime — without it the frozen
 # exe raises "Failed to process excel".
-for _pkg in ('xhtml2pdf', 'reportlab', 'docx', 'svglib', 'qrcode', 'openpyxl', 'et_xmlfile'):
+for _pkg in ('xhtml2pdf', 'reportlab', 'docx', 'svglib', 'qrcode', 'openpyxl', 'et_xmlfile', 'xlrd'):
     try:
         datas += collect_data_files(_pkg)
     except Exception:
@@ -43,7 +43,7 @@ hiddenimports = [
     'pandas._libs.tslibs.timezones',
 ]
 for _pkg in (
-    'pandas', 'openpyxl', 'reportlab', 'xhtml2pdf', 'docx', 'svglib',
+    'pandas', 'openpyxl', 'reportlab', 'xhtml2pdf', 'docx', 'svglib', 'xlrd',
     'flask_sqlalchemy', 'flask_login', 'flask_wtf', 'flask_limiter',
     'flask_migrate', 'flask_compress', 'pyotp', 'qrcode', 'PIL', 'sqlalchemy',
     'webview',  # pywebview — standalone desktop window for the .exe

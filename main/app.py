@@ -1031,7 +1031,7 @@ def validate_account_number(account):
     """Validate account number / Wallet / PG / PA ID format"""
     if not account or account == "N/A":
         return True
-    return bool(re.match(r"^[a-zA-Z0-9@/_.\-* +=:xX]{3,64}$", str(account)))
+    return bool(re.match(r"^[a-zA-Z0-9@/_.\-* +=:xX()#,&%?]{1,100}$", str(account)))
 
 
 def validate_amount(amount):
@@ -2038,6 +2038,34 @@ def upload_excel():
     try:
         # ✅ Step 2: Read Excel and extract acknowledgment numbers
 
+        def norm(s):
+            s = str(s).replace("\u00a0", " ")
+            s = re.sub(COLUMN_NAME_NORM_RE, " ", s).lower().strip()
+            return s
+
+        def find_ack_no_column(columns):
+            if "Acknowledgement No." in columns:
+                return "Acknowledgement No."
+            for col in columns:
+                nc = norm(col)
+                if nc in ("acknowledgement no", "acknowledgement no.", "acknowledgement number", "ack no", "ack no.", "ack number"):
+                    return col
+            return None
+
+        def find_column_by_variants(columns, target_name, variants):
+            if target_name in columns:
+                return target_name
+            normalized_variants = {norm(v) for v in variants}
+            for col in columns:
+                if norm(col) in normalized_variants:
+                    return col
+            return target_name
+
+        def clean_str(val, default=""):
+            if pd.isna(val) or val is None:
+                return default
+            return str(val).strip()
+
         # Helper for sanitizing cell values to prevent CSV/Excel injection
         def sanitize_cell(value):
             """Neutralise spreadsheet formula injection (CWE-1236) WITHOUT corrupting
@@ -2087,8 +2115,25 @@ def upload_excel():
 
         sheet_name = find_sheet_name(xls, "Money Transfer to")
         if not sheet_name:
+            # Fallback: scan all sheets to find one with an Acknowledgement No column
+            for name in xls.sheet_names or []:
+                try:
+                    temp_df = pd.read_excel(xls, sheet_name=name, nrows=0, engine=excel_engine)
+                    if find_ack_no_column(temp_df.columns):
+                        sheet_name = name
+                        logger.info(f"Found Acknowledgement No. column in sheet '{name}', using it as fallback.")
+                        break
+                except Exception as ex:
+                    logger.debug(f"Error checking columns of sheet '{name}': {ex}")
+
+        # If still not found and there is exactly one sheet, fallback to it
+        if not sheet_name and len(xls.sheet_names or []) == 1:
+            sheet_name = xls.sheet_names[0]
+            logger.info(f"Only one sheet found ('{sheet_name}'), falling back to it.")
+
+        if not sheet_name:
             available = ", ".join([f"'{s}'" for s in (xls.sheet_names or [])])
-            raise ValueError(f"Worksheet named 'Money Transfer to' not found. Available sheets: {available}")
+            raise ValueError(f"Worksheet named 'Money Transfer to' (or sheet containing 'Acknowledgement No.') not found. Available sheets: {available}")
 
         tx_df = pd.read_excel(xls, sheet_name=sheet_name, engine=excel_engine)
 
@@ -2104,7 +2149,10 @@ def upload_excel():
         for col in tx_df.columns:
             tx_df[col] = tx_df[col].apply(sanitize_cell)
 
-        acknos_in_excel = tx_df["Acknowledgement No."].dropna().unique()
+        ack_col = find_ack_no_column(tx_df.columns)
+        if not ack_col:
+            raise ValueError("Column 'Acknowledgement No.' not found in the worksheet.")
+        acknos_in_excel = tx_df[ack_col].dropna().unique()
 
         if len(acknos_in_excel) == 0:
             flash("⚠️ No Acknowledgement numbers found in the Excel file!", "warning")
@@ -2258,10 +2306,6 @@ def upload_excel():
                         return str(val).strip()
             return None
 
-        def norm(s):
-            s = str(s).replace("\u00a0", " ")
-            s = re.sub(COLUMN_NAME_NORM_RE, " ", s).lower().strip()
-            return s
 
         def get_txn_id_from_row(row, utr2_col=None):
             """Extract Transaction ID / UTR Number2 from a row."""
@@ -2363,30 +2407,83 @@ def upload_excel():
         # account number (and, for holds, the txn id). The previous code re-filtered
         # the entire sheet inside the per-row loop (`df[df[col].astype(str)...] == x`),
         # which is O(rows × sheet) and re-stringifies the whole column every iteration —
-        # the reason a "small" upload felt slow. Now each row is an O(1) dict lookup.
-        _ACC_COL = "Account No./ (Wallet /PG/PA) Id"
+        # Resolve target columns for main tx_df sheet
+        col_ack = find_ack_no_column(tx_df.columns)
+        if not col_ack:
+            raise ValueError("Column 'Acknowledgement No.' not found in the worksheet.")
 
+        col_to_acc = find_column_by_variants(tx_df.columns, "Account No", ["Account No", "Account No.", "Account Number", "To Account", "Beneficiary Account", "To Acc", "Acc No", "Beneficiary Acc", "Destination Account"])
+        col_from_acc = find_column_by_variants(tx_df.columns, "Account No./ (Wallet /PG/PA) Id", ["Account No./ (Wallet /PG/PA) Id", "From Account", "Source Account", "Sender Account", "From Acc", "Sender Acc", "Account No./ Wallet /PG/PA Id", "Account No. / (Wallet /PG/PA) Id"])
+        col_amount = find_column_by_variants(tx_df.columns, "Transaction Amount", ["Transaction Amount", "Amount", "Txn Amount", "Transfer Amount", "Value", "Amt", "Transaction Amount (INR)", "Amount (INR)"])
+        col_bank = find_column_by_variants(tx_df.columns, "Bank/FIs", ["Bank/FIs", "Bank", "Bank Name", "Financial Institution", "FI", "Bank/FI"])
+        col_layer = find_column_by_variants(tx_df.columns, "Layer", ["Layer", "Layer No", "Layer Number"])
+        col_ifsc = find_column_by_variants(tx_df.columns, "Ifsc Code", ["Ifsc Code", "IFSC", "Ifsc_Code", "Bank IFSC", "IFSC Code"])
+        col_date = find_column_by_variants(tx_df.columns, "Transaction Date", ["Transaction Date", "Date", "Txn Date", "Transaction_Date", "Date of Transaction", "Transaction Date & Time"])
+        col_disputed = find_column_by_variants(tx_df.columns, "Disputed Amount", ["Disputed Amount", "Disputed Amt", "Disputed_Amount", "Lien Amount", "Disputed Amount (INR)"])
+        col_action = find_column_by_variants(tx_df.columns, "Action Taken By bank", ["Action Taken By bank", "Action Taken", "Action", "Status", "Action Taken By bank/FI", "Action Taken By bank/FIs"])
+
+        # Helper to find Account column in helper sheets
+        def find_acc_col_in_helper(df):
+            if df.empty:
+                return None
+            return find_column_by_variants(
+                df.columns,
+                "Account No./ (Wallet /PG/PA) Id",
+                ["Account No./ (Wallet /PG/PA) Id", "Account No./ Wallet /PG/PA Id", "Account No", "Account No.", "Account Number", "From Account", "Source Account"]
+            )
+
+        # ATM column mapping
+        atm_id_col = find_column_by_variants(atm_df.columns, "ATM ID", ["ATM ID", "ATM_ID", "Atm Id"]) if not atm_df.empty else None
+        atm_amount_col = find_column_by_variants(atm_df.columns, "Withdrawal Amount", ["Withdrawal Amount", "Amount", "Withdrawal Amt", "Withdrawn Amt"]) if not atm_df.empty else None
+        atm_date_col = find_column_by_variants(atm_df.columns, "Withdrawal Date & Time", ["Withdrawal Date & Time", "Date", "Withdrawal Date", "Withdrawal Time"]) if not atm_df.empty else None
+
+        # Cheque column mapping
+        chq_no_col = find_column_by_variants(chq_df.columns, "Cheque No", ["Cheque No", "Cheque No.", "Cheque Number"]) if not chq_df.empty else None
+        chq_amount_col = find_column_by_variants(chq_df.columns, "Withdrawal Amount", ["Withdrawal Amount", "Amount", "Withdrawal Amt", "Withdrawn Amt"]) if not chq_df.empty else None
+        chq_date_col = find_column_by_variants(chq_df.columns, "Withdrawal Date & Time", ["Withdrawal Date & Time", "Date", "Withdrawal Date", "Withdrawal Time"]) if not chq_df.empty else None
+        chq_ifsc_col = find_column_by_variants(chq_df.columns, "Ifsc Code", ["Ifsc Code", "IFSC", "Ifsc_Code", "Bank IFSC"]) if not chq_df.empty else None
+
+        # Helper to get string values from DataFrame row/cell safely
+        def get_df_str(df, col, default=""):
+            if not df.empty and col and col in df.columns:
+                val = df.iloc[0][col]
+                return clean_str(val, default)
+            return default
+
+        # the reason a "small" upload felt slow. Now each row is an O(1) dict lookup.
         def _index_by_account(df):
-            if df.empty or _ACC_COL not in df.columns:
+            if df.empty:
+                return {}
+            acc_col = find_acc_col_in_helper(df)
+            if not acc_col or acc_col not in df.columns:
                 return {}
             tmp = df.copy()
-            tmp["_acc_key"] = tmp[_ACC_COL].astype(str).str.strip()
+            tmp["_acc_key"] = tmp[acc_col].astype(str).str.strip()
             return dict(tmp.groupby("_acc_key"))
 
         atm_by_acc = _index_by_account(atm_df)
         chq_by_acc = _index_by_account(chq_df)
 
         hold_by_key = {}
-        if not hold_df.empty and _ACC_COL in hold_df.columns and COL_TRANSACTION_ID_UTR_NUMBER in hold_df.columns:
-            _h = hold_df.copy()
-            _h["_acc_key"] = _h[_ACC_COL].astype(str).str.strip()
-            _h["_txn_key"] = _h[COL_TRANSACTION_ID_UTR_NUMBER].astype(str).str.strip()
-            hold_by_key = dict(_h.groupby(["_acc_key", "_txn_key"]))
+        hold_acc_col = None
+        hold_txn_col = None
+        if not hold_df.empty:
+            hold_acc_col = find_acc_col_in_helper(hold_df)
+            hold_txn_col = find_column_by_variants(
+                hold_df.columns,
+                COL_TRANSACTION_ID_UTR_NUMBER,
+                [COL_TRANSACTION_ID_UTR_NUMBER, "Transaction ID", "UTR Number", "Transaction ID / UTR Number", "Txn ID", "UTR"]
+            )
+            if hold_acc_col and hold_txn_col:
+                _h = hold_df.copy()
+                _h["_acc_key"] = _h[hold_acc_col].astype(str).str.strip()
+                _h["_txn_key"] = _h[hold_txn_col].astype(str).str.strip()
+                hold_by_key = dict(_h.groupby(["_acc_key", "_txn_key"]))
 
         # Sort tx_df by Layer first so transactions are processed and added in order of layer
-        if "Layer" in tx_df.columns:
+        if col_layer in tx_df.columns:
             try:
-                tx_df["Layer_int"] = pd.to_numeric(tx_df["Layer"], errors="coerce").fillna(0).astype(int)
+                tx_df["Layer_int"] = pd.to_numeric(tx_df[col_layer], errors="coerce").fillna(0).astype(int)
                 tx_df = tx_df.sort_values(by="Layer_int").drop(columns=["Layer_int"])
             except Exception as e:
                 logger.warning(f"Failed to sort tx_df by Layer: {e}")
@@ -2398,12 +2495,12 @@ def upload_excel():
         skipped_rows = []
         for idx, (_, row) in enumerate(tx_df.iterrows()):
             try:
-                ack_no = str(row.get("Acknowledgement No.", "")).strip()
+                ack_no = clean_str(row.get(col_ack))
                 if not ack_no:
                     # Skip empty acknowledgment rows but don't count them as errors
                     continue
 
-                acc_to = str(row.get("Account No", "")).strip()
+                acc_to = clean_str(row.get(col_to_acc))
                 extracted_txn_id = get_txn_id_from_row(row, utr2_col)
                 atm_info = atm_by_acc.get(acc_to, _EMPTY_DF)
                 chq_info = chq_by_acc.get(acc_to, _EMPTY_DF)
@@ -2424,9 +2521,9 @@ def upload_excel():
                                 logger.debug(f"  -> {col}: [REDACTED]")
 
                 # Validate before creating transaction
-                from_account = str(row.get("Account No./ (Wallet /PG/PA) Id", "")).strip()
+                from_account = clean_str(row.get(col_from_acc))
                 to_account = acc_to  # Already stripped and extracted above
-                raw_amount = row.get("Transaction Amount")
+                raw_amount = row.get(col_amount)
                 cleaned_amount = clean_amount(raw_amount)
 
                 if not validate_account_number(from_account):
@@ -2439,21 +2536,21 @@ def upload_excel():
                     raise ValueError(f"Invalid amount: {cleaned_amount}")
 
                 transaction = Transaction(
-                    layer=int(row.get("Layer", 0)),
+                    layer=int(row.get(col_layer, 0)) if row.get(col_layer) is not None else 0,
                     from_account=from_account,
                     to_account=to_account,
                     account_number=to_account,
                     ack_no=ack_no,
-                    bank_name=clean_bank_name(row.get("Bank/FIs")),
-                    ifsc_code=str(row.get("Ifsc Code", "")).strip(),
-                    txn_date=str(row.get("Transaction Date", "")).strip(),
+                    bank_name=clean_bank_name(row.get(col_bank)),
+                    ifsc_code=clean_str(row.get(col_ifsc)),
+                    txn_date=clean_str(row.get(col_date)),
                     txn_id=extracted_txn_id,
                     amount=cleaned_amount,
-                    disputed_amount=clean_amount(row.get("Disputed Amount")),
-                    action_taken=str(row.get("Action Taken By bank", "")).strip(),
-                    atm_id=str(atm_info.iloc[0]["ATM ID"]) if not atm_info.empty else None,
-                    atm_withdraw_amount=clean_amount(atm_info.iloc[0]["Withdrawal Amount"]) if not atm_info.empty else None,
-                    atm_withdraw_date=str(atm_info.iloc[0]["Withdrawal Date & Time"]) if not atm_info.empty else None,
+                    disputed_amount=clean_amount(row.get(col_disputed)),
+                    action_taken=clean_str(row.get(col_action)),
+                    atm_id=get_df_str(atm_info, atm_id_col) if not atm_info.empty else None,
+                    atm_withdraw_amount=clean_amount(get_df_str(atm_info, atm_amount_col)) if not atm_info.empty else None,
+                    atm_withdraw_date=get_df_str(atm_info, atm_date_col) if not atm_info.empty else None,
                     atm_location=clean_location(
                         get_first_value(
                             atm_info,
@@ -2468,17 +2565,17 @@ def upload_excel():
                             ],
                         )
                     ),
-                    cheque_no=str(chq_info.iloc[0]["Cheque No"]) if not chq_info.empty else None,
-                    cheque_withdraw_amount=clean_amount(chq_info.iloc[0]["Withdrawal Amount"])
+                    cheque_no=get_df_str(chq_info, chq_no_col) if not chq_info.empty else None,
+                    cheque_withdraw_amount=clean_amount(get_df_str(chq_info, chq_amount_col))
                     if not chq_info.empty
                     else None,
-                    cheque_withdraw_date=str(chq_info.iloc[0]["Withdrawal Date & Time"]) if not chq_info.empty else None,
-                    cheque_ifsc=str(chq_info.iloc[0]["Ifsc Code"]) if not chq_info.empty else None,
-                    put_on_hold_txn_id=str(hold_info.iloc[0][COL_TRANSACTION_ID_UTR_NUMBER])
+                    cheque_withdraw_date=get_df_str(chq_info, chq_date_col) if not chq_info.empty else None,
+                    cheque_ifsc=get_df_str(chq_info, chq_ifsc_col) if not chq_info.empty else None,
+                    put_on_hold_txn_id=get_df_str(hold_info, hold_txn_col)
                     if not hold_info.empty
                     else None,
-                    put_on_hold_date=str(hold_info.iloc[0]["Put on hold Date"]) if not hold_info.empty else None,
-                    put_on_hold_amount=clean_amount(hold_info.iloc[0]["Put on hold Amount"])
+                    put_on_hold_date=get_df_str(hold_info, find_column_by_variants(hold_df.columns, "Put on hold Date", ["Put on hold Date", "Hold Date", "Put On Hold Date & Time"])) if not hold_info.empty else None,
+                    put_on_hold_amount=clean_amount(get_df_str(hold_info, find_column_by_variants(hold_df.columns, "Put on hold Amount", ["Put on hold Amount", "Hold Amount", "Put On Hold Amt"])))
                     if not hold_info.empty
                     else None,
                     upload_id=uploaded_file.id,
