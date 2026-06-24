@@ -900,6 +900,10 @@ db_url = os.environ.get("DATABASE_URL")
 if not db_url:
     db_url = f"sqlite:///{primary_db_path}"
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
+# Log the resolved DB path so it's verifiable that the frozen exe (PyInstaller)
+# and `python app.py` (dev) read/write the SAME database — a past source of
+# "upload saved but dashboard empty" confusion.
+logger.info("Database: %s (frozen=%s, data_dir=%s)", db_url, bool(getattr(sys, "frozen", False)), secure_base)
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True, "pool_recycle": 1800}
 
 # Concurrency: enable SQLite WAL + a per-connection busy timeout so several officers
@@ -2338,6 +2342,7 @@ def upload_excel():
         transactions = []
 
         txn_id_counts = {"found": 0, "missing": 0}
+        skipped_rows = []
         for idx, (_, row) in enumerate(tx_df.iterrows()):
             ack_no = str(row.get("Acknowledgement No.", "")).strip()
             if not ack_no:
@@ -2382,73 +2387,89 @@ def upload_excel():
                 logger.warning(f"Invalid amount: {cleaned_amount}")
                 continue
 
-            transaction = Transaction(
-                layer=int(row.get("Layer", 0)),
-                from_account=from_account,
-                to_account=to_account,
-                account_number=to_account,
-                ack_no=ack_no,
-                bank_name=clean_bank_name(row.get("Bank/FIs")),
-                ifsc_code=str(row.get("Ifsc Code", "")).strip(),
-                txn_date=str(row.get("Transaction Date", "")).strip(),
-                txn_id=extracted_txn_id,
-                amount=cleaned_amount,
-                disputed_amount=clean_amount(row.get("Disputed Amount")),
-                action_taken=str(row.get("Action Taken By bank", "")).strip(),
-                atm_id=str(atm_info.iloc[0]["ATM ID"]) if not atm_info.empty else None,
-                atm_withdraw_amount=clean_amount(atm_info.iloc[0]["Withdrawal Amount"]) if not atm_info.empty else None,
-                atm_withdraw_date=str(atm_info.iloc[0]["Withdrawal Date & Time"]) if not atm_info.empty else None,
-                atm_location=clean_location(
-                    get_first_value(
-                        atm_info,
-                        [
-                            "ATM Location",
-                            "Location",
-                            "ATM Location / City",
-                            "ATM Address",
-                            "ATM Location/City",
-                            "Place/Location of ATM",
-                            "Place / Location of ATM",
-                        ],
-                    )
-                ),
-                cheque_no=str(chq_info.iloc[0]["Cheque No"]) if not chq_info.empty else None,
-                cheque_withdraw_amount=clean_amount(chq_info.iloc[0]["Withdrawal Amount"])
-                if not chq_info.empty
-                else None,
-                cheque_withdraw_date=str(chq_info.iloc[0]["Withdrawal Date & Time"]) if not chq_info.empty else None,
-                cheque_ifsc=str(chq_info.iloc[0]["Ifsc Code"]) if not chq_info.empty else None,
-                put_on_hold_txn_id=str(hold_info.iloc[0]["Transaction Id / UTR Number"])
-                if not hold_info.empty
-                else None,
-                put_on_hold_date=str(hold_info.iloc[0]["Put on hold Date"]) if not hold_info.empty else None,
-                put_on_hold_amount=clean_amount(hold_info.iloc[0]["Put on hold Amount"])
-                if not hold_info.empty
-                else None,
-                upload_id=uploaded_file.id,
-            )
+            try:
+                transaction = Transaction(
+                    layer=int(row.get("Layer", 0)),
+                    from_account=from_account,
+                    to_account=to_account,
+                    account_number=to_account,
+                    ack_no=ack_no,
+                    bank_name=clean_bank_name(row.get("Bank/FIs")),
+                    ifsc_code=str(row.get("Ifsc Code", "")).strip(),
+                    txn_date=str(row.get("Transaction Date", "")).strip(),
+                    txn_id=extracted_txn_id,
+                    amount=cleaned_amount,
+                    disputed_amount=clean_amount(row.get("Disputed Amount")),
+                    action_taken=str(row.get("Action Taken By bank", "")).strip(),
+                    atm_id=str(atm_info.iloc[0]["ATM ID"]) if not atm_info.empty else None,
+                    atm_withdraw_amount=clean_amount(atm_info.iloc[0]["Withdrawal Amount"]) if not atm_info.empty else None,
+                    atm_withdraw_date=str(atm_info.iloc[0]["Withdrawal Date & Time"]) if not atm_info.empty else None,
+                    atm_location=clean_location(
+                        get_first_value(
+                            atm_info,
+                            [
+                                "ATM Location",
+                                "Location",
+                                "ATM Location / City",
+                                "ATM Address",
+                                "ATM Location/City",
+                                "Place/Location of ATM",
+                                "Place / Location of ATM",
+                            ],
+                        )
+                    ),
+                    cheque_no=str(chq_info.iloc[0]["Cheque No"]) if not chq_info.empty else None,
+                    cheque_withdraw_amount=clean_amount(chq_info.iloc[0]["Withdrawal Amount"])
+                    if not chq_info.empty
+                    else None,
+                    cheque_withdraw_date=str(chq_info.iloc[0]["Withdrawal Date & Time"]) if not chq_info.empty else None,
+                    cheque_ifsc=str(chq_info.iloc[0]["Ifsc Code"]) if not chq_info.empty else None,
+                    put_on_hold_txn_id=str(hold_info.iloc[0]["Transaction Id / UTR Number"])
+                    if not hold_info.empty
+                    else None,
+                    put_on_hold_date=str(hold_info.iloc[0]["Put on hold Date"]) if not hold_info.empty else None,
+                    put_on_hold_amount=clean_amount(hold_info.iloc[0]["Put on hold Amount"])
+                    if not hold_info.empty
+                    else None,
+                    upload_id=uploaded_file.id,
+                )
 
-            # Restore saved refund details if any (Persistent POH Data)
-            if transaction.put_on_hold_txn_id:
-                poh_details = POHRefundDetails.query.filter_by(
-                    ack_no=transaction.ack_no, txn_id=transaction.put_on_hold_txn_id
-                ).first()
-                if poh_details:
-                    transaction.court_order_date = poh_details.court_order_date
-                    transaction.refund_status = poh_details.refund_status
-                    transaction.refund_amount = poh_details.refund_amount
+                # Restore saved refund details if any (Persistent POH Data)
+                if transaction.put_on_hold_txn_id:
+                    poh_details = POHRefundDetails.query.filter_by(
+                        ack_no=transaction.ack_no, txn_id=transaction.put_on_hold_txn_id
+                    ).first()
+                    if poh_details:
+                        transaction.court_order_date = poh_details.court_order_date
+                        transaction.refund_status = poh_details.refund_status
+                        transaction.refund_amount = poh_details.refund_amount
 
-            # Collect transaction in list instead of adding directly
-            transactions.append(transaction)
+                # Collect transaction in list instead of adding directly
+                transactions.append(transaction)
+            except Exception as _row_exc:
+                skipped_rows.append(idx)
+                logger.warning("Skipping upload row %s due to error: %s", idx, _row_exc)
+                continue
 
         # ✅ Sort transactions by layer in ascending order before inserting
         transactions.sort(key=lambda t: t.layer)
 
         # Add sorted transactions to the session
-        for t in transactions:
+        for _i, t in enumerate(transactions):
             db.session.add(t)
+            if (_i + 1) % 500 == 0:
+                db.session.flush()  # batch writes so large uploads do not time out
 
         db.session.commit()
+
+        # B1/B2: never let a partial/zero result be silent again.
+        _total_rows = len(tx_df)
+        _saved = len(transactions)
+        _skipped = len(skipped_rows)
+        if _skipped or _saved < _total_rows:
+            flash(f"Uploaded {_total_rows} rows — saved {_saved} transactions, skipped {_skipped} rows (see log).", "warning")
+        else:
+            flash(f"Uploaded {_total_rows} rows — saved {_saved} transactions.", "success")
 
         # ── Per-officer isolation: register a Complaint per ACK so the uploader
         #    (and any admin-assigned officer) can see/access this case. Without it,

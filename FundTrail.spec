@@ -18,14 +18,30 @@ datas = [
     ('main/letter_template_suspect_accounts.docx', '.'),
     ('main/letter_template_victim_account.docx', '.'),
 ]
-# Packages that ship data files PyInstaller misses unless asked.
-for _pkg in ('xhtml2pdf', 'reportlab', 'docx', 'svglib', 'qrcode'):
+# Packages that ship data files PyInstaller misses unless asked. openpyxl ships
+# theme/style XML that pd.read_excel() needs at runtime — without it the frozen
+# exe raises "Failed to process excel".
+for _pkg in ('xhtml2pdf', 'reportlab', 'docx', 'svglib', 'qrcode', 'openpyxl', 'et_xmlfile'):
     try:
         datas += collect_data_files(_pkg)
     except Exception:
         pass
 
-hiddenimports = []
+# openpyxl / pandas use lazy imports PyInstaller's static analysis misses; list
+# them explicitly so the Excel reader works inside the frozen exe.
+hiddenimports = [
+    'openpyxl',
+    'openpyxl.cell._writer',
+    'openpyxl.styles',
+    'openpyxl.utils',
+    'openpyxl.workbook',
+    'openpyxl.reader.excel',
+    'et_xmlfile',
+    'pandas._libs.parsers',
+    'pandas._libs.tslibs.np_datetime',
+    'pandas._libs.tslibs.nattype',
+    'pandas._libs.tslibs.timezones',
+]
 for _pkg in (
     'pandas', 'openpyxl', 'reportlab', 'xhtml2pdf', 'docx', 'svglib',
     'flask_sqlalchemy', 'flask_login', 'flask_wtf', 'flask_limiter',
