@@ -34,10 +34,10 @@ echo Building FundTrail.exe (this can take a few minutes)...
 python -m PyInstaller --noconfirm --clean FundTrail.spec
 
 echo.
-if exist "dist\FundTrail.exe" (
+if exist "dist\FundTrail\FundTrail.exe" (
     echo ============================================================
-    echo  Done.  Your app is:  dist\FundTrail.exe
-    echo  Double-click it to run.
+    echo  Done.  Your app is:  dist\FundTrail\FundTrail.exe
+    echo  Double-click it to run (keep it inside its folder).
     echo  Runtime data is stored in %%LOCALAPPDATA%%\FundTrail
     echo  and persists across rebuilds and installer upgrades.
     echo.
@@ -72,7 +72,7 @@ if exist "dist\FundTrail.exe" (
         echo Install Inno Setup manually, then compile FundTrail.iss.
     )
 ) else (
-    echo Build did NOT produce dist\FundTrail.exe -- scroll up for the error.
+    echo Build did NOT produce dist\FundTrail\FundTrail.exe -- scroll up for the error.
     echo Tip: if a module is missing, add it to hiddenimports in FundTrail.spec.
 )
 pause
