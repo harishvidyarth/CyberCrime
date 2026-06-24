@@ -5207,9 +5207,9 @@ def internal_error(error):
 @app.errorhandler(413)
 def request_too_large(error):
     # Triggered by MAX_CONTENT_LENGTH — keep it simple and clear.
-    response = make_response("The request was too large. Uploads are limited to 25 MB.", 413)
+    response = make_response("The request was too large. Uploads are limited to 50 MB.", 413)
     response.headers["Content-Type"] = "text/plain; charset=utf-8"
-    return response
+    return response, 413
 
 
 # ---------------------------------------------------------------------------

@@ -767,6 +767,7 @@
       </div>
     </div>
     <div class="user-info" style="display: flex; align-items: center; gap: 12px;">
+      <label for="headerSearch" style="display:none">Search account number</label>
       <input id="headerSearch" class="search-input" type="text" placeholder="Search account number" aria-label="Search account number" list="accountList">
       <datalist id="accountList"></datalist>
       <button id="legendToggle" class="icon-btn" title="Show Legend" aria-label="Show Legend"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2z"/><path d="M22 4h-6a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"/></svg></button>
@@ -813,10 +814,10 @@
         <h3>KYC Details</h3>
         <form id="kycForm">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-          <div class="detail-row"><label for="kycTxnId"><b>Txn ID:</b></label><input id="kycTxnId" readonly></div>
-          <div class="detail-row"><label for="kycName"><b>Holder Name:</b></label><input id="kycName" required disabled></div>
-          <div class="detail-row"><label for="kycAadhar"><b>Aadhaar No:</b></label><input id="kycAadhar" required disabled></div>
-          <div class="detail-row"><label for="kycMobile"><b>Mobile No:</b></label><input id="kycMobile" required disabled></div>
+          <div class="detail-row"><label for="kycTxnId"><b>Txn ID:</b></label><input type="text" id="kycTxnId" readonly></div>
+          <div class="detail-row"><label for="kycName"><b>Holder Name:</b></label><input type="text" id="kycName" required disabled></div>
+          <div class="detail-row"><label for="kycAadhar"><b>Aadhaar No:</b></label><input type="text" id="kycAadhar" required disabled></div>
+          <div class="detail-row"><label for="kycMobile"><b>Mobile No:</b></label><input type="text" id="kycMobile" required disabled></div>
           <div class="detail-row"><label for="kycAddress"><b>Address:</b></label><textarea id="kycAddress" required disabled></textarea>
           </div>
           <div style="margin-top: 12px;">
@@ -1050,28 +1051,47 @@
             </div>
           </div>
           <div style="display:flex; gap:12px; flex-wrap:wrap;">
-            <label style="flex:1; min-width:220px;">Officer Name<br><input id="officer_name" name="officer_name"
+            <div style="flex:1; min-width:220px;">
+              <label for="officer_name">Officer Name</label><br>
+              <input type="text" id="officer_name" name="officer_name"
                 value="{{ current_user.name if current_user.is_authenticated and current_user.name else '' }}" required
-                style="width:100%; padding:8px; margin-top:6px;"></label>
-            <label style="flex:1; min-width:220px;">Officer Designation<br><input id="officer_designation"
-                name="officer_designation"
+                style="width:100%; padding:8px; margin-top:6px;">
+            </div>
+            <div style="flex:1; min-width:220px;">
+              <label for="officer_designation">Officer Designation</label><br>
+              <input type="text" id="officer_designation" name="officer_designation"
                 value="{{ current_user.rank if current_user.is_authenticated and current_user.rank else '' }}" required
-                style="width:100%; padding:8px; margin-top:6px;"></label>
-            <label style="flex:1; min-width:220px;">Officer Phone<br><input id="officer_phone" name="officer_phone"
-                required style="width:100%; padding:8px; margin-top:6px;"></label>
-            <label style="flex:1; min-width:220px;">Officer Email<br><input id="officer_email" name="officer_email"
+                style="width:100%; padding:8px; margin-top:6px;">
+            </div>
+            <div style="flex:1; min-width:220px;">
+              <label for="officer_phone">Officer Phone</label><br>
+              <input type="text" id="officer_phone" name="officer_phone"
+                required style="width:100%; padding:8px; margin-top:6px;">
+            </div>
+            <div style="flex:1; min-width:220px;">
+              <label for="officer_email">Officer Email</label><br>
+              <input type="text" id="officer_email" name="officer_email"
                 value="{{ current_user.email if current_user.is_authenticated and current_user.email else '' }}"
-                required style="width:100%; padding:8px; margin-top:6px;"></label>
-            <label style="flex:1; min-width:220px;">Letter Date<br><input type="date" id="letter_date"
-                name="letter_date" required style="width:100%; padding:8px; margin-top:6px;"></label>
-            <label style="flex:1; min-width:220px;">Crime No with Section<br><input id="crime_no" name="crime_no"
-                required style="width:100%; padding:8px; margin-top:6px;"></label>
-            <label style="flex:1 1 100%; min-width:300px;">NCRP Acknowledgement No<br><input id="ncrp_ack_no"
-                name="ncrp_ack_no" value="{{ ack_no }}" required
-                style="width:100%; padding:8px; margin-top:6px;"></label>
-            <label style="flex:1 1 100%; min-width:300px;">Disputed Amount (Optional Override)<br><input id="disputed_amount" 
-                name="disputed_amount" type="number" step="0.01" placeholder="Leave blank to use calculated amount"
-                style="width:100%; padding:8px; margin-top:6px;"></label>
+                required style="width:100%; padding:8px; margin-top:6px;">
+            </div>
+            <div style="flex:1; min-width:220px;">
+              <label for="letter_date">Letter Date</label><br>
+              <input type="date" id="letter_date" name="letter_date" required style="width:100%; padding:8px; margin-top:6px;">
+            </div>
+            <div style="flex:1; min-width:220px;">
+              <label for="crime_no">Crime No with Section</label><br>
+              <input type="text" id="crime_no" name="crime_no" required style="width:100%; padding:8px; margin-top:6px;">
+            </div>
+            <div style="flex:1 1 100%; min-width:300px;">
+              <label for="ncrp_ack_no">NCRP Acknowledgement No</label><br>
+              <input type="text" id="ncrp_ack_no" name="ncrp_ack_no" value="{{ ack_no }}" required
+                style="width:100%; padding:8px; margin-top:6px;">
+            </div>
+            <div style="flex:1 1 100%; min-width:300px;">
+              <label for="disputed_amount">Disputed Amount (Optional Override)</label><br>
+              <input id="disputed_amount" name="disputed_amount" type="number" step="0.01" placeholder="Leave blank to use calculated amount"
+                style="width:100%; padding:8px; margin-top:6px;">
+            </div>
           </div>
           <div style="margin-top:12px; display:flex; gap:8px;">
             <button type="button" id="generateLetterBtn"
