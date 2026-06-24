@@ -52,12 +52,16 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+# One-DIR build (not one-file): a one-file exe re-extracts the whole ~80 MB
+# bundle to a temp dir on EVERY launch, which is the slow startup. One-dir keeps
+# the binaries unpacked beside the launcher in dist/FundTrail/, so startup is much
+# faster. Installers bundle the whole dist/FundTrail/ folder (see FundTrail.iss /
+# build_dmg.sh).
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='FundTrail',
     debug=False,
     bootloader_ignore_signals=False,
@@ -68,4 +72,14 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='FundTrail',
 )

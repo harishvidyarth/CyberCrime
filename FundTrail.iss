@@ -58,10 +58,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-; PyInstaller builds FundTrail.exe in one-file mode, so a single EXE is all that
-; ships. If you switch the spec to one-dir, change this to copy the whole folder:
-;   Source: "dist\FundTrail\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
-Source: "dist\FundTrail.exe"; DestDir: "{app}"; Flags: ignoreversion
+; PyInstaller builds in one-DIR mode (faster startup — no per-launch extraction),
+; so the whole dist\FundTrail\ folder ships. The launcher exe lands at
+; {app}\FundTrail.exe (folder root), so the shortcuts below still point there.
+Source: "dist\FundTrail\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
 [Icons]
 ; Start Menu entry.

@@ -21,7 +21,8 @@ cd "$(dirname "$0")"
 APP_NAME="FundTrail"
 BUNDLE_ID="in.gov.tn.cybercrime.fundtrail"
 APP_VERSION="3.0"
-BIN="dist/${APP_NAME}"
+BINDIR="dist/${APP_NAME}"          # one-dir PyInstaller output folder
+BIN="$BINDIR/${APP_NAME}"          # the launcher executable inside it
 APP="dist/${APP_NAME}.app"
 DMG="dist/${APP_NAME}.dmg"
 ICON_SRC="main/static/logo.png"
@@ -51,7 +52,7 @@ fi
 echo "[2/5] Assembling ${APP}..."
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/${APP_NAME}"
+cp -R "$BINDIR/." "$APP/Contents/MacOS/"
 chmod +x "$APP/Contents/MacOS/${APP_NAME}"
 [[ -f "dist/FundTrail.icns" ]] && cp "dist/FundTrail.icns" "$APP/Contents/Resources/FundTrail.icns"
 
