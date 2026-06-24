@@ -57,7 +57,7 @@ if exist "dist\FundTrail.exe" (
     )
 
     if defined ISCC (
-        "!ISCC!" installer.iss
+        "!ISCC!" FundTrail.iss
         if exist "dist\FundTrail_Setup.exe" (
             echo.
             echo ============================================================
@@ -69,7 +69,7 @@ if exist "dist\FundTrail.exe" (
         )
     ) else (
         echo Could not find or auto-install Inno Setup.
-        echo Install Inno Setup manually, then compile installer.iss.
+        echo Install Inno Setup manually, then compile FundTrail.iss.
     )
 ) else (
     echo Build did NOT produce dist\FundTrail.exe -- scroll up for the error.
