@@ -86,7 +86,7 @@ do_start() {
     local vpy="$VENV_DIR/bin/python"
 
     # Step 3 — install requirements once (or when flask is missing)
-    if ! "$vpy" -c "import flask, pandas, dotenv" &>/dev/null; then
+    if ! "$vpy" -c "import flask, pandas, dotenv, openpyxl, xlrd" &>/dev/null; then
         echo "Installing dependencies (first run, this can take a few minutes)..."
         "$vpy" -m pip install --upgrade pip >/dev/null
         "$vpy" -m pip install -r "$MAIN_DIR/requirements.txt"
