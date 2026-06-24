@@ -15,7 +15,9 @@
           document.addEventListener('DOMContentLoaded', function () {
             document.body.classList.add('nav-collapsed');
           });
-      } catch (e) {}
+      } catch (e) {
+        console.warn("Theme load failed:", e);
+      }
     })();
   </script>
 </head>

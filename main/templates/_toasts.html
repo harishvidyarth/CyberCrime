@@ -42,7 +42,7 @@
 </style>
 <div id="toastStack">
   {% for category, message in messages %}
-  <div class="toast {{ category }}" role="status">
+  <output class="toast {{ category }}">
     <svg class="t-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       {% if category in ['error', 'danger'] %}
@@ -55,7 +55,7 @@
     </svg>
     <div class="t-msg">{{ message }}</div>
     <button type="button" class="t-close" aria-label="Dismiss notification">&times;</button>
-  </div>
+  </output>
   {% endfor %}
 </div>
 <script nonce="{{ csp_nonce }}">

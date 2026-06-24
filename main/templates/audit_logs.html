@@ -73,7 +73,7 @@
 <nav class="pagination" aria-label="Audit log pages">
   {% set args = {'user': f_user, 'action': f_action, 'ack': f_ack, 'from': f_from, 'to': f_to} %}
   {% if page > 1 %}
-  <a class="page-pill" href="{{ url_for('audit_logs', page=page-1, **args) }}" aria-label="Previous page">‹ Prev</a>
+  <a class="page-pill" href="{{ url_for('audit_logs', page=page-1, **args) }}" aria-label="Previous page"><span aria-hidden="true">‹</span> Previous</a>
   {% endif %}
   {% for p in range(1, pages + 1) %}
     {% if p == page or p <= 2 or p > pages - 2 or (p >= page - 1 and p <= page + 1) %}
@@ -84,7 +84,7 @@
     {% endif %}
   {% endfor %}
   {% if page < pages %}
-  <a class="page-pill" href="{{ url_for('audit_logs', page=page+1, **args) }}" aria-label="Next page">Next ›</a>
+  <a class="page-pill" href="{{ url_for('audit_logs', page=page+1, **args) }}" aria-label="Next page">Next <span aria-hidden="true">›</span></a>
   {% endif %}
 </nav>
 {% else %}

@@ -39,7 +39,8 @@
           <form method="POST" action="{{ url_for('update_case_status') }}" class="flex items-center gap-2">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="ack_no" value="{{ c.ack_no }}">
-            <select class="form-select" name="status" style="width:auto;height:32px" aria-label="Case status">
+            <label class="sr-only" for="status-{{ c.ack_no }}">Case status</label>
+            <select class="form-select" id="status-{{ c.ack_no }}" name="status" style="width:auto;height:32px">
               {% for s in statuses %}
               <option value="{{ s }}" {% if s == c.status %}selected{% endif %}>{{ s }}</option>
               {% endfor %}

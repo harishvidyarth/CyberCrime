@@ -151,8 +151,18 @@
 (function () {
   function fmtINShort(n) {
     n = Number(n) || 0;
-    if (n >= 1e7) return '₹' + (n / 1e7).toFixed(2).replace(/\.?0+$/, '') + ' Cr';
-    if (n >= 1e5) return '₹' + (n / 1e5).toFixed(2).replace(/\.?0+$/, '') + ' L';
+    if (n >= 1e7) {
+      var s = (n / 1e7).toFixed(2);
+      if (s.endsWith('.00')) s = s.slice(0, -3);
+      else if (s.endsWith('0')) s = s.slice(0, -1);
+      return '₹' + s + ' Cr';
+    }
+    if (n >= 1e5) {
+      var s = (n / 1e5).toFixed(2);
+      if (s.endsWith('.00')) s = s.slice(0, -3);
+      else if (s.endsWith('0')) s = s.slice(0, -1);
+      return '₹' + s + ' L';
+    }
     return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
   }
   document.querySelectorAll('.stat-value[data-amount]').forEach(function (el) {

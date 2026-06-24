@@ -151,6 +151,8 @@ MIME_PDF = "application/pdf"
 BANK_UNKNOWN = "Unknown Bank"
 LABEL_SUSPECT_ACCOUNT_NUMBER = "Suspect Account Number"
 MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+COL_TRANSACTION_ID_UTR_NUMBER = "Transaction Id / UTR Number"
+
 
 # "Transaction ID / UTR Number2" column-name handling (python:S1192).
 # Detection stage — exact column-name spellings find_utr2_column() matches against.
@@ -2354,10 +2356,10 @@ def upload_excel():
         chq_by_acc = _index_by_account(chq_df)
 
         hold_by_key = {}
-        if not hold_df.empty and _ACC_COL in hold_df.columns and "Transaction Id / UTR Number" in hold_df.columns:
+        if not hold_df.empty and _ACC_COL in hold_df.columns and COL_TRANSACTION_ID_UTR_NUMBER in hold_df.columns:
             _h = hold_df.copy()
             _h["_acc_key"] = _h[_ACC_COL].astype(str).str.strip()
-            _h["_txn_key"] = _h["Transaction Id / UTR Number"].astype(str).str.strip()
+            _h["_txn_key"] = _h[COL_TRANSACTION_ID_UTR_NUMBER].astype(str).str.strip()
             hold_by_key = dict(_h.groupby(["_acc_key", "_txn_key"]))
 
         # Sort tx_df by Layer first so transactions are processed and added in order of layer
@@ -2451,7 +2453,7 @@ def upload_excel():
                     else None,
                     cheque_withdraw_date=str(chq_info.iloc[0]["Withdrawal Date & Time"]) if not chq_info.empty else None,
                     cheque_ifsc=str(chq_info.iloc[0]["Ifsc Code"]) if not chq_info.empty else None,
-                    put_on_hold_txn_id=str(hold_info.iloc[0]["Transaction Id / UTR Number"])
+                    put_on_hold_txn_id=str(hold_info.iloc[0][COL_TRANSACTION_ID_UTR_NUMBER])
                     if not hold_info.empty
                     else None,
                     put_on_hold_date=str(hold_info.iloc[0]["Put on hold Date"]) if not hold_info.empty else None,
@@ -4210,7 +4212,7 @@ def generate_letter_docx():
                         headers_text = [c.text.strip() for c in header_cells]
                         if (
                             LABEL_SUSPECT_ACCOUNT_NUMBER in headers_text
-                            or "Transaction Id / UTR Number" in headers_text
+                            or COL_TRANSACTION_ID_UTR_NUMBER in headers_text
                             or "Victim Account Number" in headers_text
                         ):
                             target_table = table
@@ -4251,7 +4253,7 @@ def generate_letter_docx():
                             LABEL_SUSPECT_ACCOUNT_NUMBER,
                             "Transaction Date",
                             "Transaction Amount",
-                            "Transaction Id / UTR Number",
+                            COL_TRANSACTION_ID_UTR_NUMBER,
                             "IFSC Code",
                         ]
                         for i, h in enumerate(headers):

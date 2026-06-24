@@ -186,7 +186,11 @@
         });
       } else {
         box.select();
-        try { document.execCommand('copy'); } catch (e) {}
+        try {
+          document.execCommand('copy');
+        } catch (e) {
+          console.warn('Copy failed:', e);
+        }
         markCopied();
       }
     });

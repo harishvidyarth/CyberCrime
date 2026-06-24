@@ -43,7 +43,8 @@
           <form method="POST" action="{{ url_for('update_case_status') }}" class="flex items-center gap-2">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="ack_no" value="{{ complaint.ack_nos[0] }}">
-            <select class="form-select" name="status" style="width:auto;height:32px" aria-label="Case status">
+            <label class="sr-only" for="status-{{ complaint.ack_nos[0] }}">Case status</label>
+            <select class="form-select" id="status-{{ complaint.ack_nos[0] }}" name="status" style="width:auto;height:32px">
               {% for s in statuses %}
               <option value="{{ s }}" {% if s == complaint.case_status %}selected{% endif %}>{{ s }}</option>
               {% endfor %}
@@ -60,7 +61,8 @@
           <form method="POST" action="{{ url_for('assign_case') }}" class="flex items-center gap-2 wrap">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="ack_no" value="{{ complaint.ack_nos[0] }}">
-            <select class="form-select" name="officer_id" style="width:auto;height:32px" aria-label="Assign officer">
+            <label class="sr-only" for="officer-{{ complaint.ack_nos[0] }}">Assign officer</label>
+            <select class="form-select" id="officer-{{ complaint.ack_nos[0] }}" name="officer_id" style="width:auto;height:32px">
               <option value="0" {% if not complaint.assigned_to_id %}selected{% endif %}>— Unassigned —</option>
               {% for o in officers %}
               <option value="{{ o.id }}" {% if o.id == complaint.assigned_to_id %}selected{% endif %}>{{ o.username }}</option>

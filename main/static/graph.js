@@ -202,12 +202,12 @@ function normalizeFilterValue(column, rawValue) {
 
   if (column === 'amount' || column === 'refund_amount') {
     const numeric = Number(value.replace(/[₹,\s]/g, ''));
-    return Number.isFinite(numeric) ? numeric : 'N/A';
+    return Number.isFinite(numeric) ? String(numeric) : 'N/A';
   }
 
   if (column === 'layer') {
     const numeric = Number(value.replace(/[^\d.-]/g, ''));
-    return Number.isFinite(numeric) ? numeric : 'N/A';
+    return Number.isFinite(numeric) ? String(numeric) : 'N/A';
   }
 
   return value;
@@ -742,14 +742,13 @@ globalThis.addEventListener('resize', () => {
 });
 resizeTree();
 
-fetch(`/graph_data/${ackNo}`)
-  .then(res => {
+async function loadGraphData() {
+  try {
+    const res = await fetch(`/graph_data/${ackNo}`);
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     }
-    return res.json();
-  })
-  .then(data => {
+    const data = await res.json();
     if (!data || data.error) {
       const chartEl = document.getElementById('chart');
       if (chartEl) {
@@ -841,12 +840,10 @@ fetch(`/graph_data/${ackNo}`)
     // Flag mule/intermediary accounts that re-appear in the trail (computed once;
     // stable across expand/collapse). The fill logic colours these nodes purple.
     repeatedAccounts = computeRepeatedAccounts(root);
-    populateBranchNames(root).then(() => {
-      drawTree(root);
-      setTimeout(() => drawTree(root), 80);
-    });
-  })
-  .catch(error => {
+    await populateBranchNames(root);
+    drawTree(root);
+    setTimeout(() => drawTree(root), 80);
+  } catch (error) {
     console.error('Error fetching graph data:', error);
     const chartEl = document.getElementById('chart');
     if (chartEl) {
@@ -866,7 +863,11 @@ fetch(`/graph_data/${ackNo}`)
       chartEl.textContent = '';
       chartEl.appendChild(msgDiv);
     }
-  });
+  }
+}
+
+loadGraphData();
+
 
 function bfsAssignLayers(root) {
   if (!root?.data) return;

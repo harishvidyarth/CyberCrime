@@ -1212,9 +1212,11 @@
             s = s.replace(/\.0$/, '');
             td.textContent = s;
           } else if (key === 'atm_id') {
-            td.textContent = String(v).replace(/^\s*ATM\s*ID\s*[:-]\s*/i, '');
+            const sVal = String(v).trim();
+            td.textContent = sVal.replace(/^ATM\s*ID\s*[:-]?\s*/i, '');
           } else if (key === 'atm_location') {
-            td.textContent = String(v).replace(/^\s*Place\s*(?:\/Location)?\s*of\s*ATM\s*[:-]\s*/i, '');
+            const sVal = String(v).trim();
+            td.textContent = sVal.replace(/^Place(?:\/Location)?\s+of\s+ATM\s*[:-]?\s*/i, '');
           } else {
             td.textContent = String(v);
           }
@@ -1449,19 +1451,17 @@
         const svg = d3.select("#treeSvg");
         const nodes = svg.selectAll(".node");
         let found = null;
-        let foundEl = null;
         nodes.each(function (d) {
           const name = String(d?.data?.name || "").toLowerCase();
           if (!found && name.includes(q)) {
             found = d;
-            foundEl = this;
           }
         });
         nodes.select("rect").classed("search-highlight", false)
           .attr("stroke", function (d) { return d?.data?.hold_info ? "#dc2626" : "#1e293b"; })
           .attr("stroke-width", function (d) { return d?.data?.hold_info ? 3 : 1.5; });
-        if (!found || !foundEl) return;
-        d3.select(foundEl).select("rect").classed("search-highlight", true);
+        if (!found) return;
+        nodes.filter(d => d === found).select("rect").classed("search-highlight", true);
         const svgEl = d3.select("#treeSvg");
         const gSel = svgEl.select("g");
         if (!gSel.empty()) {
@@ -1596,7 +1596,7 @@
     if (holdLetterBtn) {
       holdLetterBtn.onclick = () => {
         showIconName("Letter Generation");
-        // TODO: Add letter generation logic if required
+        // Letter generation is handled via openLetterModal triggers.
       };
     }
     // KYC button removed; no-op
@@ -1765,7 +1765,7 @@
         return;
       }
 
-      const btn = this;
+      const btn = e.currentTarget;
       const originalText = btn.textContent;
       btn.textContent = 'Generating...';
       btn.disabled = true;

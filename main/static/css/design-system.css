@@ -151,7 +151,7 @@ a:hover { text-decoration: underline; }
   border-left: 3px solid transparent;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
-.nav-item:hover { background: rgba(255,255,255,.07); color: #fff; text-decoration: none; }
+.nav-item:hover { background: #1e2d4a; color: #fff; text-decoration: none; }
 .nav-item.active {
   background: var(--color-primary-light); color: var(--color-primary);
   border-left-color: var(--color-primary); font-weight: var(--font-semibold);
@@ -462,6 +462,16 @@ dialog.modal-backdrop {
   color: var(--color-text-secondary); cursor: pointer;
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
+button.dropzone {
+  width: 100%;
+  background: var(--color-surface);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  margin: 0;
+  display: block;
+}
 .dropzone:hover, .dropzone.dragover { border-color: var(--color-primary); background: var(--color-primary-light); }
 .dropzone svg { width: 36px; height: 36px; color: var(--color-text-muted); margin-bottom: var(--space-2); }
 
@@ -558,3 +568,17 @@ dialog.modal-backdrop {
   body { background: #fff; color: #000; }
   .ds-card, .table-wrap { border: none; box-shadow: none; }
 }
+
+/* Screen reader only utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+

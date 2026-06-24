@@ -48,8 +48,8 @@
   <section class="ds-card" aria-labelledby="weeklyTitle">
     <div class="card-header"><h2 class="card-title" id="weeklyTitle">Uploads per Week (last 12)</h2></div>
     {% set maxc = weeks|map(attribute='count')|max or 1 %}
-    <div class="flex items-center gap-2" style="align-items:flex-end;height:160px" role="img"
-         aria-label="Bar chart of uploads per week: {% for w in weeks %}{{ w.label }}: {{ w.count }}{{ ', ' if not loop.last }}{% endfor %}">
+    <figure class="flex items-center gap-2" style="align-items:flex-end;height:160px;margin:0">
+      <figcaption class="sr-only">Bar chart of uploads per week: {% for w in weeks %}{{ w.label }}: {{ w.count }}{{ ', ' if not loop.last }}{% endfor %}</figcaption>
       {% for w in weeks %}
       <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px" title="{{ w.label }}: {{ w.count }}">
         <span class="text-xs text-secondary">{{ w.count or '' }}</span>
@@ -57,7 +57,7 @@
         <span class="text-xs text-muted" style="white-space:nowrap">{{ w.label }}</span>
       </div>
       {% endfor %}
-    </div>
+    </figure>
   </section>
 
   <!-- Case status mix -->
