@@ -152,6 +152,38 @@ BANK_UNKNOWN = "Unknown Bank"
 LABEL_SUSPECT_ACCOUNT_NUMBER = "Suspect Account Number"
 MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
+# "Transaction ID / UTR Number2" column-name handling (python:S1192).
+# Detection stage — exact column-name spellings find_utr2_column() matches against.
+UTR_COLUMN_VARIANTS = [
+    "Transaction ID / UTR Number2",
+    "Transaction Id / UTR Number2",
+    "Transaction ID/ UTR Number2",
+    "Transaction ID/UTR Number2",
+    "Transaction ID / UTR Number 2",
+    "Transaction Id / UTR Number 2",
+    "Txn ID / UTR Number2",
+    "Txn Id / UTR Number2",
+    "Txn ID / UTR Number 2",
+    "Txn Id / UTR Number 2",
+    "UTR Number2",
+    "Txn ID/UTR Number2",
+    "Transaction ID/UTR Number 2",
+    "Transaction ID / UTR",
+    "Transaction ID/UTR",
+    "Txn ID/UTR",
+    "Transaction ID / UTR Number",
+]
+# Extraction stage — the detection list PLUS three broader UTR-only fallbacks that
+# are deliberately used only when pulling a value from a row, never for column
+# detection. Built by extending UTR_COLUMN_VARIANTS so the subset relationship
+# stays visible in code (investigation: A/D = B/C + these 3).
+UTR_EXTRACTION_FALLBACKS = ["Txn ID / UTR Number", "UTR Number", "UTR"]
+UTR_TXN_ID_VARIANTS = UTR_COLUMN_VARIANTS + UTR_EXTRACTION_FALLBACKS
+# Column-name normalization regex + fuzzy "number 2" substring, shared by every
+# norm()/has_number2 site in the UTR matching code.
+COLUMN_NAME_NORM_RE = r"[\s/_\-\.]+"
+UTR_FUZZY_NUMBER2 = "number 2"
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -2105,7 +2137,7 @@ def upload_excel():
 
         def norm(s):
             s = str(s).replace("\u00a0", " ")
-            s = re.sub(r"[\s/_\-\.]+", " ", s).lower().strip()
+            s = re.sub(COLUMN_NAME_NORM_RE, " ", s).lower().strip()
             return s
 
         def get_txn_id_from_row(row, utr2_col=None):
@@ -2118,28 +2150,7 @@ def upload_excel():
                     return s
 
             # Try common column name variants (exact matches) - EXPANDED LIST
-            variants = [
-                "Transaction ID / UTR Number2",
-                "Transaction Id / UTR Number2",
-                "Transaction ID/ UTR Number2",
-                "Transaction ID/UTR Number2",
-                "Transaction ID / UTR Number 2",
-                "Transaction Id / UTR Number 2",
-                "Txn ID / UTR Number2",
-                "Txn Id / UTR Number2",
-                "UTR Number2",
-                "Txn ID / UTR Number 2",
-                "Txn Id / UTR Number 2",
-                "Transaction ID/UTR Number 2",
-                "Txn ID/UTR Number2",
-                "Transaction ID / UTR",
-                "Transaction ID/UTR",
-                "Txn ID/UTR",
-                "Transaction ID / UTR Number",
-                "Txn ID / UTR Number",
-                "UTR Number",
-                "UTR",
-            ]
+            variants = UTR_TXN_ID_VARIANTS
             for col in variants:
                 if col in row.index:
                     val = row.get(col, "")
@@ -2150,14 +2161,14 @@ def upload_excel():
             # Fuzzy matching: Look for columns containing UTR and Number 2 in normalized form
             def norm(s):
                 s = str(s).replace("\u00a0", " ")
-                s = re.sub(r"[\s/_\-\.]+", " ", s).lower().strip()
+                s = re.sub(COLUMN_NAME_NORM_RE, " ", s).lower().strip()
                 return s
 
             for col in row.index:
                 nc = norm(col)
                 # Match columns that have UTR and (NUMBER 2 or ends with 2) and (TRANSACTION or TXN or ID)
                 has_utr = "utr" in nc
-                has_number2 = ("number 2" in nc) or ("number2" in nc) or nc.endswith(" 2")
+                has_number2 = (UTR_FUZZY_NUMBER2 in nc) or ("number2" in nc) or nc.endswith(" 2")
                 has_txn_id = any(x in nc for x in ["transaction", "txn", "id"])
 
                 if has_utr and has_number2 and has_txn_id:
@@ -2180,25 +2191,7 @@ def upload_excel():
         def find_utr2_column(columns):
             """Find the 'Transaction ID / UTR Number2' column among various possible names."""
             # First, try exact matches
-            exact_matches = [
-                "Transaction ID / UTR Number2",
-                "Transaction Id / UTR Number2",
-                "Transaction ID/ UTR Number2",
-                "Transaction ID/UTR Number2",
-                "Transaction ID / UTR Number 2",
-                "Transaction Id / UTR Number 2",
-                "Txn ID / UTR Number2",
-                "Txn Id / UTR Number2",
-                "Txn ID / UTR Number 2",
-                "Txn Id / UTR Number 2",
-                "UTR Number2",
-                "Txn ID/UTR Number2",
-                "Transaction ID/UTR Number 2",
-                "Transaction ID / UTR",
-                "Transaction ID/UTR",
-                "Txn ID/UTR",
-                "Transaction ID / UTR Number",
-            ]
+            exact_matches = UTR_COLUMN_VARIANTS
             for col in columns:
                 if col in exact_matches:
                     logger.debug(f"[FIND_UTR2] Exact match found: {col}")
@@ -2207,7 +2200,7 @@ def upload_excel():
             # Then try fuzzy matching with normalized names
             def norm(s):
                 s = str(s).replace("\u00a0", " ")
-                s = re.sub(r"[\s/_\-\.]+", " ", s).lower().strip()
+                s = re.sub(COLUMN_NAME_NORM_RE, " ", s).lower().strip()
                 return s
 
             known_normalized = [
@@ -2233,7 +2226,7 @@ def upload_excel():
             # Final fallback: Look for columns with all required components
             for col, nc in normalized_map.items():
                 has_utr = "utr" in nc
-                has_number2 = ("number 2" in nc) or ("number2" in nc) or nc.endswith(" 2")
+                has_number2 = (UTR_FUZZY_NUMBER2 in nc) or ("number2" in nc) or nc.endswith(" 2")
                 has_txn_id = any(x in nc for x in ["transaction", "txn", "id"])
 
                 if has_utr and has_number2 and has_txn_id:
@@ -2668,7 +2661,7 @@ def graph_data(ack_no):
 
         def norm(s):
             s = str(s).replace("\u00a0", " ")
-            s = re.sub(r"[\s/_\-\.]+", " ", s).lower().strip()
+            s = re.sub(COLUMN_NAME_NORM_RE, " ", s).lower().strip()
             return s
 
         def safe_txn_id(val):
@@ -2689,25 +2682,7 @@ def graph_data(ack_no):
         def find_utr2_column(columns):
             """Find the 'Transaction ID / UTR Number2' column among various possible names."""
             # First, try exact matches
-            exact_matches = [
-                "Transaction ID / UTR Number2",
-                "Transaction Id / UTR Number2",
-                "Transaction ID/ UTR Number2",
-                "Transaction ID/UTR Number2",
-                "Transaction ID / UTR Number 2",
-                "Transaction Id / UTR Number 2",
-                "Txn ID / UTR Number2",
-                "Txn Id / UTR Number2",
-                "Txn ID / UTR Number 2",
-                "Txn Id / UTR Number 2",
-                "UTR Number2",
-                "Txn ID/UTR Number2",
-                "Transaction ID/UTR Number 2",
-                "Transaction ID / UTR",
-                "Transaction ID/UTR",
-                "Txn ID/UTR",
-                "Transaction ID / UTR Number",
-            ]
+            exact_matches = UTR_COLUMN_VARIANTS
             for col in columns:
                 if col in exact_matches:
                     return col
@@ -2735,7 +2710,7 @@ def graph_data(ack_no):
             # Final fallback: Look for columns with all required components
             for col, nc in normalized_map.items():
                 has_utr = "utr" in nc
-                has_number2 = ("number 2" in nc) or ("number2" in nc) or nc.endswith(" 2")
+                has_number2 = (UTR_FUZZY_NUMBER2 in nc) or ("number2" in nc) or nc.endswith(" 2")
                 has_txn_id = any(x in nc for x in ["transaction", "txn", "id"])
 
                 if has_utr and has_number2 and has_txn_id:
@@ -2757,28 +2732,7 @@ def graph_data(ack_no):
                     return s
 
             # Try common column name variants (exact matches) - EXPANDED
-            variants = [
-                "Transaction ID / UTR Number2",
-                "Transaction Id / UTR Number2",
-                "Transaction ID/ UTR Number2",
-                "Transaction ID/UTR Number2",
-                "Transaction ID / UTR Number 2",
-                "Transaction Id / UTR Number 2",
-                "Txn ID / UTR Number2",
-                "Txn Id / UTR Number2",
-                "Txn ID / UTR Number 2",
-                "Txn Id / UTR Number 2",
-                "UTR Number2",
-                "Transaction ID/UTR Number 2",
-                "Txn ID/UTR Number2",
-                "Transaction ID / UTR",
-                "Transaction ID/UTR",
-                "Txn ID/UTR",
-                "Transaction ID / UTR Number",
-                "Txn ID / UTR Number",
-                "UTR Number",
-                "UTR",
-            ]
+            variants = UTR_TXN_ID_VARIANTS
             for col in variants:
                 if col in row.index:
                     s = safe_txn_id(row.get(col, ""))
@@ -2789,7 +2743,7 @@ def graph_data(ack_no):
             for col in row.index:
                 nc = norm(col)
                 has_utr = "utr" in nc
-                has_number2 = ("number 2" in nc) or ("number2" in nc) or nc.endswith(" 2")
+                has_number2 = (UTR_FUZZY_NUMBER2 in nc) or ("number2" in nc) or nc.endswith(" 2")
                 has_txn_id = any(x in nc for x in ["transaction", "txn", "id"])
 
                 if has_utr and has_number2 and has_txn_id:
