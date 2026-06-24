@@ -297,6 +297,68 @@ def _env_float(name, default):
         return default
 
 
+# ---------------------------------------------------------------------------
+# Sentry PII scrubbing (financial-crime case data must not leave the process).
+# Field/param/variable-name substrings whose VALUES may carry case PII. Derived
+# from the actual column names in models.py (Transaction / KYCDetails / POH):
+# from_account, to_account, account_number, ack_no, ifsc_code, cheque_ifsc,
+# txn_id, put_on_hold_txn_id, kyc_name/aadhar/mobile/address, aadhar, mobile,
+# address, name. Matched case-insensitively as substrings, so request params,
+# headers, "extra", contexts, breadcrumbs and exception-frame local variables
+# are all covered.
+# ---------------------------------------------------------------------------
+SENTRY_SENSITIVE_KEY_PARTS = (
+    "account", "ack_no", "aadhar", "aadhaar", "kyc", "mobile",
+    "phone", "ifsc", "txn_id", "pan_number", "pancard", "address",
+)
+# Name-like keys deliberately KEPT (not scrubbed) for debugging value — they are
+# not case PII even though they contain "name".
+SENTRY_KEEP_KEYS = frozenset({
+    "username", "filename", "file_name", "bank_name", "hostname",
+    "classname", "funcname", "modulename", "pathname", "step_label",
+})
+_SENTRY_FILTERED = "[Filtered]"
+
+
+def _sentry_key_is_sensitive(key):
+    k = str(key).lower()
+    if k in SENTRY_KEEP_KEYS:
+        return False
+    if k == "name":  # KYCDetails.name / kyc_name — suspect/victim names
+        return True
+    return any(part in k for part in SENTRY_SENSITIVE_KEY_PARTS)
+
+
+def _sentry_scrub(obj, _depth=0):
+    """Recursively replace values under sensitive keys with [Filtered]. Walks
+    dicts/lists in place so exception-frame vars, request data, extra, contexts
+    and breadcrumbs are all covered. Depth-bounded to avoid pathological cycles."""
+    if _depth > 12:
+        return obj
+    if isinstance(obj, dict):
+        for key, value in list(obj.items()):
+            if _sentry_key_is_sensitive(key):
+                obj[key] = _SENTRY_FILTERED
+            else:
+                obj[key] = _sentry_scrub(value, _depth + 1)
+    elif isinstance(obj, list):
+        return [_sentry_scrub(item, _depth + 1) for item in obj]
+    return obj
+
+
+def _sentry_before_send(event, _hint):
+    """Strip case PII before any event leaves the process. Returning the event
+    (not None) keeps error reporting working; only sensitive fields are redacted."""
+    # URL query strings can carry ack_no / account identifiers — drop them whole.
+    request = event.get("request")
+    if isinstance(request, dict):
+        request.pop("query_string", None)
+        url = request.get("url")
+        if isinstance(url, str) and "?" in url:
+            request["url"] = url.split("?", 1)[0]
+    return _sentry_scrub(event)
+
+
 try:
     import sentry_sdk
     from sentry_sdk.integrations.flask import FlaskIntegration
@@ -308,10 +370,12 @@ try:
             environment=os.environ.get("SENTRY_ENVIRONMENT", "development"),
             release=os.environ.get("SENTRY_RELEASE", globals().get("APP_VERSION")),
             send_default_pii=_env_bool("SENTRY_SEND_DEFAULT_PII", False),
-            enable_logs=_env_bool("SENTRY_ENABLE_LOGS", True),
+            # Off by default: log lines can contain case data; opt in explicitly.
+            enable_logs=_env_bool("SENTRY_ENABLE_LOGS", False),
             traces_sample_rate=_env_float("SENTRY_TRACES_SAMPLE_RATE", 0.1),
             profile_session_sample_rate=_env_float("SENTRY_PROFILE_SESSION_SAMPLE_RATE", 0.0),
             profile_lifecycle=os.environ.get("SENTRY_PROFILE_LIFECYCLE", "trace"),
+            before_send=_sentry_before_send,
         )
 except ImportError:  # pragma: no cover
     pass
