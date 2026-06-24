@@ -1,202 +1,137 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
-# FundTrail — one-click launcher & stopper  (Mac / Linux)
+# FundTrail — native one-click launcher & stopper  (Mac / Linux)  — NO DOCKER.
 #
-#   ./fundtrail.sh          → start (default)
-#   ./fundtrail.sh start    → start the server
-#   ./fundtrail.sh stop     → stop  the server
+#   ./fundtrail.sh                 → start (default)
+#   ./fundtrail.sh start           → start the server
+#   ./fundtrail.sh stop            → stop  the server
+#   ./fundtrail.sh reset-password  → regenerate admin/officer login (data kept)
+#
+# Runs the Flask app directly in a Python 3.11 virtualenv. The app requires
+# Python 3.11 (pandas / Flask-SQLAlchemy pin >=3.11); this script finds it,
+# builds the venv once, installs requirements once, and launches the server.
+# Case data persists in the app's per-user data dir (unchanged across restarts).
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
-ACTION="${1:-start}"
-BORDER="+----------------------------------------------------------+"
+MAIN_DIR="$REPO_DIR/main"
+VENV_DIR="$MAIN_DIR/.venv311"
 ENV_FILE="$REPO_DIR/.env"
+PID_FILE="$REPO_DIR/.fundtrail.pid"
+LOG_FILE="$REPO_DIR/.fundtrail.log"
+PORT="${PORT:-5050}"
+BORDER="+----------------------------------------------------------+"
 
-# ── Utility helpers ────────────────────────────────────────────────────────
-_sudo() {
-    if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then "$@"; else sudo "$@"; fi
+# ── Find a Python 3.11+ interpreter ──────────────────────────────────────────
+find_python() {
+    local cand
+    for cand in python3.13 python3.12 python3.11 python3 python; do
+        if command -v "$cand" &>/dev/null && "$cand" - <<'PY' &>/dev/null
+import sys; sys.exit(0 if sys.version_info[:2] >= (3, 11) else 1)
+PY
+        then
+            command -v "$cand"; return 0
+        fi
+    done
+    return 1
 }
 
-detect_os() {
-    case "$(uname -s)" in
-        Darwin) echo "mac"   ;;
-        Linux)  echo "linux" ;;
-        *)      echo "other" ;;
-    esac
-}
-OS=$(detect_os)
-
-linux_pkg_manager() {
-    if   command -v apt-get &>/dev/null; then echo "apt"
-    elif command -v dnf     &>/dev/null; then echo "dnf"
-    elif command -v yum     &>/dev/null; then echo "yum"
-    elif command -v pacman  &>/dev/null; then echo "pacman"
-    elif command -v zypper  &>/dev/null; then echo "zypper"
-    elif command -v apk     &>/dev/null; then echo "apk"
-    else echo "unknown"
-    fi
-}
-
-linux_install() {
-    local pkg="$1" mgr
-    mgr=$(linux_pkg_manager)
-    echo "  Installing $pkg via $mgr..."
-    case "$mgr" in
-        apt)    _sudo apt-get update -qq && _sudo apt-get install -y "$pkg" ;;
-        dnf)    _sudo dnf install -y "$pkg"    ;;
-        yum)    _sudo yum install -y "$pkg"    ;;
-        pacman) _sudo pacman -Sy --noconfirm "$pkg" ;;
-        zypper) _sudo zypper install -y "$pkg" ;;
-        apk)    _sudo apk add --no-cache "$pkg" ;;
-        *)
-            echo "  ERROR: No supported package manager found." >&2
-            echo "  Please install $pkg manually, then re-run this script."
-            exit 1 ;;
-    esac
-}
-
-ensure_homebrew() {
-    command -v brew &>/dev/null && return 0
-    echo "Homebrew not found — installing (this may take a few minutes)..."
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    if   [[ -f /opt/homebrew/bin/brew ]]; then eval "$(/opt/homebrew/bin/brew shellenv)"
-    elif [[ -f /usr/local/bin/brew    ]]; then eval "$(/usr/local/bin/brew shellenv)"; fi
-    if ! command -v brew &>/dev/null; then
-        echo "ERROR: Homebrew installation failed. Install manually: https://brew.sh" >&2; exit 1
-    fi
-    echo "Homebrew installed."
-}
-
-docker_installed() { command -v docker &>/dev/null; }
-docker_running()   { docker info &>/dev/null 2>&1;  }
-
-install_docker() {
-    if [[ "$OS" == "linux" ]]; then
-        echo "Docker not found — installing via the official convenience script..."
-        if command -v curl &>/dev/null; then curl -fsSL https://get.docker.com | sh
-        else wget -qO- https://get.docker.com | sh; fi
-        _sudo usermod -aG docker "$USER" 2>/dev/null || true
-        _sudo systemctl start docker 2>/dev/null || _sudo service docker start 2>/dev/null || true
-        echo "Docker installed."
-        echo ""
-        echo "NOTE: Log out and back in (or run 'newgrp docker') if you get a"
-        echo "  permission error on the first run after install." >&2
-        echo ""
-    elif [[ "$OS" == "mac" ]]; then
-        ensure_homebrew
-        echo "Docker not found — installing Docker Desktop via Homebrew..."
-        brew install --cask docker
-        echo "Launching Docker Desktop (first launch can take up to 60 s)..."
-        open -a Docker
-        echo -n "Waiting for Docker"
-        for _ in $(seq 1 30); do docker_running && break; echo -n "."; sleep 3; done
-        echo ""
+# ── STOP ─────────────────────────────────────────────────────────────────────
+do_stop() {
+    if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+        kill "$(cat "$PID_FILE")" 2>/dev/null || true
+        rm -f "$PID_FILE"
+        echo "$BORDER"
+        echo "|  FundTrail has stopped.                                  |"
+        echo "|  Your case data is safe — run ./fundtrail.sh to restart. |"
+        echo "$BORDER"
     else
-        echo "ERROR: Unsupported OS. Install Docker manually: https://docs.docker.com/get-docker/" >&2
+        # Fall back to a port-based kill if the pidfile is stale.
+        local pids; pids=$(lsof -ti tcp:"$PORT" 2>/dev/null || true)
+        if [[ -n "$pids" ]]; then
+            echo "$pids" | xargs kill 2>/dev/null || true
+            echo "Stopped FundTrail (port $PORT)."
+        else
+            echo "FundTrail is not running — nothing to stop."
+        fi
+        rm -f "$PID_FILE"
+    fi
+}
+
+# ── START ────────────────────────────────────────────────────────────────────
+do_start() {
+    if [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+        echo "FundTrail is already running (PID $(cat "$PID_FILE"))."
+        echo "  Open http://127.0.0.1:$PORT  — or ./fundtrail.sh stop first."
+        exit 0
+    fi
+
+    # Step 1 — locate Python 3.11+
+    local PY
+    if ! PY=$(find_python); then
+        echo "ERROR: Python 3.11+ is required but was not found." >&2
+        echo "  Install it, then re-run:" >&2
+        echo "    macOS:  brew install python@3.11" >&2
+        echo "    Linux:  sudo apt-get install -y python3.11 python3.11-venv  (or your distro's pkg)" >&2
         exit 1
     fi
-}
+    echo "Using $($PY --version) at $PY"
 
-# ── STOP action ────────────────────────────────────────────────────────────
-do_stop() {
-    cd "$REPO_DIR"
-
-    if ! docker_installed; then
-        echo "Docker is not installed — nothing to stop."
-        exit 0
+    # Step 2 — create the venv once
+    if [[ ! -x "$VENV_DIR/bin/python" ]]; then
+        echo "Creating virtualenv at $VENV_DIR ..."
+        "$PY" -m venv "$VENV_DIR"
     fi
-    if ! docker_running; then
-        echo "Docker daemon is not running — nothing to stop."
-        exit 0
-    fi
+    local VPY="$VENV_DIR/bin/python"
 
-    echo "Stopping FundTrail..."
-    docker compose down
-
-    echo ""
-    echo "$BORDER"
-    echo "|  FundTrail has stopped.                                  |"
-    echo "|                                                          |"
-    echo "|  Your case data is safe — run ./fundtrail.sh to restart. |"
-    echo "$BORDER"
-}
-
-# ── START action ───────────────────────────────────────────────────────────
-do_start() {
-    # Step 1 — ensure curl/wget on Linux
-    if [[ "$OS" == "linux" ]] && ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
-        echo "Neither curl nor wget found — installing curl..."
-        linux_install curl
-        echo "curl installed."
+    # Step 3 — install requirements once (or when flask is missing)
+    if ! "$VPY" -c "import flask, pandas, dotenv" &>/dev/null; then
+        echo "Installing dependencies (first run, this can take a few minutes)..."
+        "$VPY" -m pip install --upgrade pip >/dev/null
+        "$VPY" -m pip install -r "$MAIN_DIR/requirements.txt"
     fi
 
-    # Step 2 — install Docker if missing
-    if ! docker_installed; then install_docker; fi
-
-    # Step 3 — ensure daemon is running
-    if ! docker_running; then
-        if [[ "$OS" == "mac" ]]; then
-            echo "Docker Desktop is not running — launching it now..."
-            open -a Docker
-            echo -n "Waiting for Docker"
-            for _ in $(seq 1 20); do docker_running && break; echo -n "."; sleep 3; done
-            echo ""
-        else
-            echo "Docker daemon is not running — starting it..."
-            _sudo systemctl start docker 2>/dev/null || _sudo service docker start 2>/dev/null || true
-            sleep 2
-        fi
-        if ! docker_running; then
-            echo "ERROR: Docker daemon still not reachable." >&2
-            echo "  Please start Docker and re-run this script."
-            exit 1
-        fi
-    fi
-    echo "Docker is running."
-
-    # Step 4 — generate .env with a fresh SECRET_KEY on first clone
+    # Step 4 — generate .env with a fresh SECRET_KEY on first run
     if [[ ! -f "$ENV_FILE" ]] || ! grep -q "^SECRET_KEY=" "$ENV_FILE" 2>/dev/null; then
         echo "First run — generating .env ..."
-        KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))" 2>/dev/null) \
-            || KEY=$(docker run --rm python:3.11-slim python3 -c "import secrets; print(secrets.token_hex(32))")
+        local KEY; KEY=$("$VPY" -c "import secrets; print(secrets.token_hex(32))")
         cat >> "$ENV_FILE" <<ENVEOF
 # Auto-generated by fundtrail.sh — keep this file private, never commit it.
 SECRET_KEY=$KEY
 # Allows plain-HTTP session cookies on a local LAN (no HTTPS proxy).
-# Set to false and front with nginx+TLS for any internet-facing deployment.
 SESSION_COOKIE_INSECURE=true
 PASSWORD_MAX_AGE_DAYS=90
 ENVEOF
         echo "  .env created with a fresh SECRET_KEY."
     fi
 
-    # Step 5 — build the image (first run) or restart the existing container
-    cd "$REPO_DIR"
+    # Step 5 — launch the Flask app in the background
     echo "Starting FundTrail..."
-    docker compose up --build -d
+    ( cd "$MAIN_DIR" && PORT="$PORT" nohup "$VPY" app.py >"$LOG_FILE" 2>&1 & echo $! >"$PID_FILE" )
 
-    # Step 6 — wait until /healthz responds
+    # Step 6 — wait until the server answers
     echo -n "Waiting for the app to be ready"
-    for _ in $(seq 1 30); do
-        if docker compose exec -T fundtrail \
-               python3 -c "
-import urllib.request, sys
+    for _ in $(seq 1 40); do
+        if "$VPY" - "$PORT" <<'PY' &>/dev/null
+import sys, urllib.request
+url = f"http://127.0.0.1:{sys.argv[1]}/login"
 try:
-    sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5050/healthz', timeout=3).status == 200 else 1)
+    urllib.request.urlopen(url, timeout=2); sys.exit(0)
 except Exception:
     sys.exit(1)
-" 2>/dev/null; then
-            echo " ready!"
-            break
+PY
+        then echo " ready!"; break; fi
+        if ! kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+            echo ""; echo "ERROR: the app exited during startup. Last log lines:" >&2
+            tail -n 20 "$LOG_FILE" >&2; rm -f "$PID_FILE"; exit 1
         fi
-        echo -n "."
-        sleep 2
+        echo -n "."; sleep 1
     done
     echo ""
 
     # Step 7 — print access URLs
-    LAN_IP=""
+    local LAN_IP=""
     LAN_IP=$(ipconfig getifaddr en0 2>/dev/null) || true
     [[ -z "$LAN_IP" ]] && LAN_IP=$(ipconfig getifaddr en1 2>/dev/null) || true
     [[ -z "$LAN_IP" ]] && LAN_IP=$(ip route get 1 2>/dev/null \
@@ -205,50 +140,35 @@ except Exception:
 
     echo "$BORDER"
     echo "|  FundTrail is running                                    |"
-    echo "|                                                          |"
-    printf "|  Local:   http://127.0.0.1:5050                          |\n"
-    printf "|  LAN:     http://%-39s|\n" "$LAN_IP:5050"
-    echo "|                                                          |"
-    echo "|  Share the LAN address with officers on the same Wi-Fi. |"
+    printf "|  Local:   http://127.0.0.1:%-29s|\n" "$PORT"
+    printf "|  LAN:     http://%-39s|\n" "$LAN_IP:$PORT"
+    echo "|  Share the LAN address with officers on the same Wi-Fi.  |"
     echo "$BORDER"
     echo ""
-    echo "First-time admin credentials (change these on first login):"
-    echo "  docker compose exec fundtrail cat /data/INITIAL_CREDENTIALS.txt"
-    echo ""
+    echo "First-login credentials are printed once in the app log / data dir:"
+    echo "  ~/.local/share/FundTrail/INITIAL_CREDENTIALS.txt"
+    echo "Logs:     $LOG_FILE"
     echo "To stop:  ./fundtrail.sh stop"
 }
 
-# ── RESET-PASSWORD action ────────────────────────────────────────────────────
-# Use this if you're locked out. It does NOT touch case data — it only regenerates
-# the admin/officer login passwords (via scripts/create_user.py inside the running
-# container) and prints them. The database volume is left intact.
+# ── RESET PASSWORD (data preserved) ──────────────────────────────────────────
 do_reset_password() {
-    cd "$REPO_DIR"
-    if ! docker_installed || ! docker_running; then
-        echo "Docker isn't running. Start FundTrail first:  ./fundtrail.sh"
-        exit 1
+    local VPY="$VENV_DIR/bin/python"
+    if [[ ! -x "$VPY" ]]; then
+        echo "Run ./fundtrail.sh once first to set up the environment." >&2; exit 1
     fi
-    if ! docker compose ps 2>/dev/null | grep -q "fundtrail"; then
-        echo "FundTrail isn't running. Start it first:  ./fundtrail.sh"
-        exit 1
-    fi
-    echo "Resetting admin & officer passwords (your case data is NOT affected)..."
-    docker compose exec -T fundtrail python scripts/create_user.py
-    echo ""
-    echo "The new passwords are shown above and saved here:"
-    echo "  docker compose exec fundtrail cat /data/INITIAL_CREDENTIALS.txt"
-    echo "You'll be asked to set your own password on first login."
+    echo "Resetting admin & officer passwords (case data is NOT affected)..."
+    ( cd "$MAIN_DIR" && "$VPY" scripts/create_user.py )
 }
 
-# ── Dispatch ───────────────────────────────────────────────────────────────
-case "$ACTION" in
+case "${1:-start}" in
     start) do_start ;;
     stop)  do_stop  ;;
     reset-password|reset) do_reset_password ;;
     *)
         echo "Usage: ./fundtrail.sh [start|stop|reset-password]"
-        echo "  start           — (default) build image and launch the server"
-        echo "  stop            — stop the container (case data is preserved)"
+        echo "  start           — (default) set up venv and launch the server natively"
+        echo "  stop            — stop the server (case data is preserved)"
         echo "  reset-password  — regenerate the admin/officer login (data preserved)"
         exit 1 ;;
 esac

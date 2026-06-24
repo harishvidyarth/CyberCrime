@@ -57,3 +57,7 @@ main/build_configs/error.log
 .vscode/
 *.swp
 *~
+
+# Native launcher runtime files (fundtrail.sh)
+.fundtrail.pid
+.fundtrail.log
