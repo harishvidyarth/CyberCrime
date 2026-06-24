@@ -66,9 +66,9 @@
            aria-label="Upload bank transaction Excel files — click to browse or drag and drop">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         <div class="font-semibold">Drag &amp; drop Excel files here</div>
-        <div class="text-xs text-muted mt-2">or click to browse — .xlsx only, several files at once supported</div>
+        <div class="text-xs text-muted mt-2">or click to browse — .xlsx and .xls only, several files at once supported</div>
       </div>
-      <input type="file" id="fileInput" name="excel_file" accept=".xlsx" multiple required
+      <input type="file" id="fileInput" name="excel_file" accept=".xlsx,.xls" multiple required
              aria-label="Select Excel files to upload"
              style="position:absolute;width:1px;height:1px;opacity:0" aria-hidden="true" tabindex="-1">
       <ul id="fileList" class="mt-4" style="list-style:none;margin:0;padding:0"></ul>

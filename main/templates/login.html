@@ -198,6 +198,24 @@
           Dev mode: run <code>python dev_seed.py</code> to reset credentials
         </div>
         {% endif %}
+
+        {% if initial_creds %}
+        <div class="initial-creds-container" style="margin-top:20px; border:1px dashed var(--brand-400); border-radius:var(--radius-sm); padding:14px; background:rgba(30,64,175,0.04)">
+          <div style="font-weight:700; font-size:13.5px; color:var(--brand-600); margin-bottom:10px; display:flex; align-items:center; gap:6px">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Initial Login Credentials
+          </div>
+          {% for role, creds in initial_creds.items() %}
+          <div style="font-size:13px; margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; gap:12px">
+            <div style="color:var(--ink-600)">
+              <strong>{{ role }}</strong>: <code style="font-family:monospace; background:var(--white); padding:2px 6px; border:1px solid var(--line); border-radius:4px; font-weight:600; color:var(--ink-900)" id="init-pwd-{{ loop.index }}">{{ creds[1] }}</code>
+              <span style="font-size:11.5px; color:var(--ink-400); margin-left:4px">(user: <code>{{ creds[0] }}</code>)</span>
+            </div>
+            <button type="button" class="btn copy-init-btn" data-target="init-pwd-{{ loop.index }}" style="margin:0; padding:5px 10px; font-size:12px; width:auto; white-space:nowrap; background:var(--white); border:1px solid var(--line); border-radius:var(--radius-sm); color:var(--ink-600); cursor:pointer; font-weight:600; box-shadow:none">📋 Copy</button>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
     </main>
   </div>
@@ -213,6 +231,30 @@
         input.type = show ? 'text' : 'password';
         btn.setAttribute('aria-pressed', show ? 'true' : 'false');
         btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      });
+    })();
+
+    // Copy to clipboard functionality for initial credentials
+    (function () {
+      var buttons = document.querySelectorAll('.copy-init-btn');
+      buttons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var targetId = btn.getAttribute('data-target');
+          var el = document.getElementById(targetId);
+          if (!el) return;
+          var val = el.textContent || '';
+          navigator.clipboard.writeText(val).then(function () {
+            var prevText = btn.textContent;
+            btn.textContent = 'Copied!';
+            btn.style.color = 'var(--brand-600)';
+            btn.style.borderColor = 'var(--brand-400)';
+            setTimeout(function () {
+              btn.textContent = prevText;
+              btn.style.color = '';
+              btn.style.borderColor = '';
+            }, 2000);
+          });
+        });
       });
     })();
   </script>

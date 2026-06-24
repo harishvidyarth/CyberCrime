@@ -904,6 +904,8 @@ app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 # and `python app.py` (dev) read/write the SAME database — a past source of
 # "upload saved but dashboard empty" confusion.
 logger.info("Database: %s (frozen=%s, data_dir=%s)", db_url, bool(getattr(sys, "frozen", False)), secure_base)
+print(f"[STARTUP] Database: {db_url} (data_dir={secure_base})")
+sys.stdout.flush()
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True, "pool_recycle": 1800}
 
 # Concurrency: enable SQLite WAL + a per-connection busy timeout so several officers
@@ -951,7 +953,7 @@ os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 # Hard ceiling on any incoming request body — stops an oversized/malicious POST from
 # exhausting memory before per-file checks run. (Excel uploads are capped at 10MB
 # separately; this bounds the whole request.)
-app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024  # 25 MB
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
 
 db.init_app(app)
 
@@ -1565,7 +1567,31 @@ def login():
         time.sleep(secrets.SystemRandom().uniform(0.05, 0.15))
         # One generic message for ALL failure modes (anti-enumeration).
         error = "Invalid credentials or role"
-    return render_template("login.html", error=error)
+
+    initial_creds = {}
+    creds_path = os.path.join(secure_base, INITIAL_CREDENTIALS_FILENAME)
+    if os.path.exists(creds_path):
+        try:
+            with open(creds_path, "r", encoding="utf-8") as f:
+                content = f.read()
+                for line in content.splitlines():
+                    if "password:" in line:
+                        parts = line.split("password:")
+                        role_part = parts[0].strip()
+                        pwd_part = parts[1].strip()
+                        if "admin" in role_part:
+                            initial_creds["Admin"] = ("admin", pwd_part)
+                        elif "officer" in role_part:
+                            initial_creds["Investigative Officer"] = ("officer", pwd_part)
+        except Exception as e:
+            app.logger.warning("Could not read INITIAL_CREDENTIALS.txt: %s", e)
+
+    # In debug/dev mode, if the credentials file has been deleted, fallback to dev seed credentials
+    if not initial_creds and app.config.get("DEBUG"):
+        initial_creds["Admin"] = ("admin", "Admin@123456")
+        initial_creds["Investigative Officer"] = ("officer1", "Officer@123456")
+
+    return render_template("login.html", error=error, initial_creds=initial_creds)
 
 
 def _establish_session(user, role, prev_login):
@@ -1921,14 +1947,16 @@ def upload_excel():
     """Import a bank-transaction Excel file and rebuild the case's fund trail."""
     file = request.files.get("excel_file")
     if file is None or not file.filename:
-        flash("No file selected. Please choose a .xlsx file.", "warning")
+        flash("No file selected. Please choose a .xlsx or .xls file.", "warning")
         return redirect(ROUTE_INDEX)
 
     # secure_filename strips any directory components / path-traversal sequences;
-    # enforce the .xlsx extension case-insensitively on the *sanitised* name.
+    # enforce the .xlsx and .xls extensions case-insensitively on the *sanitised* name.
     filename = secure_filename(file.filename)
-    if not filename or not filename.lower().endswith(".xlsx"):
-        flash("Invalid file type. Only .xlsx workbooks are accepted.", "warning")
+    is_xlsx = filename.lower().endswith(".xlsx") if filename else False
+    is_xls = filename.lower().endswith(".xls") if filename else False
+    if not filename or not (is_xlsx or is_xls):
+        flash("Invalid file type. Only .xlsx and .xls workbooks are accepted.", "warning")
         return redirect(ROUTE_INDEX)
     file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
 
@@ -1959,21 +1987,28 @@ def upload_excel():
         file.save(file_path)
 
     # Defence-in-depth: a genuine .xlsx is an OOXML ZIP container and must begin with
-    # the ZIP magic bytes "PK". Reject (and delete) anything else BEFORE the parser
-    # touches it — this stops a renamed executable / script / macro-laden blob that
-    # slipped past the extension check from ever being parsed or stored in the DB.
+    # the ZIP magic bytes "PK". A genuine .xls is an OLE2 container and must begin with
+    # OLE magic bytes "\xD0\xCF\x11\xE0". Reject (and delete) anything else BEFORE the parser
+    # touches it.
     try:
         with open(file_path, "rb") as _sig_fh:
             _magic = _sig_fh.read(4)
     except OSError:
         _magic = b""
-    if _magic[:2] != b"PK":
+
+    is_valid_sig = False
+    if is_xlsx and _magic[:2] == b"PK":
+        is_valid_sig = True
+    elif is_xls and _magic[:4] == b"\xD0\xCF\x11\xE0":
+        is_valid_sig = True
+
+    if not is_valid_sig:
         try:
             os.remove(file_path)
         except OSError:
             pass
-        logger.warning("Rejected non-xlsx upload (bad magic bytes): %s", filename)
-        flash("That file is not a valid .xlsx workbook and was rejected.", "danger")
+        logger.warning("Rejected non-excel upload (bad magic bytes): %s", filename)
+        flash("That file is not a valid Excel workbook and was rejected.", "danger")
         return redirect(ROUTE_INDEX)
 
     # Any failure while parsing below would otherwise leave the saved working copy
@@ -1999,10 +2034,11 @@ def upload_excel():
             return value
 
         try:
-            xls = pd.ExcelFile(file_path, engine="openpyxl")
+            excel_engine = "openpyxl" if is_xlsx else "xlrd"
+            xls = pd.ExcelFile(file_path, engine=excel_engine)
         except Exception as e:
             logger.exception(f"Error reading Excel file: {str(e)}", exc_info=True)
-            flash("Error reading Excel file. Please ensure it is a valid .xlsx file.", "error")
+            flash("Error reading Excel file. Please ensure it is a valid Excel file.", "error")
             return redirect(ROUTE_INDEX)
 
         # Robustly find the sheet name (handles case/spacing/extra text)
@@ -2035,7 +2071,7 @@ def upload_excel():
             available = ", ".join([f"'{s}'" for s in (xls.sheet_names or [])])
             raise ValueError(f"Worksheet named 'Money Transfer to' not found. Available sheets: {available}")
 
-        tx_df = pd.read_excel(xls, sheet_name=sheet_name)
+        tx_df = pd.read_excel(xls, sheet_name=sheet_name, engine=excel_engine)
 
         # Check row count
         if len(tx_df) > MAX_ROWS:
@@ -2080,17 +2116,17 @@ def upload_excel():
 
         # ✅ Step 5: Process and insert transactions
         atm_df = (
-            pd.read_excel(xls, sheet_name=TXN_WITHDRAWAL_ATM)
+            pd.read_excel(xls, sheet_name=TXN_WITHDRAWAL_ATM, engine=excel_engine)
             if TXN_WITHDRAWAL_ATM in xls.sheet_names
             else pd.DataFrame()
         )
         chq_df = (
-            pd.read_excel(xls, sheet_name="Cash Withdrawal through Cheque")
+            pd.read_excel(xls, sheet_name="Cash Withdrawal through Cheque", engine=excel_engine)
             if "Cash Withdrawal through Cheque" in xls.sheet_names
             else pd.DataFrame()
         )
         hold_df = (
-            pd.read_excel(xls, sheet_name="Transaction put on hold")
+            pd.read_excel(xls, sheet_name="Transaction put on hold", engine=excel_engine)
             if "Transaction put on hold" in xls.sheet_names
             else pd.DataFrame()
         )
@@ -2338,56 +2374,61 @@ def upload_excel():
             _h["_txn_key"] = _h["Transaction Id / UTR Number"].astype(str).str.strip()
             hold_by_key = dict(_h.groupby(["_acc_key", "_txn_key"]))
 
+        # Sort tx_df by Layer first so transactions are processed and added in order of layer
+        if "Layer" in tx_df.columns:
+            try:
+                tx_df["Layer_int"] = pd.to_numeric(tx_df["Layer"], errors="coerce").fillna(0).astype(int)
+                tx_df = tx_df.sort_values(by="Layer_int").drop(columns=["Layer_int"])
+            except Exception as e:
+                logger.warning(f"Failed to sort tx_df by Layer: {e}")
+
         _EMPTY_DF = pd.DataFrame()
         transactions = []
 
         txn_id_counts = {"found": 0, "missing": 0}
         skipped_rows = []
         for idx, (_, row) in enumerate(tx_df.iterrows()):
-            ack_no = str(row.get("Acknowledgement No.", "")).strip()
-            if not ack_no:
-                # ✅ Skip rows with missing ACK
-                continue
-
-            acc_to = str(row.get("Account No", "")).strip()
-            extracted_txn_id = get_txn_id_from_row(row, utr2_col)
-            atm_info = atm_by_acc.get(acc_to, _EMPTY_DF)
-            chq_info = chq_by_acc.get(acc_to, _EMPTY_DF)
-            hold_info = (
-                hold_by_key.get((acc_to, extracted_txn_id), _EMPTY_DF) if extracted_txn_id else _EMPTY_DF
-            )
-            if extracted_txn_id:
-                txn_id_counts["found"] += 1
-                if idx < 2:  # Log first 2 rows with txn_id
-                    logger.debug(f"[UPLOAD] Row {idx}: ACK={ack_no}, TXN_ID={extracted_txn_id}")
-            else:
-                txn_id_counts["missing"] += 1
-                if idx < 2:  # Log first 2 rows without txn_id
-                    logger.debug(f"[UPLOAD] Row {idx}: ACK={ack_no}, TXN_ID=EMPTY")
-                    # Debug: log what's in the row related to UTR/Transaction
-                    for col in row.index:
-                        if "utr" in col.lower() or "transaction" in col.lower() or "txn" in col.lower():
-                            logger.debug(f"  -> {col}: [REDACTED]")
-
-            # Validate before creating transaction
-            from_account = str(row.get("Account No./ (Wallet /PG/PA) Id", "")).strip()
-            to_account = acc_to  # Already stripped and extracted above
-            raw_amount = row.get("Transaction Amount")
-            cleaned_amount = clean_amount(raw_amount)
-
-            if not validate_account_number(from_account):
-                logger.warning(f"Invalid from_account: {from_account}")
-                continue
-
-            if not validate_account_number(to_account):
-                logger.warning(f"Invalid to_account: {to_account}")
-                continue
-
-            if not validate_amount(cleaned_amount):
-                logger.warning(f"Invalid amount: {cleaned_amount}")
-                continue
-
             try:
+                ack_no = str(row.get("Acknowledgement No.", "")).strip()
+                if not ack_no:
+                    # Skip empty acknowledgment rows but don't count them as errors
+                    continue
+
+                acc_to = str(row.get("Account No", "")).strip()
+                extracted_txn_id = get_txn_id_from_row(row, utr2_col)
+                atm_info = atm_by_acc.get(acc_to, _EMPTY_DF)
+                chq_info = chq_by_acc.get(acc_to, _EMPTY_DF)
+                hold_info = (
+                    hold_by_key.get((acc_to, extracted_txn_id), _EMPTY_DF) if extracted_txn_id else _EMPTY_DF
+                )
+                if extracted_txn_id:
+                    txn_id_counts["found"] += 1
+                    if idx < 2:  # Log first 2 rows with txn_id
+                        logger.debug(f"[UPLOAD] Row {idx}: ACK={ack_no}, TXN_ID={extracted_txn_id}")
+                else:
+                    txn_id_counts["missing"] += 1
+                    if idx < 2:  # Log first 2 rows without txn_id
+                        logger.debug(f"[UPLOAD] Row {idx}: ACK={ack_no}, TXN_ID=EMPTY")
+                        # Debug: log what's in the row related to UTR/Transaction
+                        for col in row.index:
+                            if "utr" in col.lower() or "transaction" in col.lower() or "txn" in col.lower():
+                                logger.debug(f"  -> {col}: [REDACTED]")
+
+                # Validate before creating transaction
+                from_account = str(row.get("Account No./ (Wallet /PG/PA) Id", "")).strip()
+                to_account = acc_to  # Already stripped and extracted above
+                raw_amount = row.get("Transaction Amount")
+                cleaned_amount = clean_amount(raw_amount)
+
+                if not validate_account_number(from_account):
+                    raise ValueError(f"Invalid from_account: {from_account}")
+
+                if not validate_account_number(to_account):
+                    raise ValueError(f"Invalid to_account: {to_account}")
+
+                if not validate_amount(cleaned_amount):
+                    raise ValueError(f"Invalid amount: {cleaned_amount}")
+
                 transaction = Transaction(
                     layer=int(row.get("Layer", 0)),
                     from_account=from_account,
@@ -2444,21 +2485,17 @@ def upload_excel():
                         transaction.refund_status = poh_details.refund_status
                         transaction.refund_amount = poh_details.refund_amount
 
-                # Collect transaction in list instead of adding directly
+                # Use savepoint to isolate database write constraint issues
+                with db.session.begin_nested():
+                    db.session.add(transaction)
+                    if (len(transactions) + 1) % 500 == 0:
+                        db.session.flush()
+
                 transactions.append(transaction)
             except Exception as _row_exc:
                 skipped_rows.append(idx)
                 logger.warning("Skipping upload row %s due to error: %s", idx, _row_exc)
                 continue
-
-        # ✅ Sort transactions by layer in ascending order before inserting
-        transactions.sort(key=lambda t: t.layer)
-
-        # Add sorted transactions to the session
-        for _i, t in enumerate(transactions):
-            db.session.add(t)
-            if (_i + 1) % 500 == 0:
-                db.session.flush()  # batch writes so large uploads do not time out
 
         db.session.commit()
 
@@ -2947,7 +2984,9 @@ def atm_data(ack_no):
         if not file_bytes:
             return jsonify({"atm": []})
 
-        xls = pd.ExcelFile(io.BytesIO(file_bytes))
+        is_xlsx = up.filename.lower().endswith(".xlsx") if (up and up.filename) else True
+        excel_engine = "openpyxl" if is_xlsx else "xlrd"
+        xls = pd.ExcelFile(io.BytesIO(file_bytes), engine=excel_engine)
 
         # Robust sheet finding
         sheet_name = None
@@ -2974,7 +3013,7 @@ def atm_data(ack_no):
         if not sheet_name:
             return jsonify({"atm": []})
 
-        df = pd.read_excel(xls, sheet_name=sheet_name)
+        df = pd.read_excel(xls, sheet_name=sheet_name, engine=excel_engine)
 
         # Filter by ACK Number if the column exists
         ack_col = None

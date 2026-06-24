@@ -14,7 +14,7 @@ OutputBaseFilename=FundTrail_Setup
 PrivilegesRequired=admin
 
 [Files]
-Source: "dist\FundTrail.exe"; DestDir: "{app}"
+Source: "dist\FundTrail\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
 [Icons]
 Name: "{group}\FundTrail"; Filename: "{app}\FundTrail.exe"
