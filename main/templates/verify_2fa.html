@@ -54,12 +54,14 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
       <div class="form-group">
         <label class="form-label" for="totpCode" style="text-align:center;display:block">Authentication code</label>
-        <input class="form-input big-code" type="text" id="totpCode" name="code"
-               inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7"
-               placeholder="000 000" autocomplete="one-time-code"
-               autofocus required>
+        <div style="display:flex;gap:10px;align-items:stretch">
+          <input class="form-input big-code" type="text" id="totpCode" name="code"
+                 inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7"
+                 placeholder="000 000" autocomplete="one-time-code"
+                 autofocus required style="flex:1">
+          <button class="btn btn-primary" type="submit" style="white-space:nowrap">Verify &amp; Sign In</button>
+        </div>
       </div>
-      <button class="btn btn-primary btn-block" type="submit">Verify &amp; Sign In</button>
     </form>
 
     <p class="admin-hint">Lost your device? Contact your administrator to reset your account.</p>
