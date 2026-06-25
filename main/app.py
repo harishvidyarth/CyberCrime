@@ -2217,9 +2217,12 @@ def upload_excel():
             filename=filename, data=file_data, uploader=session.get("username"), mimetype=file.mimetype
         )
         db.session.add(uploaded_file)
-        db.session.commit()
-        upload_persisted = True  # from here the disk copy is the legit download source
-        log_usage("upload_excel", filename=filename)
+        # Flush (NOT commit) so uploaded_file.id is assigned for the transaction
+        # rows below, but the file row is only persisted atomically with them at the
+        # single commit after the loop. A parse failure now rolls BOTH back, so we
+        # never leave an orphaned UploadedFile (which inflated "Files Uploaded by Me"
+        # and slipped past the ACK dedup on re-upload).
+        db.session.flush()
 
         # ✅ Step 5: Process and insert transactions
         atm_df = (
@@ -2635,7 +2638,17 @@ def upload_excel():
                 logger.warning("Skipping upload row %s due to error: %s", idx, _row_exc)
                 continue
 
+        # Atomic persist: if NO rows parsed, roll the UploadedFile back too so an
+        # empty/orphaned file is never stored. Otherwise commit file + transactions
+        # together (upload_persisted stays False until this succeeds, so the finally
+        # block deletes the working copy on any failure).
+        if not transactions:
+            db.session.rollback()
+            flash("No valid transactions found in the file — nothing was saved.", "warning")
+            return redirect(ROUTE_INDEX)
         db.session.commit()
+        upload_persisted = True  # committed: the disk copy is now the legit download source
+        log_usage("upload_excel", filename=filename)
 
         # B1/B2: never let a partial/zero result be silent again.
         _total_rows = len(tx_df)
@@ -4655,7 +4668,10 @@ def view_officers():
     # For each officer, count uploaded files
     officer_data = []
     for officer in officers:
-        computed_upload_count = UploadedFile.query.filter_by(uploader=officer.username).count()
+        computed_upload_count = UploadedFile.query.filter(
+            UploadedFile.uploader == officer.username,
+            UploadedFile.id.in_(db.session.query(Transaction.upload_id).distinct()),
+        ).count()
         upload_count = officer.manual_upload_count if officer.manual_upload_count is not None else computed_upload_count
         officer_data.append(
             {
@@ -4998,8 +5014,11 @@ def view_analytics():
 
     # ── Officer upload stats ──────────────────────────────────────────
     officer_stats = (
-        db.session.query(User.username, User.name, func.count(UploadedFile.id).label("uploads"))
+        db.session.query(User.username, User.name, func.count(func.distinct(UploadedFile.id)).label("uploads"))
         .join(UploadedFile, UploadedFile.uploader == User.username)
+        # Inner-join Transaction so files with zero transactions (orphaned uploads)
+        # are not counted; distinct() so a file is counted once, not per-transaction.
+        .join(Transaction, Transaction.upload_id == UploadedFile.id)
         .filter(User.role == ROLE_INVESTIGATIVE_OFFICER)
         .group_by(User.username, User.name)
         .order_by(desc("uploads"))
@@ -5786,7 +5805,11 @@ def my_analytics():
 
     my_files = (
         UploadedFile.query.options(defer(UploadedFile.data))
-        .filter_by(uploader=me)
+        .filter(
+            UploadedFile.uploader == me,
+            # Only files that actually have transactions — never count orphaned uploads.
+            UploadedFile.id.in_(db.session.query(Transaction.upload_id).distinct()),
+        )
         .order_by(UploadedFile.upload_time.desc())
         .all()
     )
@@ -6225,14 +6248,22 @@ def admin_metrics():
     for i in range(11, -1, -1):
         start = now - timedelta(weeks=i + 1)
         end = now - timedelta(weeks=i)
-        count = UploadedFile.query.filter(UploadedFile.upload_time >= start, UploadedFile.upload_time < end).count()
+        count = UploadedFile.query.filter(
+            UploadedFile.upload_time >= start,
+            UploadedFile.upload_time < end,
+            UploadedFile.id.in_(db.session.query(Transaction.upload_id).distinct()),
+        ).count()
         weeks.append({"label": end.strftime("%d %b"), "count": count})
 
     status_counts = dict(db.session.query(Complaint.status, func.count(Complaint.id)).group_by(Complaint.status).all())
     held = db.session.query(func.sum(Transaction.put_on_hold_amount)).scalar() or 0.0
     refunded = db.session.query(func.sum(Transaction.refund_amount)).scalar() or 0.0
     officer_rows = (
-        db.session.query(UploadedFile.uploader, func.count(UploadedFile.id)).group_by(UploadedFile.uploader).all()
+        db.session.query(UploadedFile.uploader, func.count(func.distinct(UploadedFile.id)))
+        # Only count uploads that actually have transactions (skip orphaned files).
+        .join(Transaction, Transaction.upload_id == UploadedFile.id)
+        .group_by(UploadedFile.uploader)
+        .all()
     )
     return render_template(
         "admin_metrics.html",
