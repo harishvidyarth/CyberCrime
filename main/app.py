@@ -3232,50 +3232,139 @@ def atm_data(ack_no):
         return jsonify({"atm": [], "error": "Failed to load ATM data"})
 
 
+SOUTHERN_ORDER = [
+    STATE_TAMIL_NADU,
+    "Kerala",
+    "Karnataka",
+    STATE_ANDHRA_PRADESH,
+    "Telangana",
+    "Puducherry",
+    "Lakshadweep",
+    STATE_ANDAMAN_NICOBAR,
+]
+
+STATE_REGIONS = {
+    "Southern": SOUTHERN_ORDER,
+    "Western": ["Maharashtra", "Gujarat", "Rajasthan", "Goa", "Daman and Diu", "Dadra and Nagar Haveli"],
+    "Eastern": [
+        "West Bengal",
+        "Odisha",
+        "Bihar",
+        "Jharkhand",
+        "Assam",
+        "Arunachal Pradesh",
+        "Nagaland",
+        "Manipur",
+        "Mizoram",
+        "Tripura",
+        "Meghalaya",
+        "Sikkim",
+    ],
+    "Northern": [
+        "Jammu and Kashmir",
+        "Himachal Pradesh",
+        "Punjab",
+        "Chandigarh",
+        "Uttarakhand",
+        "Haryana",
+        "Delhi",
+        "Uttar Pradesh",
+        "Madhya Pradesh",
+        "Chhattisgarh",
+        "Ladakh",
+    ],
+}
+
+
+def _resolve_unknown_states(ack_no):
+    """Fetch + persist state for this case's txns whose state is still unknown."""
+    transactions_unknown = Transaction.query.filter(
+        Transaction.ack_no == ack_no,
+        (Transaction.state.is_(None) | (Transaction.state == "Unknown")),
+        Transaction.ifsc_code.isnot(None),
+    ).all()
+    if not transactions_unknown:
+        return
+    ifscs_to_fetch = {t.ifsc_code for t in transactions_unknown}
+    ifsc_to_state = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_ifsc = {executor.submit(get_state_from_api, ifsc): ifsc for ifsc in ifscs_to_fetch}
+        for future in concurrent.futures.as_completed(future_to_ifsc):
+            ifsc = future_to_ifsc[future]
+            try:
+                state = future.result()
+            except Exception as exc:
+                logger.exception(f"IFSC {ifsc} generated an exception: {exc}")
+                state = "Unknown"
+            ifsc_to_state[ifsc] = state
+    save_ifsc_cache()
+    for t in transactions_unknown:
+        if t.ifsc_code in ifsc_to_state:
+            t.state = ifsc_to_state[t.ifsc_code].title()
+    db.session.commit()
+
+
+def _statewise_rows(state_summaries):
+    """Map raw (state, count, amount, ifsc_csv) aggregate rows to summary dicts."""
+    rows = []
+    for state, total_transactions, total_amount, ifsc_codes_str in state_summaries:
+        ifsc_codes = sorted(ifsc_codes_str.split(",")) if ifsc_codes_str else []
+        rows.append(
+            {
+                "state": state.title() if state and state != "Unknown" else state,
+                "total_transactions": total_transactions,
+                "total_amount": float(total_amount) if total_amount else 0.0,
+                "ifsc_codes": ifsc_codes,
+            }
+        )
+    return rows
+
+
+def _region_of(state):
+    for region, states in STATE_REGIONS.items():
+        if state in states:
+            return region
+    return None
+
+
+def _group_by_region(summaries):
+    """Bucket summaries into ordered regions (+ others), each internally sorted."""
+    regional = {region: [] for region in STATE_REGIONS}
+    others = []
+    for summary in summaries:
+        region = _region_of(summary["state"])
+        if region:
+            regional[region].append(summary)
+        else:
+            others.append(summary)
+    for region, bucket in regional.items():
+        if region == "Southern":
+            bucket.sort(
+                key=lambda x: (
+                    SOUTHERN_ORDER.index(x["state"]) if x["state"] in SOUTHERN_ORDER else len(SOUTHERN_ORDER),
+                    -x["total_amount"],
+                )
+            )
+        else:
+            bucket.sort(key=lambda x: x["total_amount"], reverse=True)
+    return (
+        regional["Southern"] + regional["Western"] + regional["Eastern"] + regional["Northern"] + others
+    )
+
+
 @app.route("/statewise_summary/<ack_no>", methods=["GET"])
 @login_required
 def statewise_summary(ack_no):
     check_case_access(ack_no)
     try:
-        # Check if we have any transactions with known states
         known_states_count = (
             db.session.query(Transaction)
             .filter(Transaction.ack_no == ack_no, Transaction.state.isnot(None), Transaction.state != "Unknown")
             .count()
         )
-
         if known_states_count == 0:
-            # If no known states, fetch synchronously for immediate response
-            transactions_unknown = Transaction.query.filter(
-                Transaction.ack_no == ack_no,
-                (Transaction.state.is_(None) | (Transaction.state == "Unknown")),
-                Transaction.ifsc_code.isnot(None),
-            ).all()
+            _resolve_unknown_states(ack_no)
 
-            if transactions_unknown:
-                ifscs_to_fetch = {t.ifsc_code for t in transactions_unknown}
-                ifsc_to_state = {}
-                with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                    future_to_ifsc = {executor.submit(get_state_from_api, ifsc): ifsc for ifsc in ifscs_to_fetch}
-                    for future in concurrent.futures.as_completed(future_to_ifsc):
-                        ifsc = future_to_ifsc[future]
-                        try:
-                            state = future.result()
-                        except Exception as exc:
-                            logger.exception(f"IFSC {ifsc} generated an exception: {exc}")
-                            state = "Unknown"
-                        ifsc_to_state[ifsc] = state
-
-                # Save persistent cache
-                save_ifsc_cache()
-
-                # Update the database with the fetched states (normalized to title case)
-                for t in transactions_unknown:
-                    if t.ifsc_code in ifsc_to_state:
-                        t.state = ifsc_to_state[t.ifsc_code].title()
-                db.session.commit()
-
-        # Now use database aggregation for efficiency
         from sqlalchemy import distinct, func
 
         state_summaries = (
@@ -3289,110 +3378,7 @@ def statewise_summary(ack_no):
             .group_by(Transaction.state)
             .all()
         )
-
-        # Define regions
-        regions = {
-            "Southern": [
-                STATE_TAMIL_NADU,
-                "Kerala",
-                "Karnataka",
-                STATE_ANDHRA_PRADESH,
-                "Telangana",
-                "Puducherry",
-                "Lakshadweep",
-                STATE_ANDAMAN_NICOBAR,
-            ],
-            "Western": ["Maharashtra", "Gujarat", "Rajasthan", "Goa", "Daman and Diu", "Dadra and Nagar Haveli"],
-            "Eastern": [
-                "West Bengal",
-                "Odisha",
-                "Bihar",
-                "Jharkhand",
-                "Assam",
-                "Arunachal Pradesh",
-                "Nagaland",
-                "Manipur",
-                "Mizoram",
-                "Tripura",
-                "Meghalaya",
-                "Sikkim",
-            ],
-            "Northern": [
-                "Jammu and Kashmir",
-                "Himachal Pradesh",
-                "Punjab",
-                "Chandigarh",
-                "Uttarakhand",
-                "Haryana",
-                "Delhi",
-                "Uttar Pradesh",
-                "Madhya Pradesh",
-                "Chhattisgarh",
-                "Ladakh",
-            ],
-        }
-
-        # Convert to list
-        summaries = []
-        for summary in state_summaries:
-            state, total_transactions, total_amount, ifsc_codes_str = summary
-            ifsc_codes = sorted(ifsc_codes_str.split(",")) if ifsc_codes_str else []
-            formatted_state = state.title() if state and state != "Unknown" else state
-            summaries.append(
-                {
-                    "state": formatted_state,
-                    "total_transactions": total_transactions,
-                    "total_amount": float(total_amount) if total_amount else 0.0,
-                    "ifsc_codes": ifsc_codes,
-                }
-            )
-
-        # Group by regions
-        regional_summaries = {region: [] for region in regions}
-        other_summaries = []
-        for summary in summaries:
-            state = summary["state"]
-            placed = False
-            for region, states in regions.items():
-                if state in states:
-                    regional_summaries[region].append(summary)
-                    placed = True
-                    break
-            if not placed:
-                other_summaries.append(summary)
-
-        # Sort within each region by total_amount descending, except Southern which uses custom order
-        southern_order = [
-            STATE_TAMIL_NADU,
-            "Kerala",
-            "Karnataka",
-            STATE_ANDHRA_PRADESH,
-            "Telangana",
-            "Puducherry",
-            "Lakshadweep",
-            STATE_ANDAMAN_NICOBAR,
-        ]
-        for region in regional_summaries:
-            if region == "Southern":
-                # Sort Southern by custom order, then by amount descending for ties
-                regional_summaries[region].sort(
-                    key=lambda x: (
-                        southern_order.index(x["state"]) if x["state"] in southern_order else len(southern_order),
-                        -x["total_amount"],
-                    )
-                )
-            else:
-                regional_summaries[region].sort(key=lambda x: x["total_amount"], reverse=True)
-
-        # Concatenate in order: Southern, Western, Eastern, Northern, then others
-        result = (
-            regional_summaries["Southern"]
-            + regional_summaries["Western"]
-            + regional_summaries["Eastern"]
-            + regional_summaries["Northern"]
-            + other_summaries
-        )
-
+        result = _group_by_region(_statewise_rows(state_summaries))
         return jsonify(result)
     except Exception as e:
         logger.exception(f"Error in statewise_summary for {ack_no}: {e}")
