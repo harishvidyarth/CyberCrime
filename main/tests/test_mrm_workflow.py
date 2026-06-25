@@ -222,6 +222,46 @@ check("admin save on officer-saved step1 -> 409 (set-once governs)", _adm_after.
 # Officer continues the workflow normally.
 check("officer save step2 -> 200", save_adm(a_c, 2).status_code == 200)
 
+print("\n── A-3 part 2: officer foreign-case block (assigned_to) ──")
+with app.app_context():
+    uf4 = UploadedFile(filename="reassigned.xlsx", uploader="off_a")
+    db.session.add(uf4)
+    db.session.commit()
+    db.session.add(
+        Transaction(
+            ack_no="CASE-REASSIGN", layer=3, from_account="7", to_account="777777777",
+            amount=4000.0, put_on_hold_amount=4000.0, put_on_hold_txn_id="HOLD-RE",
+            put_on_hold_date="2026-06-12", txn_id="TX-RE", upload_id=uf4.id,
+        )
+    )
+    # Uploaded by A, then admin reassigned the case to B: only B may save now.
+    if not Complaint.query.filter_by(ack_no="CASE-REASSIGN").first():
+        db.session.add(Complaint(ack_no="CASE-REASSIGN", file_name="reassigned.xlsx", uploaded_by=A_ID, assigned_to=B_ID))
+    db.session.commit()
+
+
+def save_re(client, step, date="2026-06-20", **extra):
+    body = {"ack_no": "CASE-REASSIGN", "hold_txn_id": "HOLD-RE", "step": step, "date": date}
+    body.update(extra)
+    return client.post("/save_mrm_status", json=body)
+
+
+def msg(resp):
+    try:
+        return json.loads(resp.get_data(as_text=True)).get("message", "")
+    except Exception:
+        return ""
+
+
+# Officer A uploaded but is no longer the assignee -> foreign-case 403.
+_a_re = save_re(a_c, 1)
+check("reassigned-away uploader A save -> 403", _a_re.status_code == 403)
+check("reassigned-away uploader A gets foreign-case message", "assigned to another officer" in msg(_a_re))
+# Assigned officer B can save their own case.
+check("assigned officer B save step1 -> 200", save_re(b_c, 1).status_code == 200)
+# Admin is NOT subject to the foreign-case rule (governed by group scope instead).
+check("admin not blocked by foreign-case rule", "assigned to another officer" not in msg(save_re(admin_c, 2)))
+
 print()
 if FAILS:
     print(f"❌ {len(FAILS)} MRM TEST(S) FAILED")

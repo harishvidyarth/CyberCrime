@@ -3726,6 +3726,19 @@ def save_mrm_status():
 
     check_case_access(ack_no)
 
+    # Foreign-case block (A-3 part 2): an officer may only save MRM on a case
+    # assigned to them. The uploader is the de-facto assignee at upload time; once
+    # an admin reassigns the case, only the new assignee may save. A NULL assignee
+    # falls back to check_case_access above (uploader retains access). Admins are
+    # governed by their group scope in check_case_access, not by this rule.
+    if not is_admin():
+        _complaint = Complaint.query.filter_by(ack_no=ack_no).first()
+        if _complaint and _complaint.assigned_to not in (None, current_user.id):
+            return jsonify({
+                "status": "error",
+                "message": "This case is assigned to another officer.",
+            }), 403
+
     try:
         step = int(data.get("step"))
     except (TypeError, ValueError):
