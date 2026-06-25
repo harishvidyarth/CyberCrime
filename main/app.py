@@ -3081,49 +3081,131 @@ _ATM_RESULT_CACHE = {}
 _ATM_CACHE_MAX = 64  # bound the cache so it can't grow without limit (was a slow leak)
 
 
+def _atm_load_file_bytes(up):
+    """Return the upload's bytes \u2014 DB blob first, else the saved-disk fallback \u2014 or None."""
+    if up.data:
+        return up.data
+    upload_folder = app.config.get("UPLOAD_FOLDER", "uploads")
+    if not os.path.isabs(upload_folder):
+        upload_folder = os.path.join(app.root_path, upload_folder)
+    possible_path = os.path.join(upload_folder, up.filename) if up.filename else None
+    if possible_path and os.path.exists(possible_path):
+        try:
+            with open(possible_path, "rb") as fh:
+                return fh.read()
+        except Exception as ex:
+            logger.warning(f"[atm_data] Failed to read file from disk: {ex}")
+    else:
+        logger.warning(f"[atm_data] File not found at {possible_path}")
+    return None
+
+
+def _atm_find_sheet(xls):
+    """Locate the ATM-withdrawal sheet: exact, then case-insensitive, then partial."""
+    candidates = [TXN_WITHDRAWAL_ATM, "Withdrawal through ATM ", "Withdrawal through ATM\n"]
+    for c in candidates:
+        if c in xls.sheet_names:
+            return c
+    lower_sheets = {s.lower().strip(): s for s in xls.sheet_names}
+    if "withdrawal through atm" in lower_sheets:
+        return lower_sheets["withdrawal through atm"]
+    for s in xls.sheet_names:
+        if "withdrawal" in s.lower() and "atm" in s.lower():
+            return s
+    return None
+
+
+def _atm_add_ack_str(df):
+    """Add a normalized 'ack_str' column when an Acknowledgement-No column exists."""
+    for col in df.columns:
+        if "acknowledgement" in str(col).lower() and "no" in str(col).lower():
+            df["ack_str"] = df[col].astype(str).str.strip()
+            break
+    return df
+
+
+def _atm_normalize_columns(cols):
+    """Stringify columns and strip non-ascii spacing (NBSP)."""
+    return [
+        str(c).encode("ascii", "ignore").decode().strip().replace("\u00a0", " ").replace("\xa0", " ")
+        for c in cols
+    ]
+
+
+def _atm_build_layer_map(ack_no):
+    """Map ATM account (normalized + raw) -> transaction layer for this ack_no."""
+    layer_map = {}
+    try:
+        txns = (
+            db.session.query(Transaction.to_account, Transaction.layer)
+            .filter(Transaction.ack_no == ack_no)
+            .filter(Transaction.to_account.isnot(None))
+            .distinct()
+            .all()
+        )
+
+        def normalize_db_acc(val):
+            s = str(val).strip()
+            return s[:-2] if s.endswith(".0") else s
+
+        for acc, lay in txns:
+            if acc:
+                layer_map[normalize_db_acc(acc)] = lay
+                layer_map[str(acc).strip()] = lay  # also keep the original
+        logger.info(f"[atm_data] Built layer map for {len(layer_map)} accounts")
+    except Exception as e:
+        logger.exception(f"[atm_data] Error building layer map: {e}")
+    return layer_map
+
+
+def _atm_find_acc_col(df):
+    for col in df.columns:
+        c_lower = col.lower()
+        if "account no" in c_lower or "account number" in c_lower:
+            return col
+    return None
+
+
+def _atm_layer_for(val, layer_map):
+    """Resolve an ATM account cell to its layer, tolerating float/sci-notation forms."""
+    if pd.isna(val) or val == "":
+        return ""
+    s_val = str(val).strip()
+    if s_val in layer_map:
+        return layer_map[s_val]
+    if s_val.endswith(".0") and s_val[:-2] in layer_map:
+        return layer_map[s_val[:-2]]
+    try:
+        int_val = str(int(float(s_val)))
+        if int_val in layer_map:
+            return layer_map[int_val]
+    except (ValueError, TypeError):
+        pass
+    return ""
+
+
 @app.route("/atm_data/<ack_no>", methods=["GET"])
 @login_required
 def atm_data(ack_no):
     """Return rows from the ATM-related sheet for the uploaded Excel associated with this ack_no."""
     check_case_access(ack_no)
     try:
-        # Find the most recent uploaded file for this ack_no
-        up_row = (
+        # Most recent uploaded file for this ack_no.
+        up = (
             db.session.query(UploadedFile)
             .join(Transaction, Transaction.upload_id == UploadedFile.id)
             .filter(Transaction.ack_no == ack_no)
             .order_by(UploadedFile.upload_time.desc())
             .first()
         )
-
-        if not up_row:
+        if not up:
             return jsonify({"atm": []})
 
-        up = up_row
         _ck = (up.id, ack_no)
         if _ck in _ATM_RESULT_CACHE:  # fast path: already parsed this file
             return jsonify(_ATM_RESULT_CACHE[_ck])
-        file_bytes = None
-        if up.data:
-            file_bytes = up.data
-        else:
-            # Fallback: try to read the saved file from uploads folder
-            # Ensure absolute path usage
-            upload_folder = app.config.get("UPLOAD_FOLDER", "uploads")
-            if not os.path.isabs(upload_folder):
-                upload_folder = os.path.join(app.root_path, upload_folder)
 
-            possible_path = os.path.join(upload_folder, up.filename) if up.filename else None
-
-            if possible_path and os.path.exists(possible_path):
-                try:
-                    with open(possible_path, "rb") as fh:
-                        file_bytes = fh.read()
-                except Exception as ex:
-                    logger.warning(f"[atm_data] Failed to read file from disk: {ex}")
-            else:
-                logger.warning(f"[atm_data] File not found at {possible_path}")
-
+        file_bytes = _atm_load_file_bytes(up)
         if not file_bytes:
             return jsonify({"atm": []})
 
@@ -3131,127 +3213,21 @@ def atm_data(ack_no):
         excel_engine = "openpyxl" if is_xlsx else "xlrd"
         xls = pd.ExcelFile(io.BytesIO(file_bytes), engine=excel_engine)
 
-        # Robust sheet finding
-        sheet_name = None
-        # 1. Exact match candidates
-        candidates = [TXN_WITHDRAWAL_ATM, "Withdrawal through ATM ", "Withdrawal through ATM\n"]
-        for c in candidates:
-            if c in xls.sheet_names:
-                sheet_name = c
-                break
-
-        # 2. Case-insensitive match
-        if not sheet_name:
-            lower_sheets = {s.lower().strip(): s for s in xls.sheet_names}
-            if "withdrawal through atm" in lower_sheets:
-                sheet_name = lower_sheets["withdrawal through atm"]
-
-        # 3. Partial match
-        if not sheet_name:
-            for s in xls.sheet_names:
-                if "withdrawal" in s.lower() and "atm" in s.lower():
-                    sheet_name = s
-                    break
-
+        sheet_name = _atm_find_sheet(xls)
         if not sheet_name:
             return jsonify({"atm": []})
 
         df = pd.read_excel(xls, sheet_name=sheet_name, engine=excel_engine)
-
-        # Filter by ACK Number if the column exists
-        ack_col = None
-        for col in df.columns:
-            if "acknowledgement" in str(col).lower() and "no" in str(col).lower():
-                ack_col = col
-                break
-
-        if ack_col:
-            # Normalize ACK numbers for comparison
-            df["ack_str"] = df[ack_col].astype(str).str.strip()
-            # Filter logic can be added here if needed, currently returns all for the file
-
+        df = _atm_add_ack_str(df)
         df = df.fillna("")
-
-        # Ensure columns are strings and replace non-ascii spacing
-        def normalize_columns(cols):
-            return [
-                str(c).encode("ascii", "ignore").decode().strip().replace("\u00a0", " ").replace("\xa0", " ")
-                for c in cols
-            ]
-
-        df.columns = normalize_columns(df.columns)
+        df.columns = _atm_normalize_columns(df.columns)
         logger.debug(f"[atm_data] Normalized columns: {list(df.columns)}")
 
-        # Fetch layer mapping from Transactions for this ACK No
-        layer_map = {}
-        try:
-            # Get distinct to_account -> layer mapping
-            txns = (
-                db.session.query(Transaction.to_account, Transaction.layer)
-                .filter(Transaction.ack_no == ack_no)
-                .filter(Transaction.to_account.isnot(None))
-                .distinct()
-                .all()
-            )
-
-            def normalize_db_acc(val):
-                s = str(val).strip()
-                # If it looks like a float ending in .0, strip it
-                if s.endswith(".0"):
-                    return s[:-2]
-                return s
-
-            for acc, lay in txns:
-                if acc:
-                    norm_acc = normalize_db_acc(acc)
-                    layer_map[norm_acc] = lay
-                    # Also store the original just in case
-                    layer_map[str(acc).strip()] = lay
-
-            logger.info(f"[atm_data] Built layer map for {len(layer_map)} accounts")
-        except Exception as e:
-            logger.exception(f"[atm_data] Error building layer map: {e}")
-
-        # Find Account Number column in the dataframe
-        acc_col = None
-        for col in df.columns:
-            c_lower = col.lower()
-            # Common patterns for account number column
-            if "account no" in c_lower or "account number" in c_lower:
-                acc_col = col
-                break
-
+        layer_map = _atm_build_layer_map(ack_no)
+        acc_col = _atm_find_acc_col(df)
         if acc_col:
             logger.info(f"[atm_data] Found account column: {acc_col}")
-
-            def get_layer(row):
-                val = row.get(acc_col)
-                if pd.isna(val) or val == "":
-                    return ""
-
-                # Normalize the ATM account value
-                s_val = str(val).strip()
-
-                # 1. Try exact match
-                if s_val in layer_map:
-                    return layer_map[s_val]
-
-                # 2. Try removing .0 suffix (common in pandas float->str)
-                if s_val.endswith(".0") and s_val[:-2] in layer_map:
-                    return layer_map[s_val[:-2]]
-
-                # 3. Try converting scientific notation or float to int string
-                try:
-                    f_val = float(s_val)
-                    int_val = str(int(f_val))
-                    if int_val in layer_map:
-                        return layer_map[int_val]
-                except (ValueError, TypeError):
-                    pass
-
-                return ""
-
-            df["Layer"] = df.apply(get_layer, axis=1)
+            df["Layer"] = df.apply(lambda row: _atm_layer_for(row.get(acc_col), layer_map), axis=1)
         else:
             logger.warning("[atm_data] Could not find Account Number column in ATM sheet")
             df["Layer"] = ""
@@ -3261,7 +3237,7 @@ def atm_data(ack_no):
         _result = {"atm": rows, "columns": list(df.columns)}
         if len(_ATM_RESULT_CACHE) >= _ATM_CACHE_MAX:  # bound the cache (simple evict-all)
             _ATM_RESULT_CACHE.clear()
-        _ATM_RESULT_CACHE[(up.id, ack_no)] = _result  # cache: blob is immutable per upload
+        _ATM_RESULT_CACHE[_ck] = _result  # cache: blob is immutable per upload
         return jsonify(_result)
     except Exception as e:
         logger.exception(f"[atm_data] Error: {e}", exc_info=True)
