@@ -42,7 +42,11 @@
   <div class="stat-card{% if kpi_key %} stat-card-click{% endif %}"{% if kpi_key %} data-kpi="{{ kpi_key }}" role="button" tabindex="0" aria-label="{{ label }} — click for details"{% endif %}>
     <span class="stat-icon {{ color }}" aria-hidden="true">{{ icon }}</span>
     <div>
-      <div class="stat-value" data-countup="{{ value|round(0)|int if is_cur else value }}"{% if is_cur %} data-prefix="₹"{% endif %}>{{ ('₹' ~ '{:,.0f}'.format(value)) if is_cur else value }}</div>
+      {% if is_cur %}
+      <div class="stat-value" title="₹{{ '{:,.0f}'.format(value) }}">{{ value|inrshort }}</div>
+      {% else %}
+      <div class="stat-value" data-countup="{{ value }}">{{ value }}</div>
+      {% endif %}
       <div class="stat-label">{{ label }}{% if kpi_key %} <span aria-hidden="true" style="opacity:.45">›</span>{% endif %}</div>
     </div>
   </div>

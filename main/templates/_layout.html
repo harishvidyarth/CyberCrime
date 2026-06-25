@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}FundTrail{% endblock %} — FundTrail</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=2.0">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=2.1">
   <script nonce="{{ csp_nonce }}">
     /* Apply the saved theme/nav state before first paint (no flash). */
     (function () {
@@ -164,7 +164,7 @@
   </div>
 </dialog>
 
-<script src="{{ url_for('static', filename='app.js') }}?v=2.0" defer></script>
+<script src="{{ url_for('static', filename='app.js') }}?v=2.1" defer></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

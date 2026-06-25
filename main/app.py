@@ -1045,6 +1045,30 @@ def _canon_ack(value):
     return s[:-2] if s.endswith(".0") else s
 
 
+@app.template_filter("inrshort")
+def fmt_inr_short(value):
+    """Abbreviate a rupee amount to one line: ₹X.XX Cr / ₹X.XX L / ₹n,nn,nnn.
+    Rendered server-side (no JS/cache dependency) so KPI values never clip to '…'.
+    Mirrors app.js fmtINShort thresholds."""
+    try:
+        n = float(value or 0)
+    except (TypeError, ValueError):
+        return "₹0"
+
+    def _trim(s):
+        if s.endswith(".00"):
+            return s[:-3]
+        if s.endswith("0"):
+            return s[:-1]
+        return s
+
+    if n >= 1e7:
+        return "₹" + _trim(f"{n / 1e7:.2f}") + " Cr"
+    if n >= 1e5:
+        return "₹" + _trim(f"{n / 1e5:.2f}") + " L"
+    return "₹" + format(int(round(n)), ",")
+
+
 def validate_account_number(account):
     """Validate account number / Wallet / PG / PA ID format"""
     if not account or account == "N/A":
@@ -2219,6 +2243,13 @@ def upload_excel():
         if dup_tx:
             return jsonify({
                 "error": f"ACK {dup_tx.ack_no} already has data. Delete the existing upload first."
+            }), 409
+
+        # Filename dedup (belt-and-suspenders): reject re-uploading a file with the
+        # same name by the same uploader. Delete the existing one first to re-upload.
+        if UploadedFile.query.filter_by(filename=filename, uploader=session.get("username")).first():
+            return jsonify({
+                "error": f'"{filename}" was already uploaded. Delete the existing upload first to re-upload.'
             }), 409
 
         # Re-read file to get binary data for storage
@@ -4873,6 +4904,68 @@ def _purge_orphaned_cases():
         POHRefundDetails.query.filter_by(ack_no=ack).delete(synchronize_session="fetch")
         MRMTracking.query.filter_by(ack_no=ack).delete(synchronize_session="fetch")
     return len(orphan_acks)
+
+
+def _dedupe_uploads():
+    """Self-healing cleanup of legacy bad uploads created BEFORE the atomic-commit +
+    canonical-ACK dedup fixes:
+      1. For any ack_no whose transactions span >1 upload, keep the NEWEST UploadedFile
+         and delete the older uploads' transactions + UploadedFile rows (this removes
+         the duplicate-valid-upload double count the user is seeing).
+      2. Delete UploadedFile rows with zero transactions (orphans from a pre-fix
+         partial upload).
+      3. Purge now-orphaned Complaint/POH/MRM via _purge_orphaned_cases().
+    Returns (duplicate_files_removed, orphan_files_removed)."""
+    ack_to_uploads = defaultdict(set)
+    for ack, uid in db.session.query(Transaction.ack_no, Transaction.upload_id).distinct().all():
+        if ack and uid is not None:
+            ack_to_uploads[ack].add(uid)
+
+    def _recency_key(f):
+        t = f.upload_time
+        if t is not None and t.tzinfo is not None:
+            t = t.astimezone(timezone.utc).replace(tzinfo=None)
+        return (t or datetime.min, f.id)
+
+    dup_removed = 0
+    for uids in ack_to_uploads.values():
+        if len(uids) < 2:
+            continue
+        files = UploadedFile.query.filter(UploadedFile.id.in_(uids)).all()
+        files.sort(key=_recency_key, reverse=True)  # newest first; keep files[0]
+        for f in files[1:]:
+            Transaction.query.filter_by(upload_id=f.id).delete(synchronize_session="fetch")
+            db.session.delete(f)
+            dup_removed += 1
+    db.session.flush()
+
+    orphan_removed = 0
+    for f in (
+        UploadedFile.query.outerjoin(Transaction, Transaction.upload_id == UploadedFile.id)
+        .filter(Transaction.id.is_(None))
+        .all()
+    ):
+        db.session.delete(f)
+        orphan_removed += 1
+
+    _purge_orphaned_cases()
+    if dup_removed or orphan_removed:
+        db.session.commit()
+        logger.info("dedupe_uploads: removed %d duplicate + %d orphan upload(s)", dup_removed, orphan_removed)
+    else:
+        db.session.rollback()
+    return dup_removed, orphan_removed
+
+
+# Self-heal legacy duplicate/orphan uploads once at import (covers the packaged .exe,
+# which imports app rather than running __main__). Gated + wrapped so a hiccup never
+# blocks boot. TESTING / RUN_BACKFILL=0 suppress it.
+with app.app_context():
+    if not app.config.get("TESTING") and os.environ.get("RUN_BACKFILL", "1") == "1":
+        try:
+            _dedupe_uploads()
+        except Exception as _dedupe_exc:  # pragma: no cover - defensive
+            logger.warning("startup dedupe_uploads skipped: %s", _dedupe_exc)
 
 
 @app.route("/delete_upload/<int:file_id>", methods=["POST"])
