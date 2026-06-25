@@ -1035,6 +1035,16 @@ def log_usage(action, filename=None, ack_no=None):
         logger.exception(f"UsageLog error: {e}")
 
 
+def _canon_ack(value):
+    """Canonical string form of an Acknowledgement No so the ACK dedup and stored
+    rows always compare equal. pandas may hand us a numpy int/float (e.g. a 14-digit
+    ack as 3.29e13 -> "...14.0" when the column has a NaN), while ack_no is a TEXT
+    column — SQLite type affinity then makes int/float != text and the dedup misses.
+    Strip whitespace and a trailing ".0" so "32903260020008" is the one true key."""
+    s = str(value).strip()
+    return s[:-2] if s.endswith(".0") else s
+
+
 def validate_account_number(account):
     """Validate account number / Wallet / PG / PA ID format"""
     if not account or account == "N/A":
@@ -2193,7 +2203,9 @@ def upload_excel():
         ack_col = find_ack_no_column(tx_df.columns)
         if not ack_col:
             raise ValueError("Column 'Acknowledgement No.' not found in the worksheet.")
-        acknos_in_excel = tx_df[ack_col].dropna().unique()
+        # Canonicalize to stripped strings so the dedup below matches the stored
+        # (string) ack_no regardless of pandas dtype (int vs float "...0" vs str).
+        acknos_in_excel = sorted({_canon_ack(a) for a in tx_df[ack_col].dropna().unique()})
 
         if len(acknos_in_excel) == 0:
             flash("⚠️ No Acknowledgement numbers found in the Excel file!", "warning")
@@ -2530,7 +2542,7 @@ def upload_excel():
         skipped_rows = []
         for idx, (_, row) in enumerate(tx_df.iterrows()):
             try:
-                ack_no = clean_str(row.get(col_ack))
+                ack_no = _canon_ack(clean_str(row.get(col_ack)))
                 if not ack_no:
                     # Skip empty acknowledgment rows but don't count them as errors
                     continue
@@ -2665,7 +2677,7 @@ def upload_excel():
         #    Get-or-create; never clobber an admin's manual reassignment.
         try:
             for _ack in acknos_in_excel:
-                _ack_s = str(_ack).strip()
+                _ack_s = _canon_ack(_ack)
                 if not _ack_s:
                     continue
                 _c = Complaint.query.filter_by(ack_no=_ack_s).first()
@@ -3772,15 +3784,46 @@ def _parse_mrm_payload(data):
     return {"step": step, "date": date, "refund_type": refund_type, "refund_amount": refund_amount}, None
 
 
-def _mrm_step_guard(row, step):
-    """Officer-first (A-3 p1) / set-once / sequential checks. Returns an error
-    tuple if the save must be rejected, else None."""
-    if is_admin() and not getattr(row, f"step{step}"):
+def _mrm_parse_date(value):
+    """Parse an MRM step date (yyyy-mm-dd or dd-mm-yyyy / dd/mm/yyyy) to a date,
+    or None if blank/unparseable. Used to compare step dates chronologically."""
+    s = str(value or "").strip()
+    if not s:
+        return None
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _mrm_step_guard(row, step, date):
+    """Officer-first / set-once / sequential / chronological checks. Returns an
+    error tuple if the save must be rejected, else None.
+
+    - Officer-first (A-3 p1): an Admin can never create the FIRST save for a step.
+    - Set-once: an OFFICER cannot overwrite a dated step; an Admin MAY edit it
+      (to correct a date) — every edit is re-logged in the audit trail.
+    - Sequential: step N needs step N-1 dated.
+    - Chronological: step N's date must be >= step N-1's date and <= step N+1's.
+    """
+    already = getattr(row, f"step{step}")
+    if is_admin() and not already:
         return jsonify({"status": "error", "message": "Officer must record this step before Admin can edit it."}), 403
-    if getattr(row, f"step{step}"):
+    if already and not is_admin():
         return jsonify({"status": "error", "message": f"Step {step} is already recorded."}), 409
     if step > 1 and not getattr(row, f"step{step - 1}"):
         return jsonify({"status": "error", "message": f"Complete step {step - 1} before step {step}."}), 409
+
+    new_d = _mrm_parse_date(date)
+    if new_d is not None:
+        prev_d = _mrm_parse_date(getattr(row, f"step{step - 1}")) if step > 1 else None
+        if prev_d and new_d < prev_d:
+            return jsonify({"status": "error", "message": f"Date cannot be earlier than step {step - 1} ({prev_d.isoformat()})."}), 400
+        next_d = _mrm_parse_date(getattr(row, f"step{step + 1}")) if step < len(MRM_STEPS) else None
+        if next_d and new_d > next_d:
+            return jsonify({"status": "error", "message": f"Date cannot be later than step {step + 1} ({next_d.isoformat()})."}), 400
     return None
 
 
@@ -3872,7 +3915,7 @@ def save_mrm_status():
         if err:
             return err
 
-        guard = _mrm_step_guard(row, step)
+        guard = _mrm_step_guard(row, step, date)
         if guard:
             return guard
 
@@ -6131,6 +6174,87 @@ def export_analytics_xlsx():
 def export_my_analytics_xlsx():
     """Officer's own analytics export to Excel."""
     return _send_analytics_xlsx(uploader=session.get("username"), label="my_cases")
+
+
+def _kpi_uploader_scope():
+    """Role-aware scope for KPI drill-downs: None = all data (admin), else the
+    officer's own username so they only ever see their own uploads."""
+    return None if is_admin() else session.get("username")
+
+
+def _kpi_dataframe(kpi, uploader=None):
+    """Build (columns, rows) for a clickable analytics KPI drill-down.
+    Returns (None, None) for an unknown kpi. uploader=None -> all data."""
+    base = Transaction.query
+    if uploader is not None:
+        ids = [f.id for f in UploadedFile.query.with_entities(UploadedFile.id).filter_by(uploader=uploader)]
+        base = base.filter(Transaction.upload_id.in_(ids or [-1]))
+
+    if kpi == "accounts":
+        cols = ["account", "bank", "ifsc", "state", "txn_count", "total_amount"]
+        rows = (
+            base.with_entities(
+                Transaction.to_account,
+                func.max(Transaction.bank_name),
+                func.max(Transaction.ifsc_code),
+                func.max(Transaction.state),
+                func.count(Transaction.id),
+                func.sum(Transaction.amount),
+            )
+            .filter(Transaction.to_account.isnot(None))
+            .group_by(Transaction.to_account)
+            .order_by(func.sum(Transaction.amount).desc())
+            .all()
+        )
+        return cols, [dict(zip(cols, r, strict=True)) for r in rows]
+
+    if kpi == "hold":
+        cols = ["ack_no", "account", "hold_amount", "hold_date", "refund_status"]
+        rows = (
+            base.with_entities(
+                Transaction.ack_no,
+                Transaction.to_account,
+                Transaction.put_on_hold_amount,
+                Transaction.put_on_hold_date,
+                Transaction.refund_status,
+            )
+            .filter(Transaction.put_on_hold_txn_id.isnot(None))
+            .order_by(Transaction.put_on_hold_amount.desc())
+            .all()
+        )
+        return cols, [dict(zip(cols, r, strict=True)) for r in rows]
+
+    return None, None
+
+
+@app.route("/analytics/kpi_detail/<kpi>", methods=["GET"])
+@login_required
+def analytics_kpi_detail(kpi):
+    """JSON drill-down for a clickable KPI card (accounts | hold). Officers see
+    only their own uploads; admins see everything."""
+    cols, rows = _kpi_dataframe(kpi, _kpi_uploader_scope())
+    if cols is None:
+        abort(404)
+    return jsonify({"kpi": kpi, "columns": cols, "rows": rows})
+
+
+@app.route("/analytics/kpi_download/<kpi>.xlsx", methods=["GET"])
+@login_required
+def analytics_kpi_download(kpi):
+    """Excel export of the same KPI drill-down, scoped to the caller's role."""
+    cols, rows = _kpi_dataframe(kpi, _kpi_uploader_scope())
+    if cols is None:
+        abort(404)
+    df = pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame({"info": ["no data"]})
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        df.to_excel(xw, sheet_name=kpi[:31], index=False)
+    buf.seek(0)
+    log_usage("kpi_download", filename=kpi)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    return send_file(
+        buf, as_attachment=True, download_name=f"FundTrail_{kpi}_{stamp}.xlsx", mimetype=MIME_XLSX
+    )
 
 
 @app.route("/refund_dashboard", methods=["GET"])

@@ -97,14 +97,27 @@
     }, 200));
   });
 
+  /* Abbreviate large rupee amounts so KPI values stay on ONE line.
+     e.g. 6885687 -> "₹68.86 L", 12500000 -> "₹1.25 Cr". */
+  function fmtINShort(n) {
+    n = Number(n) || 0;
+    var s;
+    if (n >= 1e7) { s = (n / 1e7).toFixed(2); if (s.endsWith('.00')) s = s.slice(0, -3); else if (s.endsWith('0')) s = s.slice(0, -1); return '₹' + s + ' Cr'; }
+    if (n >= 1e5) { s = (n / 1e5).toFixed(2); if (s.endsWith('.00')) s = s.slice(0, -3); else if (s.endsWith('0')) s = s.slice(0, -1); return '₹' + s + ' L'; }
+    return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  }
+
   /* ── Count-up animation for dashboard stats ──────────────── */
   document.querySelectorAll('[data-countup]').forEach(function (el) {
     var target = parseFloat(el.getAttribute('data-countup'));
     if (isNaN(target)) return;
     var decimals = (String(el.getAttribute('data-countup')).split('.')[1] || '').length;
     var prefix = el.getAttribute('data-prefix') || '';
+    var isRupee = prefix === '₹';
+    // Exact value on hover; the visible value is abbreviated so it never overflows.
+    if (isRupee) el.title = '₹' + target.toLocaleString('en-IN', { maximumFractionDigits: 2 });
     var start = null, dur = 800;
-    function fmt(v) { return prefix + v.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }); }
+    function fmt(v) { return isRupee ? fmtINShort(v) : prefix + v.toLocaleString('en-IN', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }); }
     function step(ts) {
       if (!start) start = ts;
       var p = Math.min((ts - start) / dur, 1);

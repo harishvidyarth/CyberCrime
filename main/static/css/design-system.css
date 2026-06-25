@@ -276,7 +276,9 @@ body.nav-collapsed #navCollapse svg { transform: scaleX(-1); }
 /* min-width:0 lets the text column shrink inside the flex card so long ₹ values
    wrap/scale instead of overflowing the card edge. */
 .stat-card > div { min-width: 0; }
-.stat-value { font-size: var(--text-3xl); line-height: var(--leading-3xl); font-weight: var(--font-bold); overflow-wrap: anywhere; }
+/* Keep KPI values on ONE line. Big ₹ amounts are abbreviated (₹X.XX Cr/L) by
+   app.js fmtINShort so they fit; the exact value is in the element's title. */
+.stat-value { font-size: var(--text-3xl); line-height: var(--leading-3xl); font-weight: var(--font-bold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stat-label { font-size: var(--text-sm); color: var(--color-text-secondary); }
 
 /* ─── DATA TABLES ───────────────────────────────────────────── */
@@ -290,6 +292,10 @@ body.nav-collapsed #navCollapse svg { transform: scaleX(-1); }
   text-align: left; padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--color-border); white-space: nowrap;
 }
+/* Numeric/mono headers must line up with their right-aligned .num data cells —
+   this beats the default left-align above by being more specific. */
+.ds-table thead th.num  { text-align: right; }
+.ds-table thead th.mono { font-family: var(--font-mono); }
 .ds-table tbody td {
   padding: var(--space-3) var(--space-4); min-height: 52px;
   border-bottom: 1px solid var(--color-border); vertical-align: middle;

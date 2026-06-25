@@ -214,11 +214,12 @@ def save_adm(client, step, date="2026-06-19", **extra):
 check("admin first-save empty step1 -> 403", save_adm(admin_c, 1).status_code == 403)
 # (c) Officer still saves first normally.
 check("officer first-save step1 -> 200", save_adm(a_c, 1).status_code == 200)
-# (b) Officer-first gate no longer fires once the step exists: admin is past the
-#     403 gate; set-once (409) now governs that path (unchanged behaviour).
+# (b) Once the officer has saved step1, the Admin can EDIT it (set-once is
+#     officer-only now). Same date keeps chronology valid -> 200, not 403/409.
 _adm_after = save_adm(admin_c, 1)
-check("admin save after officer saved step1 -> not blocked by officer-first (not 403)", _adm_after.status_code != 403)
-check("admin save on officer-saved step1 -> 409 (set-once governs)", _adm_after.status_code == 409)
+check("admin edit officer-saved step1 -> 200 (admin may correct dates)", _adm_after.status_code == 200)
+# An OFFICER still cannot overwrite a dated step (set-once for officers).
+check("officer overwrite own saved step1 -> 409 (set-once)", save_adm(a_c, 1).status_code == 409)
 # Officer continues the workflow normally.
 check("officer save step2 -> 200", save_adm(a_c, 2).status_code == 200)
 
@@ -261,6 +262,36 @@ check("reassigned-away uploader A gets foreign-case message", "assigned to anoth
 check("assigned officer B save step1 -> 200", save_re(b_c, 1).status_code == 200)
 # Admin is NOT subject to the foreign-case rule (governed by group scope instead).
 check("admin not blocked by foreign-case rule", "assigned to another officer" not in msg(save_re(admin_c, 2)))
+
+print("\n── MRM step date ordering (>= previous, <= next) ──")
+with app.app_context():
+    uf5 = UploadedFile(filename="chrono.xlsx", uploader="off_a")
+    db.session.add(uf5)
+    db.session.commit()
+    db.session.add(
+        Transaction(
+            ack_no="CASE-CHRONO", layer=3, from_account="5", to_account="555555555",
+            amount=2000.0, put_on_hold_amount=2000.0, put_on_hold_txn_id="HOLD-CH",
+            put_on_hold_date="2026-06-01", txn_id="TX-CH", upload_id=uf5.id,
+        )
+    )
+    if not Complaint.query.filter_by(ack_no="CASE-CHRONO").first():
+        db.session.add(Complaint(ack_no="CASE-CHRONO", file_name="chrono.xlsx", uploaded_by=A_ID, assigned_to=A_ID))
+    db.session.commit()
+
+
+def save_ch(client, step, date, **extra):
+    body = {"ack_no": "CASE-CHRONO", "hold_txn_id": "HOLD-CH", "step": step, "date": date}
+    body.update(extra)
+    return client.post("/save_mrm_status", json=body)
+
+
+check("officer step1 = 2026-06-10 -> 200", save_ch(a_c, 1, "2026-06-10").status_code == 200)
+check("officer step2 earlier than step1 (2026-06-05) -> 400", save_ch(a_c, 2, "2026-06-05").status_code == 400)
+check("officer step2 = 2026-06-12 -> 200", save_ch(a_c, 2, "2026-06-12").status_code == 200)
+# Admin edits are also subject to ordering: step2 cannot move before step1 (2026-06-10).
+check("admin edit step2 before step1 (2026-06-08) -> 400", save_ch(admin_c, 2, "2026-06-08").status_code == 400)
+check("admin edit step2 = 2026-06-11 (>= step1, no step3) -> 200", save_ch(admin_c, 2, "2026-06-11").status_code == 200)
 
 print()
 if FAILS:
