@@ -2861,6 +2861,169 @@ def complaints():
     return render_template("complaint.html", cases=cases, statuses=CASE_STATUSES)
 
 
+def _restore_poh_details(transactions, ack_no):
+    """Overlay persisted POHRefundDetails onto in-memory txns so the graph shows
+    refund state even if the Transaction rows are stale/reset."""
+    try:
+        poh_details_list = POHRefundDetails.query.filter_by(ack_no=ack_no).all()
+        if not poh_details_list:
+            return
+        poh_map = {p.txn_id: p for p in poh_details_list}
+        updated_count = 0
+        for t in transactions:
+            if t.put_on_hold_txn_id and t.put_on_hold_txn_id in poh_map:
+                pdata = poh_map[t.put_on_hold_txn_id]
+                t.court_order_date = pdata.court_order_date
+                t.refund_status = pdata.refund_status
+                t.refund_amount = pdata.refund_amount
+                updated_count += 1
+        logger.info(f"Restored persistent POH details for {updated_count} transactions")
+    except Exception as e:
+        logger.exception(f"Error restoring POH details in graph_data: {e}")
+
+
+def _restore_kyc_details(transactions):
+    """Overlay persisted KYCDetails onto in-memory txns for graph rendering."""
+    try:
+        txn_ids = [t.txn_id for t in transactions if t.txn_id]
+        if not txn_ids:
+            return
+        kyc_list = KYCDetails.query.filter(KYCDetails.txn_id.in_(txn_ids)).all()
+        kyc_map = {k.txn_id: k for k in kyc_list}
+        kyc_updated_count = 0
+        for t in transactions:
+            if t.txn_id and t.txn_id in kyc_map:
+                kdata = kyc_map[t.txn_id]
+                t.kyc_name = kdata.name
+                t.kyc_aadhar = kdata.aadhar
+                t.kyc_mobile = kdata.mobile
+                t.kyc_address = kdata.address
+                kyc_updated_count += 1
+        logger.info(f"Restored persistent KYC details for {kyc_updated_count} transactions")
+    except Exception as e:
+        logger.exception(f"Error restoring KYC details in graph_data: {e}")
+
+
+def _build_edge_maps(transactions):
+    """Dedup on the FULL transaction identity (not just txn_id, which collapsed
+    distinct UTR-less transfers) and build the from->to and incoming edge maps."""
+    from_to_map = defaultdict(lambda: defaultdict(list))
+    incoming_map = defaultdict(list)
+    seen_edge_keys = set()
+    for t in transactions:
+        key = (t.from_account, t.to_account, t.amount, t.txn_date, t.txn_id)
+        if key in seen_edge_keys:
+            continue
+        seen_edge_keys.add(key)
+        from_to_map[t.from_account][t.to_account].append(
+            {"txn_id": t.txn_id, "amount": t.amount, "date": t.txn_date, "ack_no": t.ack_no}
+        )
+        incoming_map[t.to_account].append(
+            {
+                "from_account": t.from_account,
+                "amount": t.amount,
+                "date": t.txn_date,
+                "ack_no": t.ack_no,
+                "txn_id": t.txn_id,
+            }
+        )
+    return from_to_map, incoming_map
+
+
+def _find_graph_node(n, target):
+    if n["name"] == target:
+        return n
+    for child in n.get("children", []):
+        found = _find_graph_node(child, target)
+        if found:
+            return found
+    return None
+
+
+def _build_graph_hierarchy(rows, from_to_map, from_layer_map):
+    root = {"name": "Flow", "children": []}
+    for t in rows:
+        if t.layer == 1:
+            parent = next((c for c in root["children"] if c["name"] == t.from_account), None)
+            if not parent:
+                parent = {
+                    "name": t.from_account,
+                    "children": [],
+                    "kyc_name": t.kyc_name,
+                    "kyc_aadhar": t.kyc_aadhar,
+                    "kyc_mobile": t.kyc_mobile,
+                    "kyc_address": t.kyc_address,
+                    "action": t.action_taken,
+                }
+                root["children"].append(parent)
+        else:
+            parent = _find_graph_node(root, t.from_account)
+
+        if parent:
+            existing = next((c for c in parent["children"] if c["name"] == t.to_account), None)
+            if not existing:
+                # ✅ calculate total amount of all transactions between parent → child
+                child = {
+                    "name": t.to_account,
+                    "children": [],
+                    "layer": from_layer_map.get(t.to_account, t.layer),
+                    "ack": t.ack_no,
+                    "bank": t.bank_name,
+                    "ifsc": t.ifsc_code,
+                    "date": t.txn_date,
+                    "txid": (
+                        t.txn_id
+                        or next(
+                            (
+                                tx.get("txn_id")
+                                for tx in from_to_map[t.from_account][t.to_account]
+                                if tx.get("txn_id")
+                            ),
+                            None,
+                        )
+                    ),
+                    "amt": str(t.amount),
+                    "disputed": str(t.disputed_amount),
+                    "action": t.action_taken,
+                    "state": t.state if t.state and t.state != "Unknown" else (t.ifsc_code or "Unknown State"),
+                    "atm_info": {
+                        "atm_id": t.atm_id,
+                        "amount": t.atm_withdraw_amount,
+                        "date": t.atm_withdraw_date,
+                        "location": t.atm_location,
+                    }
+                    if t.atm_id
+                    else None,
+                    "cheque_info": {
+                        "cheque_no": t.cheque_no,
+                        "amount": t.cheque_withdraw_amount,
+                        "date": t.cheque_withdraw_date,
+                        "ifsc": t.cheque_ifsc,
+                    }
+                    if t.cheque_no
+                    else None,
+                    "hold_info": {
+                        "txn_id": t.put_on_hold_txn_id,
+                        "amount": t.put_on_hold_amount,
+                        "date": t.put_on_hold_date,
+                        "court_order_date": t.court_order_date,
+                        "refund_status": t.refund_status,
+                        "refund_amount": t.refund_amount,
+                    }
+                    if t.put_on_hold_txn_id
+                    else None,
+                    "kyc_name": t.kyc_name,
+                    "kyc_aadhar": t.kyc_aadhar,
+                    "kyc_mobile": t.kyc_mobile,
+                    "kyc_address": t.kyc_address,
+                    # ✅ Keep all individual transactions for popup
+                    "transactions_from_parent": from_to_map[t.from_account][t.to_account],
+                }
+                parent["children"].append(child)
+
+    return root
+
+
 @app.route("/graph_data/<ack_no>", methods=["GET"])
 @login_required
 def graph_data(ack_no):
@@ -2873,175 +3036,17 @@ def graph_data(ack_no):
         transactions = Transaction.query.filter_by(ack_no=ack_no).all()
         logger.info(f"Found {len(transactions)} transactions for ACK {ack_no}")
 
-        # ✅ Restore POH Refund Details from persistent store (POHRefundDetails)
-        # This ensures that even if the Transaction table is stale or reset, the refund details are preserved and displayed.
-        try:
-            poh_details_list = POHRefundDetails.query.filter_by(ack_no=ack_no).all()
-            if poh_details_list:
-                poh_map = {p.txn_id: p for p in poh_details_list}
-                updated_count = 0
-                for t in transactions:
-                    if t.put_on_hold_txn_id and t.put_on_hold_txn_id in poh_map:
-                        pdata = poh_map[t.put_on_hold_txn_id]
-                        # Update in-memory object attributes for graph generation
-                        t.court_order_date = pdata.court_order_date
-                        t.refund_status = pdata.refund_status
-                        t.refund_amount = pdata.refund_amount
-                        updated_count += 1
-                logger.info(f"Restored persistent POH details for {updated_count} transactions")
-        except Exception as e:
-            logger.exception(f"Error restoring POH details in graph_data: {e}")
-
-        # ✅ Restore KYC Details from persistent store (KYCDetails)
-        try:
-            txn_ids = [t.txn_id for t in transactions if t.txn_id]
-            if txn_ids:
-                # SQLite has limit on variables in IN clause, but usually 999. If txn count is high, might need chunking.
-                # For now assuming manageable chunk or SQLAlchemy handles it (it often doesn't automatically chunk large lists).
-                # To be safe, let's just query what we can. If it fails, we catch exception.
-                kyc_list = KYCDetails.query.filter(KYCDetails.txn_id.in_(txn_ids)).all()
-                kyc_map = {k.txn_id: k for k in kyc_list}
-
-                kyc_updated_count = 0
-                for t in transactions:
-                    if t.txn_id and t.txn_id in kyc_map:
-                        kdata = kyc_map[t.txn_id]
-                        t.kyc_name = kdata.name
-                        t.kyc_aadhar = kdata.aadhar
-                        t.kyc_mobile = kdata.mobile
-                        t.kyc_address = kdata.address
-                        kyc_updated_count += 1
-                logger.info(f"Restored persistent KYC details for {kyc_updated_count} transactions")
-        except Exception as e:
-            logger.exception(f"Error restoring KYC details in graph_data: {e}")
+        # Overlay persisted refund + KYC details onto the in-memory rows.
+        _restore_poh_details(transactions, ack_no)
+        _restore_kyc_details(transactions)
 
         if not transactions:
             logger.warning(f"No transactions found for ACK {ack_no}")
             return jsonify({"error": "No transactions found for this Acknowledgement No."})
 
-        from_to_map = defaultdict(lambda: defaultdict(list))
-        incoming_map = defaultdict(list)
-
-        # Dedup on the FULL transaction identity, not just txn_id. The old check
-        # treated every blank txn_id as "already seen", so multiple distinct transfers
-        # between the same two accounts that lacked a UTR collapsed into one (a cause of
-        # the "missing transactions / partial data" symptom). Keep rows differing in
-        # amount/date/txn_id; drop only exact duplicates.
-        seen_edge_keys = set()
-        for t in transactions:
-            key = (t.from_account, t.to_account, t.amount, t.txn_date, t.txn_id)
-            if key in seen_edge_keys:
-                continue
-            seen_edge_keys.add(key)
-            from_to_map[t.from_account][t.to_account].append(
-                {"txn_id": t.txn_id, "amount": t.amount, "date": t.txn_date, "ack_no": t.ack_no}
-            )
-            incoming_map[t.to_account].append(
-                {
-                    "from_account": t.from_account,
-                    "amount": t.amount,
-                    "date": t.txn_date,
-                    "ack_no": t.ack_no,
-                    "txn_id": t.txn_id,
-                }
-            )
-
+        from_to_map, _incoming_map = _build_edge_maps(transactions)
         from_layer_map = {t.from_account: t.layer for t in transactions if t.from_account}
-
-        def build_hierarchy(rows):
-            root = {"name": "Flow", "children": []}
-
-            def find_node(n, target):
-                if n["name"] == target:
-                    return n
-                for c in n.get("children", []):
-                    found = find_node(c, target)
-                    if found:
-                        return found
-                return None
-
-            for t in rows:
-                if t.layer == 1:
-                    parent = next((c for c in root["children"] if c["name"] == t.from_account), None)
-                    if not parent:
-                        parent = {
-                            "name": t.from_account,
-                            "children": [],
-                            "kyc_name": t.kyc_name,
-                            "kyc_aadhar": t.kyc_aadhar,
-                            "kyc_mobile": t.kyc_mobile,
-                            "kyc_address": t.kyc_address,
-                            "action": t.action_taken,
-                        }
-                        root["children"].append(parent)
-                else:
-                    parent = find_node(root, t.from_account)
-
-                if parent:
-                    existing = next((c for c in parent["children"] if c["name"] == t.to_account), None)
-                    if not existing:
-                        # ✅ calculate total amount of all transactions between parent → child
-                        child = {
-                            "name": t.to_account,
-                            "children": [],
-                            "layer": from_layer_map.get(t.to_account, t.layer),
-                            "ack": t.ack_no,
-                            "bank": t.bank_name,
-                            "ifsc": t.ifsc_code,
-                            "date": t.txn_date,
-                            "txid": (
-                                t.txn_id
-                                or next(
-                                    (
-                                        tx.get("txn_id")
-                                        for tx in from_to_map[t.from_account][t.to_account]
-                                        if tx.get("txn_id")
-                                    ),
-                                    None,
-                                )
-                            ),
-                            "amt": str(t.amount),
-                            "disputed": str(t.disputed_amount),
-                            "action": t.action_taken,
-                            "state": t.state if t.state and t.state != "Unknown" else (t.ifsc_code or "Unknown State"),
-                            "atm_info": {
-                                "atm_id": t.atm_id,
-                                "amount": t.atm_withdraw_amount,
-                                "date": t.atm_withdraw_date,
-                                "location": t.atm_location,
-                            }
-                            if t.atm_id
-                            else None,
-                            "cheque_info": {
-                                "cheque_no": t.cheque_no,
-                                "amount": t.cheque_withdraw_amount,
-                                "date": t.cheque_withdraw_date,
-                                "ifsc": t.cheque_ifsc,
-                            }
-                            if t.cheque_no
-                            else None,
-                            "hold_info": {
-                                "txn_id": t.put_on_hold_txn_id,
-                                "amount": t.put_on_hold_amount,
-                                "date": t.put_on_hold_date,
-                                "court_order_date": t.court_order_date,
-                                "refund_status": t.refund_status,
-                                "refund_amount": t.refund_amount,
-                            }
-                            if t.put_on_hold_txn_id
-                            else None,
-                            "kyc_name": t.kyc_name,
-                            "kyc_aadhar": t.kyc_aadhar,
-                            "kyc_mobile": t.kyc_mobile,
-                            "kyc_address": t.kyc_address,
-                            # ✅ Keep all individual transactions for popup
-                            "transactions_from_parent": from_to_map[t.from_account][t.to_account],
-                        }
-                        parent["children"].append(child)
-
-            return root
-
-        result = build_hierarchy(transactions)
+        result = _build_graph_hierarchy(transactions, from_to_map, from_layer_map)
         logger.info(f"Built hierarchy with {len(result['children'])} root children")
         return jsonify(result)
     except Exception as e:
