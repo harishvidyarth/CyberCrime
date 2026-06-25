@@ -3707,6 +3707,110 @@ def _mrm_to_dict(row, ack_no=None, txn_id=None):
     return out
 
 
+def _mrm_foreign_case_block(ack_no):
+    """A-3 part 2: officer may only save on a case assigned to them. Returns an
+    error tuple if blocked, else None. Admins are exempt (group scope governs)."""
+    if is_admin():
+        return None
+    complaint = Complaint.query.filter_by(ack_no=ack_no).first()
+    if complaint and complaint.assigned_to not in (None, current_user.id):
+        return jsonify({"status": "error", "message": "This case is assigned to another officer."}), 403
+    return None
+
+
+def _parse_mrm_payload(data):
+    """Validate the save_mrm_status payload. Returns (parsed, None) on success or
+    (None, (json_response, status)) on the first validation failure."""
+    try:
+        step = int(data.get("step"))
+    except (TypeError, ValueError):
+        return None, (jsonify({"status": "error", "message": "Invalid step"}), 400)
+    if step < 1 or step > len(MRM_STEPS):
+        return None, (jsonify({"status": "error", "message": "Step out of range"}), 400)
+
+    date = sanitize_text(data.get("date"), 20)
+    if not date or not validate_court_order_date(date):
+        return None, (jsonify({"status": "error", "message": "A valid date is required for this step."}), 400)
+
+    refund_type = (data.get("refund_type") or "").strip().upper()
+    refund_amount = None
+    if step == MRM_REFUND_STEP:
+        if refund_type not in ALLOWED_REFUND_TYPES:
+            return None, (jsonify({"status": "error", "message": "Refund type (FULL/PARTIAL) is required."}), 400)
+        try:
+            refund_amount = float(data.get("refund_amount"))
+        except (TypeError, ValueError):
+            return None, (jsonify({"status": "error", "message": "A valid refund amount is required."}), 400)
+        if refund_amount <= 0:
+            return None, (jsonify({"status": "error", "message": "Refund amount must be greater than zero."}), 400)
+
+    return {"step": step, "date": date, "refund_type": refund_type, "refund_amount": refund_amount}, None
+
+
+def _mrm_step_guard(row, step):
+    """Officer-first (A-3 p1) / set-once / sequential checks. Returns an error
+    tuple if the save must be rejected, else None."""
+    if is_admin() and not getattr(row, f"step{step}"):
+        return jsonify({"status": "error", "message": "Officer must record this step before Admin can edit it."}), 403
+    if getattr(row, f"step{step}"):
+        return jsonify({"status": "error", "message": f"Step {step} is already recorded."}), 409
+    if step > 1 and not getattr(row, f"step{step - 1}"):
+        return jsonify({"status": "error", "message": f"Complete step {step - 1} before step {step}."}), 409
+    return None
+
+
+def _apply_mrm_refund(row, txn, ack_no, hold_txn_id, refund_type, refund_amount):
+    """Mirror the refund step into MRMTracking / Transaction / POHRefundDetails."""
+    row.refund_type = refund_type
+    row.refund_amount = refund_amount
+    txn.refund_type = refund_type
+    txn.refund_amount = refund_amount
+    txn.refund_status = "Refunded" if refund_type == "FULL" else STATUS_PARTIALLY_REFUNDED
+    poh = POHRefundDetails.query.filter_by(ack_no=ack_no, txn_id=hold_txn_id).first()
+    if not poh:
+        poh = POHRefundDetails(ack_no=ack_no, txn_id=hold_txn_id)
+        db.session.add(poh)
+    poh.court_order_date = txn.court_order_date
+    poh.refund_status = txn.refund_status
+    poh.refund_amount = refund_amount
+
+
+def _load_mrm_targets(ack_no, hold_txn_id):
+    """Return (txn, row, None) for a put-on-hold transaction, creating the
+    MRMTracking row if absent; or (None, None, error_tuple) if the txn is missing."""
+    txn = Transaction.query.filter_by(ack_no=ack_no, put_on_hold_txn_id=hold_txn_id).first()
+    if not txn:
+        return None, None, (jsonify({"status": "error", "message": "Put-on-hold transaction not found"}), 404)
+    row = MRMTracking.query.filter_by(ack_no=ack_no, txn_id=hold_txn_id).first()
+    if not row:
+        row = MRMTracking(ack_no=ack_no, txn_id=hold_txn_id)
+        db.session.add(row)
+    return txn, row, None
+
+
+def _log_mrm_action(ack_no, hold_txn_id, step, date, refund_type, refund_amount):
+    """Append the immutable MRM audit entry: what / when / who."""
+    try:
+        actor = current_user.username
+        actor_role = current_user.role
+    except Exception:
+        actor = session.get("username")
+        actor_role = session.get("role")
+    db.session.add(
+        MRMStatusLog(
+            ack_no=ack_no,
+            txn_id=hold_txn_id,
+            step=step,
+            step_label=MRM_STEPS[step - 1],
+            date_completed=date,
+            refund_type=refund_type if step == MRM_REFUND_STEP else None,
+            refund_amount=refund_amount if step == MRM_REFUND_STEP else None,
+            performed_by=actor,
+            performed_role=actor_role,
+        )
+    )
+
+
 @app.route("/save_mrm_status", methods=["POST"])
 @login_required
 def save_mrm_status():
@@ -3728,105 +3832,29 @@ def save_mrm_status():
         return jsonify({"status": "error", "message": "Missing required identifiers"}), 400
 
     check_case_access(ack_no)
+    blocked = _mrm_foreign_case_block(ack_no)
+    if blocked:
+        return blocked
 
-    # Foreign-case block (A-3 part 2): an officer may only save MRM on a case
-    # assigned to them. The uploader is the de-facto assignee at upload time; once
-    # an admin reassigns the case, only the new assignee may save. A NULL assignee
-    # falls back to check_case_access above (uploader retains access). Admins are
-    # governed by their group scope in check_case_access, not by this rule.
-    if not is_admin():
-        _complaint = Complaint.query.filter_by(ack_no=ack_no).first()
-        if _complaint and _complaint.assigned_to not in (None, current_user.id):
-            return jsonify({
-                "status": "error",
-                "message": "This case is assigned to another officer.",
-            }), 403
+    parsed, err = _parse_mrm_payload(data)
+    if err:
+        return err
+    step, date = parsed["step"], parsed["date"]
+    refund_type, refund_amount = parsed["refund_type"], parsed["refund_amount"]
 
     try:
-        step = int(data.get("step"))
-    except (TypeError, ValueError):
-        return jsonify({"status": "error", "message": "Invalid step"}), 400
-    if step < 1 or step > len(MRM_STEPS):
-        return jsonify({"status": "error", "message": "Step out of range"}), 400
+        txn, row, err = _load_mrm_targets(ack_no, hold_txn_id)
+        if err:
+            return err
 
-    date = sanitize_text(data.get("date"), 20)
-    if not date or not validate_court_order_date(date):
-        return jsonify({"status": "error", "message": "A valid date is required for this step."}), 400
-
-    refund_type = (data.get("refund_type") or "").strip().upper()
-    refund_amount = None
-    if step == MRM_REFUND_STEP:
-        if refund_type not in ALLOWED_REFUND_TYPES:
-            return jsonify({"status": "error", "message": "Refund type (FULL/PARTIAL) is required."}), 400
-        try:
-            refund_amount = float(data.get("refund_amount"))
-        except (TypeError, ValueError):
-            return jsonify({"status": "error", "message": "A valid refund amount is required."}), 400
-        if refund_amount <= 0:
-            return jsonify({"status": "error", "message": "Refund amount must be greater than zero."}), 400
-
-    try:
-        txn = Transaction.query.filter_by(ack_no=ack_no, put_on_hold_txn_id=hold_txn_id).first()
-        if not txn:
-            return jsonify({"status": "error", "message": "Put-on-hold transaction not found"}), 404
-
-        row = MRMTracking.query.filter_by(ack_no=ack_no, txn_id=hold_txn_id).first()
-        if not row:
-            row = MRMTracking(ack_no=ack_no, txn_id=hold_txn_id)
-            db.session.add(row)
-
-        # Officer-first: an Admin may only edit a step the officer has already
-        # recorded — never create the FIRST save for any step (A-3 part 1).
-        if is_admin() and not getattr(row, f"step{step}"):
-            return jsonify({
-                "status": "error",
-                "message": "Officer must record this step before Admin can edit it.",
-            }), 403
-
-        # Set-once: never overwrite a step that already has a date.
-        if getattr(row, f"step{step}"):
-            return jsonify({"status": "error", "message": f"Step {step} is already recorded."}), 409
-        # Sequential: every step except the first needs its predecessor dated.
-        if step > 1 and not getattr(row, f"step{step - 1}"):
-            return jsonify({"status": "error", "message": f"Complete step {step - 1} before step {step}."}), 409
+        guard = _mrm_step_guard(row, step)
+        if guard:
+            return guard
 
         setattr(row, f"step{step}", date)
-
         if step == MRM_REFUND_STEP:
-            row.refund_type = refund_type
-            row.refund_amount = refund_amount
-            # Mirror into the durable refund stores so existing views stay correct.
-            txn.refund_type = refund_type
-            txn.refund_amount = refund_amount
-            txn.refund_status = "Refunded" if refund_type == "FULL" else STATUS_PARTIALLY_REFUNDED
-            poh = POHRefundDetails.query.filter_by(ack_no=ack_no, txn_id=hold_txn_id).first()
-            if not poh:
-                poh = POHRefundDetails(ack_no=ack_no, txn_id=hold_txn_id)
-                db.session.add(poh)
-            poh.court_order_date = txn.court_order_date
-            poh.refund_status = txn.refund_status
-            poh.refund_amount = refund_amount
-
-        # Append the immutable audit entry: what / when / who.
-        try:
-            actor = current_user.username
-            actor_role = current_user.role
-        except Exception:
-            actor = session.get("username")
-            actor_role = session.get("role")
-        db.session.add(
-            MRMStatusLog(
-                ack_no=ack_no,
-                txn_id=hold_txn_id,
-                step=step,
-                step_label=MRM_STEPS[step - 1],
-                date_completed=date,
-                refund_type=refund_type if step == MRM_REFUND_STEP else None,
-                refund_amount=refund_amount if step == MRM_REFUND_STEP else None,
-                performed_by=actor,
-                performed_role=actor_role,
-            )
-        )
+            _apply_mrm_refund(row, txn, ack_no, hold_txn_id, refund_type, refund_amount)
+        _log_mrm_action(ack_no, hold_txn_id, step, date, refund_type, refund_amount)
 
         db.session.commit()
         log_usage("save_mrm_status", filename=f"step={step} ({MRM_STEPS[step - 1]})", ack_no=ack_no)
