@@ -4801,6 +4801,21 @@ def manage_files():
     return render_template("manage_files.html", file_stats=file_stats)
 
 
+def _purge_orphaned_cases():
+    """Delete Complaint / POHRefundDetails / MRMTracking rows whose ack_no no longer
+    has ANY Transaction. Self-healing: clears orphans left by this delete, by earlier
+    deletes, or by legacy duplicate uploads, so dashboard case counts stay accurate.
+    Returns the number of ACKs purged."""
+    live_acks = {a for (a,) in db.session.query(Transaction.ack_no).distinct().all() if a}
+    complaint_acks = {a for (a,) in db.session.query(Complaint.ack_no).distinct().all() if a}
+    orphan_acks = complaint_acks - live_acks
+    for ack in orphan_acks:
+        Complaint.query.filter_by(ack_no=ack).delete(synchronize_session="fetch")
+        POHRefundDetails.query.filter_by(ack_no=ack).delete(synchronize_session="fetch")
+        MRMTracking.query.filter_by(ack_no=ack).delete(synchronize_session="fetch")
+    return len(orphan_acks)
+
+
 @app.route("/delete_upload/<int:file_id>", methods=["POST"])
 @login_required
 @admin_required
@@ -4809,25 +4824,14 @@ def delete_upload(file_id):
     f = UploadedFile.query.get_or_404(file_id)
     fname = f.filename
     try:
-        # Capture the ACKs owned by this upload BEFORE deleting its transactions,
-        # so we can clean up dependent rows whose case no longer has any data.
-        affected_acks = {
-            a for (a,) in db.session.query(Transaction.ack_no)
-            .filter_by(upload_id=file_id).distinct().all()
-            if a
-        }
         # Delete transactions linked to this upload
         Transaction.query.filter_by(upload_id=file_id).delete(synchronize_session="fetch")
         db.session.delete(f)
         db.session.flush()
-        # Drop orphaned Complaint / POHRefundDetails / MRMTracking for any ACK
-        # that now has zero remaining transactions (else dashboards show stale counts).
-        for ack in affected_acks:
-            still_has = db.session.query(Transaction.id).filter_by(ack_no=ack).first()
-            if still_has is None:
-                Complaint.query.filter_by(ack_no=ack).delete(synchronize_session="fetch")
-                POHRefundDetails.query.filter_by(ack_no=ack).delete(synchronize_session="fetch")
-                MRMTracking.query.filter_by(ack_no=ack).delete(synchronize_session="fetch")
+        # Self-healing: drop any Complaint / POHRefundDetails / MRMTracking whose ACK
+        # now has zero transactions (covers this upload's ACKs AND pre-existing orphans),
+        # else the admin dashboard keeps counting cases with no underlying data.
+        _purge_orphaned_cases()
         db.session.commit()
         # Remove disk copy if it exists
         disk_path = os.path.join(app.config.get("UPLOAD_FOLDER", ""), fname)
