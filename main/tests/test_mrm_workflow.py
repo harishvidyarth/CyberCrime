@@ -187,6 +187,41 @@ with app.app_context():
     ensure_mrm_backfill()
     check("backfill is idempotent (no new rows)", MRMTracking.query.count() == before)
 
+print("\n── A-3 part 1: officer-first / admin-cannot-first-save ──")
+with app.app_context():
+    uf3 = UploadedFile(filename="admin_gate.xlsx", uploader="off_a")
+    db.session.add(uf3)
+    db.session.commit()
+    db.session.add(
+        Transaction(
+            ack_no="CASE-ADMIN", layer=3, from_account="9", to_account="888888888",
+            amount=3000.0, put_on_hold_amount=3000.0, put_on_hold_txn_id="HOLD-ADM",
+            put_on_hold_date="2026-06-10", txn_id="TX-ADM", upload_id=uf3.id,
+        )
+    )
+    if not Complaint.query.filter_by(ack_no="CASE-ADMIN").first():
+        db.session.add(Complaint(ack_no="CASE-ADMIN", file_name="admin_gate.xlsx", uploaded_by=A_ID, assigned_to=A_ID))
+    db.session.commit()
+
+
+def save_adm(client, step, date="2026-06-19", **extra):
+    body = {"ack_no": "CASE-ADMIN", "hold_txn_id": "HOLD-ADM", "step": step, "date": date}
+    body.update(extra)
+    return client.post("/save_mrm_status", json=body)
+
+
+# (a) Admin cannot create the first save for an empty step.
+check("admin first-save empty step1 -> 403", save_adm(admin_c, 1).status_code == 403)
+# (c) Officer still saves first normally.
+check("officer first-save step1 -> 200", save_adm(a_c, 1).status_code == 200)
+# (b) Officer-first gate no longer fires once the step exists: admin is past the
+#     403 gate; set-once (409) now governs that path (unchanged behaviour).
+_adm_after = save_adm(admin_c, 1)
+check("admin save after officer saved step1 -> not blocked by officer-first (not 403)", _adm_after.status_code != 403)
+check("admin save on officer-saved step1 -> 409 (set-once governs)", _adm_after.status_code == 409)
+# Officer continues the workflow normally.
+check("officer save step2 -> 200", save_adm(a_c, 2).status_code == 200)
+
 print()
 if FAILS:
     print(f"❌ {len(FAILS)} MRM TEST(S) FAILED")

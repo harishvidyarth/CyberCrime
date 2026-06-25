@@ -1985,28 +1985,9 @@ def upload_excel():
 
     # Use file lock to prevent race conditions
     with file_lock(file_path):
-        # Check for duplicate filename
-        existing_file = UploadedFile.query.filter_by(filename=filename).first()
-        if existing_file:
-            old_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-            try:
-                # Remove old file if it exists
-                if os.path.exists(old_path):
-                    os.remove(old_path)
-            except OSError as e:
-                logger.warning(f"Failed to delete old file {old_path}: {e}")
-
-            # Delete associated transactions first
-            try:
-                Transaction.query.filter_by(upload_id=existing_file.id).delete()
-            except Exception as e:
-                logger.exception(f"Error deleting associated transactions for file {filename}: {e}")
-
-            # Delete database record
-            db.session.delete(existing_file)
-            db.session.commit()
-            logger.info(f"Existing file and record deleted: {filename}")
-
+        # Dedup is keyed on ACK No (enforced after parsing, below), NOT filename.
+        # A same-name re-upload is therefore no longer silently purged here; the
+        # ACK guard decides accept vs. 409-reject. Persist the working copy.
         file.save(file_path)
 
     # Defence-in-depth: a genuine .xlsx is an OOXML ZIP container and must begin with
@@ -2158,16 +2139,15 @@ def upload_excel():
             flash("⚠️ No Acknowledgement numbers found in the Excel file!", "warning")
             return redirect(ROUTE_INDEX)
 
-        # ✅ Step 3: Purge ALL existing transactions for these ACK numbers.
-        # This is belt-and-suspenders: the filename-dedup above handles same-name
-        # re-uploads, but this catches any lingering rows from a differently-named
-        # copy of the same data (which would otherwise double every amount shown).
-        existing_acks = Transaction.query.filter(Transaction.ack_no.in_(acknos_in_excel)).all()
-        if existing_acks:
-            # Bulk-delete is faster and avoids per-object overhead
-            Transaction.query.filter(Transaction.ack_no.in_(acknos_in_excel)).delete(synchronize_session="fetch")
-            db.session.commit()
-            flash("ℹ️ Existing records for these ACK numbers replaced.", "info")
+        # ✅ Step 3: Dedup on ACK No. Reject the upload if any ACK in this file
+        # already has transactions (prevents double-counted amounts / missing
+        # complaints). The orphaned disk copy is removed by the finally block
+        # since upload_persisted is still False at this point.
+        dup_tx = Transaction.query.filter(Transaction.ack_no.in_(acknos_in_excel)).first()
+        if dup_tx:
+            return jsonify({
+                "error": f"ACK {dup_tx.ack_no} already has data. Delete the existing upload first."
+            }), 409
 
         # Re-read file to get binary data for storage
         with open(file_path, "rb") as f:
@@ -3779,6 +3759,14 @@ def save_mrm_status():
             row = MRMTracking(ack_no=ack_no, txn_id=hold_txn_id)
             db.session.add(row)
 
+        # Officer-first: an Admin may only edit a step the officer has already
+        # recorded — never create the FIRST save for any step (A-3 part 1).
+        if is_admin() and not getattr(row, f"step{step}"):
+            return jsonify({
+                "status": "error",
+                "message": "Officer must record this step before Admin can edit it.",
+            }), 403
+
         # Set-once: never overwrite a step that already has a date.
         if getattr(row, f"step{step}"):
             return jsonify({"status": "error", "message": f"Step {step} is already recorded."}), 409
@@ -4765,9 +4753,25 @@ def delete_upload(file_id):
     f = UploadedFile.query.get_or_404(file_id)
     fname = f.filename
     try:
+        # Capture the ACKs owned by this upload BEFORE deleting its transactions,
+        # so we can clean up dependent rows whose case no longer has any data.
+        affected_acks = {
+            a for (a,) in db.session.query(Transaction.ack_no)
+            .filter_by(upload_id=file_id).distinct().all()
+            if a
+        }
         # Delete transactions linked to this upload
         Transaction.query.filter_by(upload_id=file_id).delete(synchronize_session="fetch")
         db.session.delete(f)
+        db.session.flush()
+        # Drop orphaned Complaint / POHRefundDetails / MRMTracking for any ACK
+        # that now has zero remaining transactions (else dashboards show stale counts).
+        for ack in affected_acks:
+            still_has = db.session.query(Transaction.id).filter_by(ack_no=ack).first()
+            if still_has is None:
+                Complaint.query.filter_by(ack_no=ack).delete(synchronize_session="fetch")
+                POHRefundDetails.query.filter_by(ack_no=ack).delete(synchronize_session="fetch")
+                MRMTracking.query.filter_by(ack_no=ack).delete(synchronize_session="fetch")
         db.session.commit()
         # Remove disk copy if it exists
         disk_path = os.path.join(app.config.get("UPLOAD_FOLDER", ""), fname)

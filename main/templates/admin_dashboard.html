@@ -97,17 +97,18 @@
     {% if recent_cases %}
     <div class="table-wrap">
       <table class="ds-table">
-        <thead><tr><th>ACK No</th><th>Status</th><th>Assigned To</th><th>Uploaded</th></tr></thead>
+        <thead><tr><th>ACK No</th><th>Status</th><th>Assigned To</th><th>Uploaded</th><th></th></tr></thead>
         <tbody>
           {% for c in recent_cases %}
           <tr>
-            <td class="mono"><a href="{{ url_for('case_timeline', ack_no=c.ack_no) }}">{{ c.ack_no }}</a></td>
+            <td class="mono">{{ c.ack_no }}</td>
             <td>
               {% set st = c.status or 'Open' %}
               <span class="badge {{ 'badge-closed' if st == 'Closed' else 'badge-progress' if st == 'Under Investigation' else 'badge-open' }}">{{ st }}</span>
             </td>
             <td>{{ id_to_username.get(c.assigned_to, '—') }}</td>
             <td>{{ c.upload_time | ist('%d %b %Y') or '—' }}</td>
+            <td><a href="{{ url_for('case_timeline', ack_no=c.ack_no) }}">Timeline</a></td>
           </tr>
           {% endfor %}
         </tbody>
