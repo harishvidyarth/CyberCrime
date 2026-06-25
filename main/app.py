@@ -5679,6 +5679,69 @@ def download_fundtrail_pdf():
 # ─────────────────────────────────────────────────────────────────
 @app.route("/my_analytics", methods=["GET"])
 @login_required
+def _group_cnt_amt(txns, key_attr):
+    """Aggregate {key: {'cnt','amt'}} over txns by a non-empty attribute."""
+    m = defaultdict(lambda: {"cnt": 0, "amt": 0.0})
+    for t in txns:
+        k = getattr(t, key_attr)
+        if k:
+            m[k]["cnt"] += 1
+            m[k]["amt"] += t.amount or 0
+    return m
+
+
+def _my_kpis(my_txns):
+    """KPI dict for the officer analytics page (keys match template context)."""
+    return {
+        "total_txns": len(my_txns),
+        "total_amount": sum(t.amount or 0 for t in my_txns),
+        "disputed_amt": sum(t.disputed_amount or 0 for t in my_txns),
+        "hold_amt": sum(t.put_on_hold_amount or 0 for t in my_txns if t.put_on_hold_txn_id),
+        "hold_count": sum(1 for t in my_txns if t.put_on_hold_txn_id),
+        "unique_accts": len({t.to_account for t in my_txns if t.to_account}),
+        "unique_banks": len({t.bank_name for t in my_txns if t.bank_name}),
+        "max_layer": max((t.layer for t in my_txns if t.layer), default=0),
+        "atm_count": sum(1 for t in my_txns if t.atm_id),
+        "cheque_count": sum(1 for t in my_txns if t.cheque_no),
+    }
+
+
+def _my_file_rows(my_files, my_txns):
+    """Per-file breakdown rows for the officer analytics page."""
+    rows = []
+    for f in my_files:
+        ftxns = [t for t in my_txns if t.upload_id == f.id]
+        rows.append(
+            {
+                "id": f.id,
+                "filename": f.filename,
+                "upload_time": (to_ist(f.upload_time).strftime(DATETIME_DISPLAY_FORMAT) if f.upload_time else "—"),
+                "txn_count": len(ftxns),
+                "ack_nos": list({t.ack_no for t in ftxns if t.ack_no}),
+                "total_amt": sum(t.amount or 0 for t in ftxns),
+                "disputed_amt": sum(t.disputed_amount or 0 for t in ftxns),
+                "hold_count": sum(1 for t in ftxns if t.put_on_hold_txn_id),
+                "hold_amt": sum(t.put_on_hold_amount or 0 for t in ftxns if t.put_on_hold_txn_id),
+            }
+        )
+    return rows
+
+
+def _top_ifsc(my_txns):
+    """Top IFSC codes by count, skipping junk values so the table isn't polluted."""
+    ifsc_map = defaultdict(lambda: {"cnt": 0, "bank": ""})
+    junk = {"", "nan", "none", "null", "unknown", "n/a", "na", "-", "—"}
+    for t in my_txns:
+        ifsc = (t.ifsc_code or "").strip()
+        if ifsc and ifsc.lower() not in junk:
+            ifsc_map[ifsc]["cnt"] += 1
+            bank = (t.bank_name or "").strip()
+            if bank and bank.lower() not in junk:
+                ifsc_map[ifsc]["bank"] = bank
+    top = sorted(ifsc_map.items(), key=lambda x: -x[1]["cnt"])[:10]
+    return [(i, v["bank"], v["cnt"]) for i, v in top]
+
+
 def my_analytics():
     """Analytics filtered to the logged-in officer's own uploads only."""
     me = session.get("username")
@@ -5694,104 +5757,25 @@ def my_analytics():
         .all()
     )
     my_file_ids = [f.id for f in my_files]
-
-    # All my transactions
     my_txns = Transaction.query.filter(Transaction.upload_id.in_(my_file_ids)).all() if my_file_ids else []
 
-    # KPIs
-    total_files = len(my_files)
-    total_txns = len(my_txns)
-    total_amount = sum(t.amount or 0 for t in my_txns)
-    disputed_amt = sum(t.disputed_amount or 0 for t in my_txns)
-    hold_amt = sum(t.put_on_hold_amount or 0 for t in my_txns if t.put_on_hold_txn_id)
-    hold_count = sum(1 for t in my_txns if t.put_on_hold_txn_id)
-    unique_accts = len({t.to_account for t in my_txns if t.to_account})
-    unique_banks = len({t.bank_name for t in my_txns if t.bank_name})
-    max_layer = max((t.layer for t in my_txns if t.layer), default=0)
-    atm_count = sum(1 for t in my_txns if t.atm_id)
-    cheque_count = sum(1 for t in my_txns if t.cheque_no)
-
-    # Per-file breakdown
-    file_rows = []
-    for f in my_files:
-        ftxns = [t for t in my_txns if t.upload_id == f.id]
-        ack_nos = list({t.ack_no for t in ftxns if t.ack_no})
-        fa = sum(t.amount or 0 for t in ftxns)
-        fd = sum(t.disputed_amount or 0 for t in ftxns)
-        fh = sum(t.put_on_hold_amount or 0 for t in ftxns if t.put_on_hold_txn_id)
-        fhc = sum(1 for t in ftxns if t.put_on_hold_txn_id)
-        file_rows.append(
-            {
-                "id": f.id,
-                "filename": f.filename,
-                "upload_time": (to_ist(f.upload_time).strftime(DATETIME_DISPLAY_FORMAT) if f.upload_time else "—"),
-                "txn_count": len(ftxns),
-                "ack_nos": ack_nos,
-                "total_amt": fa,
-                "disputed_amt": fd,
-                "hold_count": fhc,
-                "hold_amt": fh,
-            }
-        )
-
-    # Layer-wise
-    layer_map = defaultdict(lambda: {"txns": 0, "amt": 0.0})
-    for t in my_txns:
-        if t.layer:
-            layer_map[t.layer]["txns"] += 1
-            layer_map[t.layer]["amt"] += t.amount or 0
-    layer_dist = [(lyr, v["txns"], v["amt"]) for lyr, v in sorted(layer_map.items())]
-
-    # Top banks
-    bank_map = defaultdict(lambda: {"cnt": 0, "amt": 0.0})
-    for t in my_txns:
-        if t.bank_name:
-            bank_map[t.bank_name]["cnt"] += 1
-            bank_map[t.bank_name]["amt"] += t.amount or 0
-    top_banks = sorted(bank_map.items(), key=lambda x: -x[1]["cnt"])[:10]
-    top_banks = [(b, v["cnt"], v["amt"]) for b, v in top_banks]
-
-    # State-wise
-    state_map = defaultdict(lambda: {"cnt": 0, "amt": 0.0})
-    for t in my_txns:
-        if t.state:
-            state_map[t.state]["cnt"] += 1
-            state_map[t.state]["amt"] += t.amount or 0
-    state_dist = sorted(state_map.items(), key=lambda x: -x[1]["cnt"])[:15]
-    state_dist = [(s, v["cnt"], v["amt"]) for s, v in state_dist]
-
-    # Top IFSC — skip junk values (nan/none/unknown/blank) so the table isn't polluted
-    ifsc_map = defaultdict(lambda: {"cnt": 0, "bank": ""})
-    _JUNK = {"", "nan", "none", "null", "unknown", "n/a", "na", "-", "—"}
-    for t in my_txns:
-        _ifsc = (t.ifsc_code or "").strip()
-        if _ifsc and _ifsc.lower() not in _JUNK:
-            ifsc_map[_ifsc]["cnt"] += 1
-            _bank = (t.bank_name or "").strip()
-            if _bank and _bank.lower() not in _JUNK:
-                ifsc_map[_ifsc]["bank"] = _bank
-    top_ifsc = sorted(ifsc_map.items(), key=lambda x: -x[1]["cnt"])[:10]
-    top_ifsc = [(i, v["bank"], v["cnt"]) for i, v in top_ifsc]
+    layer_map = _group_cnt_amt(my_txns, "layer")
+    layer_dist = [(lyr, v["cnt"], v["amt"]) for lyr, v in sorted(layer_map.items())]
+    bank_map = _group_cnt_amt(my_txns, "bank_name")
+    top_banks = [(b, v["cnt"], v["amt"]) for b, v in sorted(bank_map.items(), key=lambda x: -x[1]["cnt"])[:10]]
+    state_map = _group_cnt_amt(my_txns, "state")
+    state_dist = [(s, v["cnt"], v["amt"]) for s, v in sorted(state_map.items(), key=lambda x: -x[1]["cnt"])[:15]]
 
     return render_template(
         "my_analytics.html",
         me=me,
-        total_files=total_files,
-        total_txns=total_txns,
-        total_amount=total_amount,
-        disputed_amt=disputed_amt,
-        hold_amt=hold_amt,
-        hold_count=hold_count,
-        unique_accts=unique_accts,
-        unique_banks=unique_banks,
-        max_layer=max_layer,
-        atm_count=atm_count,
-        cheque_count=cheque_count,
-        file_rows=file_rows,
+        total_files=len(my_files),
+        file_rows=_my_file_rows(my_files, my_txns),
         layer_dist=layer_dist,
         top_banks=top_banks,
-        top_ifsc=top_ifsc,
+        top_ifsc=_top_ifsc(my_txns),
         state_dist=state_dist,
+        **_my_kpis(my_txns),
     )
 
 
