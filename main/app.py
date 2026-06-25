@@ -2312,48 +2312,36 @@ def upload_excel():
             return None
 
 
+        def _txn_id_from_cols(row, cols):
+            """Return the first valid txn id found across `cols` (present in row)."""
+            for col in cols:
+                if col in row.index:
+                    s = safe_txn_id(row.get(col, ""))
+                    if s:
+                        return s
+            return ""
+
         def get_txn_id_from_row(row, utr2_col=None):
             """Extract Transaction ID / UTR Number2 from a row."""
-            # Try the detected column first (if provided)
-            if utr2_col and utr2_col in row.index:
-                val = row.get(utr2_col, "")
-                s = safe_txn_id(val)
-                if s:
-                    return s
+            # Detected column first, then known exact variants.
+            primary = ([utr2_col] if utr2_col else []) + list(UTR_TXN_ID_VARIANTS)
+            s = _txn_id_from_cols(row, primary)
+            if s:
+                return s
 
-            # Try common column name variants (exact matches) - EXPANDED LIST
-            variants = UTR_TXN_ID_VARIANTS
-            for col in variants:
-                if col in row.index:
-                    val = row.get(col, "")
-                    s = safe_txn_id(val)
-                    if s:
-                        return s
-
-            # Fuzzy matching: Look for columns containing UTR and Number 2 in normalized form
-            for col in row.index:
+            # Fuzzy: columns mentioning UTR + (number2 / ends-with-2) + (transaction/txn/id).
+            def _is_fuzzy(col):
                 nc = norm(col)
-                # Match columns that have UTR and (NUMBER 2 or ends with 2) and (TRANSACTION or TXN or ID)
-                has_utr = "utr" in nc
                 has_number2 = (UTR_FUZZY_NUMBER2 in nc) or ("number2" in nc) or nc.endswith(" 2")
-                has_txn_id = any(x in nc for x in ["transaction", "txn", "id"])
+                return "utr" in nc and has_number2 and any(x in nc for x in ("transaction", "txn", "id"))
 
-                if has_utr and has_number2 and has_txn_id:
-                    val = row.get(col, "")
-                    s = safe_txn_id(val)
-                    if s:
-                        return s
+            s = _txn_id_from_cols(row, [c for c in row.index if _is_fuzzy(c)])
+            if s:
+                return s
 
-            # Last resort: Try any column with just "UTR" and "NUMBER"
-            for col in row.index:
-                nc = norm(col)
-                if "utr" in nc and "number" in nc:
-                    val = row.get(col, "")
-                    s = safe_txn_id(val)
-                    if s:
-                        return s
-
-            return ""
+            # Last resort: any column with both "utr" and "number".
+            last = [c for c in row.index if "utr" in norm(c) and "number" in norm(c)]
+            return _txn_id_from_cols(row, last)
 
         def find_utr2_column(columns):
             """Find the 'Transaction ID / UTR Number2' column among various possible names."""
