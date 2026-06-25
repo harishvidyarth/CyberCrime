@@ -1517,108 +1517,118 @@ def change_password():
     return render_template("change_password.html", error=error, forced=forced)
 
 
-@app.route(ROUTE_LOGIN, methods=["GET", "POST"])
-# Brute-force throttle: only count actual POST login attempts, NOT page views/refreshes.
-# The per-account lockout (MAX_LOGIN_ATTEMPTS fails -> LOCKOUT_MINUTES, below) is the
-# primary defence; this per-IP cap is a secondary guard.
-@limiter.limit("30 per minute", exempt_when=lambda: request.method != "POST")
-def login():
-    """Authenticate a user.
+def _is_account_locked(user):
+    """True if the account is currently within an active lockout window."""
+    if not (user and user.account_locked_until):
+        return False
+    lock_time = (
+        user.account_locked_until.replace(tzinfo=timezone.utc)
+        if user.account_locked_until.tzinfo is None
+        else user.account_locked_until
+    )
+    return lock_time > datetime.now(timezone.utc)
 
-    Every failure mode (unknown user, wrong password, locked account) shows the SAME
-    generic message so usernames and lockout state cannot be enumerated. The lockout
-    itself is still enforced. On success the session is rotated (fixation hygiene),
-    last-login is recorded, password expiry is checked, and 2FA users are sent to the
-    TOTP verification step before the session is established.
-    """
-    error = None
-    if request.method == "POST":
-        role = request.form.get("role", "").strip()
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
 
-        user = User.query.filter_by(username=username, role=role).first()
+def _check_login_password(user, password):
+    """Verify the password; on unknown user do a dummy hash to keep timing flat."""
+    if user:
+        return user.check_password(password)
+    # Dummy hash op (no hardcoded credential — SonarCloud S6437).
+    check_password_hash(generate_password_hash(secrets.token_urlsafe(16)), password)
+    return False
 
-        locked = False
-        if user and user.account_locked_until:
-            lock_time = (
-                user.account_locked_until.replace(tzinfo=timezone.utc)
-                if user.account_locked_until.tzinfo is None
-                else user.account_locked_until
-            )
-            locked = lock_time > datetime.now(timezone.utc)
 
-        password_valid = False
-        if user:
-            password_valid = user.check_password(password)
-        else:
-            # Dummy hash op to keep response timing consistent when the user doesn't exist.
-            # Hash a random throwaway value (no hardcoded credential — SonarCloud S6437).
-            check_password_hash(generate_password_hash(secrets.token_urlsafe(16)), password)
+def _login_success(user, role):
+    """Record a successful auth; route to 2FA or establish the session."""
+    user.failed_login_attempts = 0
+    user.account_locked_until = None
+    prev_login = user.last_login_at
+    user.last_login_at = datetime.now(timezone.utc)
+    # Password expiry — force a change when the password is too old.
+    if PASSWORD_MAX_AGE_DAYS and user.password_changed_at:
+        changed = (
+            user.password_changed_at.replace(tzinfo=timezone.utc)
+            if user.password_changed_at.tzinfo is None
+            else user.password_changed_at
+        )
+        if datetime.now(timezone.utc) - changed > timedelta(days=PASSWORD_MAX_AGE_DAYS):
+            user.must_change_password = True
+    db.session.commit()
 
-        if user and password_valid and not locked:
-            user.failed_login_attempts = 0
-            user.account_locked_until = None
-            prev_login = user.last_login_at
-            user.last_login_at = datetime.now(timezone.utc)
-            # Password expiry — force a change when the password is too old.
-            if PASSWORD_MAX_AGE_DAYS and user.password_changed_at:
-                changed = (
-                    user.password_changed_at.replace(tzinfo=timezone.utc)
-                    if user.password_changed_at.tzinfo is None
-                    else user.password_changed_at
-                )
-                if datetime.now(timezone.utc) - changed > timedelta(days=PASSWORD_MAX_AGE_DAYS):
-                    user.must_change_password = True
-            db.session.commit()
+    # Session-fixation hygiene: never carry pre-auth session state past login.
+    session.clear()
 
-            # Session-fixation hygiene: never carry pre-auth session state past login.
-            session.clear()
+    # Users with 2FA enabled must enter a TOTP code first.
+    if user.totp_secret and pyotp is not None:
+        session["pending_2fa_user_id"] = user.id
+        session["pending_2fa_role"] = role
+        session["pending_2fa_prev"] = prev_login.isoformat() if prev_login else ""
+        session["pending_2fa_ts"] = time.time()
+        session["pending_2fa_fails"] = 0
+        return redirect(url_for("verify_2fa"))
 
-            # Users with 2FA enabled must enter a TOTP code first.
-            if user.totp_secret and pyotp is not None:
-                session["pending_2fa_user_id"] = user.id
-                session["pending_2fa_role"] = role
-                session["pending_2fa_prev"] = prev_login.isoformat() if prev_login else ""
-                session["pending_2fa_ts"] = time.time()
-                session["pending_2fa_fails"] = 0
-                return redirect(url_for("verify_2fa"))
+    return _establish_session(user, role, prev_login)
 
-            return _establish_session(user, role, prev_login)
 
-        # Count the failure (unless already locked) and lock when over the limit.
-        if user and not locked:
-            user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
-            if user.failed_login_attempts >= MAX_LOGIN_ATTEMPTS:
-                user.account_locked_until = datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_MINUTES)
-            db.session.commit()
+def _register_login_failure(user, locked):
+    """Count a failed attempt (unless already locked), lock past the limit, and
+    apply a constant-bounds random delay to mask timing across failure modes."""
+    if user and not locked:
+        user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+        if user.failed_login_attempts >= MAX_LOGIN_ATTEMPTS:
+            user.account_locked_until = datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_MINUTES)
+        db.session.commit()
+    time.sleep(secrets.SystemRandom().uniform(0.05, 0.15))
 
-        # Constant-bounds random delay to mask timing differences across all failure modes.
-        time.sleep(secrets.SystemRandom().uniform(0.05, 0.15))
-        # One generic message for ALL failure modes (anti-enumeration).
-        error = "Invalid credentials or role"
 
+def _attempt_login():
+    """Process a POST login. Returns (response, None) to short-circuit the view,
+    or (None, error_message) to re-render the form."""
+    role = request.form.get("role", "").strip()
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+
+    user = User.query.filter_by(username=username, role=role).first()
+    locked = _is_account_locked(user)
+    password_valid = _check_login_password(user, password)
+
+    if user and password_valid and not locked:
+        return _login_success(user, role), None
+
+    _register_login_failure(user, locked)
+    # One generic message for ALL failure modes (anti-enumeration).
+    return None, "Invalid credentials or role"
+
+
+def _read_initial_creds():
+    """Parse INITIAL_CREDENTIALS.txt into {role: (username, password)}."""
     initial_creds = {}
     creds_path = os.path.join(secure_base, INITIAL_CREDENTIALS_FILENAME)
-    if os.path.exists(creds_path):
-        try:
-            with open(creds_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                for line in content.splitlines():
-                    if "password:" in line:
-                        parts = line.split("password:")
-                        role_part = parts[0].strip()
-                        pwd_part = parts[1].strip()
-                        if "admin" in role_part:
-                            initial_creds["Admin"] = ("admin", pwd_part)
-                        elif "officer" in role_part:
-                            initial_creds[ROLE_INVESTIGATIVE_OFFICER] = ("officer", pwd_part)
-        except Exception as e:
-            app.logger.warning("Could not read INITIAL_CREDENTIALS.txt: %s", e)
+    if not os.path.exists(creds_path):
+        return initial_creds
+    try:
+        with open(creds_path, "r", encoding="utf-8") as f:
+            for line in f.read().splitlines():
+                if "password:" not in line:
+                    continue
+                parts = line.split("password:")
+                role_part = parts[0].strip()
+                pwd_part = parts[1].strip()
+                if "admin" in role_part:
+                    initial_creds["Admin"] = ("admin", pwd_part)
+                elif "officer" in role_part:
+                    initial_creds[ROLE_INVESTIGATIVE_OFFICER] = ("officer", pwd_part)
+    except Exception as e:
+        app.logger.warning("Could not read INITIAL_CREDENTIALS.txt: %s", e)
+    return initial_creds
 
+
+def _login_display_creds():
+    """First-run credentials to show on the login page while accounts still
+    carry must_change_password. Falls back to DEBUG defaults."""
+    initial_creds = _read_initial_creds()
     final_creds = {}
     try:
-        # Only show initial credentials if the user still has must_change_password=True
         admin_user = User.query.filter_by(username="admin", role="Admin").first()
         if admin_user and admin_user.must_change_password:
             if "Admin" in initial_creds:
@@ -1638,8 +1648,29 @@ def login():
     except Exception as e:
         app.logger.warning("Could not filter initial credentials: %s", e)
         final_creds = initial_creds
+    return final_creds
 
-    return render_template("login.html", error=error, initial_creds=final_creds)
+
+@app.route(ROUTE_LOGIN, methods=["GET", "POST"])
+# Brute-force throttle: only count actual POST login attempts, NOT page views/refreshes.
+# The per-account lockout (MAX_LOGIN_ATTEMPTS fails -> LOCKOUT_MINUTES) is the
+# primary defence; this per-IP cap is a secondary guard.
+@limiter.limit("30 per minute", exempt_when=lambda: request.method != "POST")
+def login():
+    """Authenticate a user.
+
+    Every failure mode (unknown user, wrong password, locked account) shows the SAME
+    generic message so usernames and lockout state cannot be enumerated. The lockout
+    itself is still enforced. On success the session is rotated (fixation hygiene),
+    last-login is recorded, password expiry is checked, and 2FA users are sent to the
+    TOTP verification step before the session is established.
+    """
+    error = None
+    if request.method == "POST":
+        response, error = _attempt_login()
+        if response is not None:
+            return response
+    return render_template("login.html", error=error, initial_creds=_login_display_creds())
 
 
 def _establish_session(user, role, prev_login):
