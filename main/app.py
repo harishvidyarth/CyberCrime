@@ -152,6 +152,14 @@ BANK_UNKNOWN = "Unknown Bank"
 LABEL_SUSPECT_ACCOUNT_NUMBER = "Suspect Account Number"
 MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 COL_TRANSACTION_ID_UTR_NUMBER = "Transaction Id / UTR Number"
+COL_ACCOUNT_NO = "Account No"
+COL_ACCOUNT_NO_FULL = "Account No./ (Wallet /PG/PA) Id"
+COL_TXN_AMOUNT = "Transaction Amount"
+COL_IFSC = "Ifsc Code"
+COL_TXN_DATE = "Transaction Date"
+COL_DISPUTED = "Disputed Amount"
+COL_WITHDRAWAL = "Withdrawal Amount"
+COL_WITHDRAWAL_DT = "Withdrawal Date & Time"
 
 
 # "Transaction ID / UTR Number2" column-name handling (python:S1192).
@@ -1031,7 +1039,9 @@ def validate_account_number(account):
     """Validate account number / Wallet / PG / PA ID format"""
     if not account or account == "N/A":
         return True
-    return bool(re.match(r"^[a-zA-Z0-9@/_.\-* +=:xX()#,&%?]{1,100}$", str(account)))
+    # x/X dropped from the class — already covered by a-z / A-Z (same matches,
+    # e.g. "ACC-123/x_PA.id" still validates). Avoids duplicate-char code smell.
+    return bool(re.match(r"^[a-zA-Z0-9@/_.\-* +=:()#,&%?]{1,100}$", str(account)))
 
 
 def validate_amount(amount):
@@ -1245,6 +1255,40 @@ def _mrm_row_from_hold_txn(t, poh, refund_date_fn):
     return None
 
 
+def _ensure_mrm_table():
+    """Create tables if mrm_tracking is missing. Returns True on success."""
+    try:
+        inspector = inspect(db.engine)
+        if "mrm_tracking" not in inspector.get_table_names():
+            db.create_all()
+        return True
+    except Exception as exc:
+        logger.warning(f"ensure_mrm_backfill: table check failed: {exc}")
+        return False
+
+
+def _mrm_refund_date(poh):
+    if poh and poh.updated_at:
+        return poh.updated_at.strftime("%Y-%m-%d")
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def _build_mrm_rows(hold_txns, existing, poh_map):
+    """Seed an MRMTracking row for every hold txn not already tracked. Mutates
+    `existing` and the session; returns the count of rows created."""
+    created = 0
+    for t in hold_txns:
+        key = (t.ack_no, t.put_on_hold_txn_id)
+        if None in key or key in existing:
+            continue
+        row = _mrm_row_from_hold_txn(t, poh_map.get(key), _mrm_refund_date)
+        if row is not None:
+            db.session.add(row)
+            existing.add(key)
+            created += 1
+    return created
+
+
 def ensure_mrm_backfill():
     """Seed MRMTracking from pre-existing refund/court data. Idempotent: only
     creates a row for a (ack_no, txn_id) that has none yet, so officer edits made
@@ -1255,19 +1299,8 @@ def ensure_mrm_backfill():
       refund_status Refunded           -> step6 dated, refund_type FULL    + amount
       refund_status Partially Refunded -> step6 dated, refund_type PARTIAL + amount
     """
-    try:
-        inspector = inspect(db.engine)
-        if "mrm_tracking" not in inspector.get_table_names():
-            db.create_all()
-    except Exception as exc:
-        logger.warning(f"ensure_mrm_backfill: table check failed: {exc}")
+    if not _ensure_mrm_table():
         return
-
-    def _refund_date(poh):
-        if poh and poh.updated_at:
-            return poh.updated_at.strftime("%Y-%m-%d")
-        return datetime.now().strftime("%Y-%m-%d")
-
     try:
         existing = {
             (m.ack_no, m.txn_id)
@@ -1275,16 +1308,7 @@ def ensure_mrm_backfill():
         }
         poh_map = {(p.ack_no, p.txn_id): p for p in POHRefundDetails.query.all()}
         hold_txns = Transaction.query.filter(Transaction.put_on_hold_txn_id.isnot(None)).all()
-        created = 0
-        for t in hold_txns:
-            key = (t.ack_no, t.put_on_hold_txn_id)
-            if None in key or key in existing:
-                continue
-            row = _mrm_row_from_hold_txn(t, poh_map.get(key), _refund_date)
-            if row is not None:
-                db.session.add(row)
-                existing.add(key)
-                created += 1
+        created = _build_mrm_rows(hold_txns, existing, poh_map)
         if created:
             db.session.commit()
             logger.info(f"MRM backfill: created {created} tracking row(s) from existing refund/court data")
@@ -1407,7 +1431,8 @@ with app.app_context():
     ensure_user_columns()
     ensure_complaint_columns()
     ensure_usage_log_table()
-    ensure_mrm_backfill()
+    if not app.config.get("TESTING") and os.environ.get("RUN_BACKFILL", "1") == "1":
+        ensure_mrm_backfill()
 
 
 VIEW_ONLY_ROLES = set()  # Viewer (read-only) role removed — only Admin & Investigative Officer
@@ -2392,14 +2417,14 @@ def upload_excel():
         if not col_ack:
             raise ValueError("Column 'Acknowledgement No.' not found in the worksheet.")
 
-        col_to_acc = find_column_by_variants(tx_df.columns, "Account No", ["Account No", "Account No.", "Account Number", "To Account", "Beneficiary Account", "To Acc", "Acc No", "Beneficiary Acc", "Destination Account"])
-        col_from_acc = find_column_by_variants(tx_df.columns, "Account No./ (Wallet /PG/PA) Id", ["Account No./ (Wallet /PG/PA) Id", "From Account", "Source Account", "Sender Account", "From Acc", "Sender Acc", "Account No./ Wallet /PG/PA Id", "Account No. / (Wallet /PG/PA) Id"])
-        col_amount = find_column_by_variants(tx_df.columns, "Transaction Amount", ["Transaction Amount", "Amount", "Txn Amount", "Transfer Amount", "Value", "Amt", "Transaction Amount (INR)", "Amount (INR)"])
+        col_to_acc = find_column_by_variants(tx_df.columns, COL_ACCOUNT_NO, [COL_ACCOUNT_NO, "Account No.", "Account Number", "To Account", "Beneficiary Account", "To Acc", "Acc No", "Beneficiary Acc", "Destination Account"])
+        col_from_acc = find_column_by_variants(tx_df.columns, COL_ACCOUNT_NO_FULL, [COL_ACCOUNT_NO_FULL, "From Account", "Source Account", "Sender Account", "From Acc", "Sender Acc", "Account No./ Wallet /PG/PA Id", "Account No. / (Wallet /PG/PA) Id"])
+        col_amount = find_column_by_variants(tx_df.columns, COL_TXN_AMOUNT, [COL_TXN_AMOUNT, "Amount", "Txn Amount", "Transfer Amount", "Value", "Amt", "Transaction Amount (INR)", "Amount (INR)"])
         col_bank = find_column_by_variants(tx_df.columns, "Bank/FIs", ["Bank/FIs", "Bank", "Bank Name", "Financial Institution", "FI", "Bank/FI"])
         col_layer = find_column_by_variants(tx_df.columns, "Layer", ["Layer", "Layer No", "Layer Number"])
-        col_ifsc = find_column_by_variants(tx_df.columns, "Ifsc Code", ["Ifsc Code", "IFSC", "Ifsc_Code", "Bank IFSC", "IFSC Code"])
-        col_date = find_column_by_variants(tx_df.columns, "Transaction Date", ["Transaction Date", "Date", "Txn Date", "Transaction_Date", "Date of Transaction", "Transaction Date & Time"])
-        col_disputed = find_column_by_variants(tx_df.columns, "Disputed Amount", ["Disputed Amount", "Disputed Amt", "Disputed_Amount", "Lien Amount", "Disputed Amount (INR)"])
+        col_ifsc = find_column_by_variants(tx_df.columns, COL_IFSC, [COL_IFSC, "IFSC", "Ifsc_Code", "Bank IFSC", "IFSC Code"])
+        col_date = find_column_by_variants(tx_df.columns, COL_TXN_DATE, [COL_TXN_DATE, "Date", "Txn Date", "Transaction_Date", "Date of Transaction", "Transaction Date & Time"])
+        col_disputed = find_column_by_variants(tx_df.columns, COL_DISPUTED, [COL_DISPUTED, "Disputed Amt", "Disputed_Amount", "Lien Amount", "Disputed Amount (INR)"])
         col_action = find_column_by_variants(tx_df.columns, "Action Taken By bank", ["Action Taken By bank", "Action Taken", "Action", "Status", "Action Taken By bank/FI", "Action Taken By bank/FIs"])
 
         # Helper to find Account column in helper sheets
@@ -2408,20 +2433,20 @@ def upload_excel():
                 return None
             return find_column_by_variants(
                 df.columns,
-                "Account No./ (Wallet /PG/PA) Id",
-                ["Account No./ (Wallet /PG/PA) Id", "Account No./ Wallet /PG/PA Id", "Account No", "Account No.", "Account Number", "From Account", "Source Account"]
+                COL_ACCOUNT_NO_FULL,
+                [COL_ACCOUNT_NO_FULL, "Account No./ Wallet /PG/PA Id", COL_ACCOUNT_NO, "Account No.", "Account Number", "From Account", "Source Account"]
             )
 
         # ATM column mapping
         atm_id_col = find_column_by_variants(atm_df.columns, "ATM ID", ["ATM ID", "ATM_ID", "Atm Id"]) if not atm_df.empty else None
-        atm_amount_col = find_column_by_variants(atm_df.columns, "Withdrawal Amount", ["Withdrawal Amount", "Amount", "Withdrawal Amt", "Withdrawn Amt"]) if not atm_df.empty else None
-        atm_date_col = find_column_by_variants(atm_df.columns, "Withdrawal Date & Time", ["Withdrawal Date & Time", "Date", "Withdrawal Date", "Withdrawal Time"]) if not atm_df.empty else None
+        atm_amount_col = find_column_by_variants(atm_df.columns, COL_WITHDRAWAL, [COL_WITHDRAWAL, "Amount", "Withdrawal Amt", "Withdrawn Amt"]) if not atm_df.empty else None
+        atm_date_col = find_column_by_variants(atm_df.columns, COL_WITHDRAWAL_DT, [COL_WITHDRAWAL_DT, "Date", "Withdrawal Date", "Withdrawal Time"]) if not atm_df.empty else None
 
         # Cheque column mapping
         chq_no_col = find_column_by_variants(chq_df.columns, "Cheque No", ["Cheque No", "Cheque No.", "Cheque Number"]) if not chq_df.empty else None
-        chq_amount_col = find_column_by_variants(chq_df.columns, "Withdrawal Amount", ["Withdrawal Amount", "Amount", "Withdrawal Amt", "Withdrawn Amt"]) if not chq_df.empty else None
-        chq_date_col = find_column_by_variants(chq_df.columns, "Withdrawal Date & Time", ["Withdrawal Date & Time", "Date", "Withdrawal Date", "Withdrawal Time"]) if not chq_df.empty else None
-        chq_ifsc_col = find_column_by_variants(chq_df.columns, "Ifsc Code", ["Ifsc Code", "IFSC", "Ifsc_Code", "Bank IFSC"]) if not chq_df.empty else None
+        chq_amount_col = find_column_by_variants(chq_df.columns, COL_WITHDRAWAL, [COL_WITHDRAWAL, "Amount", "Withdrawal Amt", "Withdrawn Amt"]) if not chq_df.empty else None
+        chq_date_col = find_column_by_variants(chq_df.columns, COL_WITHDRAWAL_DT, [COL_WITHDRAWAL_DT, "Date", "Withdrawal Date", "Withdrawal Time"]) if not chq_df.empty else None
+        chq_ifsc_col = find_column_by_variants(chq_df.columns, COL_IFSC, [COL_IFSC, "IFSC", "Ifsc_Code", "Bank IFSC"]) if not chq_df.empty else None
 
         # Helper to get string values from DataFrame row/cell safely
         def get_df_str(df, col, default=""):
@@ -4374,8 +4399,8 @@ def generate_letter_docx():
                         headers = [
                             "S. No.",
                             LABEL_SUSPECT_ACCOUNT_NUMBER,
-                            "Transaction Date",
-                            "Transaction Amount",
+                            COL_TXN_DATE,
+                            COL_TXN_AMOUNT,
                             COL_TRANSACTION_ID_UTR_NUMBER,
                             "IFSC Code",
                         ]
@@ -5484,7 +5509,7 @@ def download_fundtrail_pdf():
             hold = _to_f(nodes[-1].get("hold_amount")) or 0
             cards = [
                 ("On-Hold / Frozen", fmt_money(hold), H_AC),
-                ("Disputed Amount", fmt_money(disputed), V_AC),
+                (COL_DISPUTED, fmt_money(disputed), V_AC),
                 ("Accounts Traced", str(accounts), NAVY),
             ]
             gap = 12
@@ -5545,7 +5570,7 @@ def download_fundtrail_pdf():
             else:
                 bg, accent, tcolor, badge = M_BG, M_AC, M_TI, "LAYER %d" % i
 
-            rows = [("Account No", node.get("account_number", "N/A")), ("Bank", node.get("bank", BANK_UNKNOWN))]
+            rows = [(COL_ACCOUNT_NO, node.get("account_number", "N/A")), ("Bank", node.get("bank", BANK_UNKNOWN))]
             if i != 0:
                 rows += [
                     ("Branch", node.get("branch", "Unknown")),
@@ -6235,7 +6260,8 @@ if __name__ == "__main__":
         ensure_transaction_columns()
         ensure_user_columns()
         ensure_complaint_columns()
-        ensure_mrm_backfill()
+        if not app.config.get("TESTING") and os.environ.get("RUN_BACKFILL", "1") == "1":
+            ensure_mrm_backfill()
 
     # Use environment variable to control debug mode
     debug_mode = os.environ.get("FLASK_DEBUG", "False").lower() == "true"
