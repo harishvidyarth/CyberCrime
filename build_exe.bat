@@ -30,6 +30,15 @@ python -m pip install -r main\requirements.txt
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 echo.
+REM Close any running FundTrail.exe and clear old build output FIRST. A still-running
+REM app keeps dist\FundTrail\_internal\*.pyd locked, which makes PyInstaller fail with
+REM "PermissionError: [WinError 5] Access is denied: ...\_internal\...pyd".
+echo Closing any running FundTrail.exe and clearing old build output...
+taskkill /f /im FundTrail.exe >nul 2>&1
+rmdir /s /q build >nul 2>&1
+rmdir /s /q dist  >nul 2>&1
+
+echo.
 echo Building FundTrail.exe (this can take a few minutes)...
 python -m PyInstaller --noconfirm --clean FundTrail.spec
 
@@ -44,16 +53,19 @@ if exist "dist\FundTrail\FundTrail.exe" (
     echo  Creating Windows installer...
     echo ============================================================
 
+    REM Use !ProgramFiles(x86)! (delayed expansion), NOT %ProgramFiles(x86)%: the
+    REM literal ")" in "(x86)" closes this parenthesised if-block at parse time and
+    REM causes ". was unexpected at this time".
     set "ISCC="
     for %%I in (ISCC.exe) do set "ISCC=%%~$PATH:I"
-    if not defined ISCC if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" set "ISCC=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
-    if not defined ISCC if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" set "ISCC=%ProgramFiles%\Inno Setup 6\ISCC.exe"
+    if not defined ISCC if exist "!ProgramFiles(x86)!\Inno Setup 6\ISCC.exe" set "ISCC=!ProgramFiles(x86)!\Inno Setup 6\ISCC.exe"
+    if not defined ISCC if exist "!ProgramFiles!\Inno Setup 6\ISCC.exe" set "ISCC=!ProgramFiles!\Inno Setup 6\ISCC.exe"
 
     if not defined ISCC (
         echo Inno Setup compiler not found. Trying to install it with winget...
         winget install --id JRSoftware.InnoSetup -e --silent
-        if exist "%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" set "ISCC=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
-        if not defined ISCC if exist "%ProgramFiles%\Inno Setup 6\ISCC.exe" set "ISCC=%ProgramFiles%\Inno Setup 6\ISCC.exe"
+        if exist "!ProgramFiles(x86)!\Inno Setup 6\ISCC.exe" set "ISCC=!ProgramFiles(x86)!\Inno Setup 6\ISCC.exe"
+        if not defined ISCC if exist "!ProgramFiles!\Inno Setup 6\ISCC.exe" set "ISCC=!ProgramFiles!\Inno Setup 6\ISCC.exe"
     )
 
     if defined ISCC (
