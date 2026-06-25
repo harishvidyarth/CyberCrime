@@ -1765,6 +1765,66 @@ def disable_2fa():
     return redirect(url_for("role_home"))
 
 
+def _fp_step1():
+    """Forgot-password step 1: username lookup -> advance to TOTP/email step."""
+    username = request.form.get("username", "").strip()
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return render_template(TEMPLATE_FORGOT_PASSWORD, step=1, no_2fa=True)
+    session["fp_uid"] = user.id
+    session["fp_step"] = 2
+    if user.totp_secret and pyotp is not None:
+        return render_template(TEMPLATE_FORGOT_PASSWORD, step=2, email_fallback=True)
+    return render_template(TEMPLATE_FORGOT_PASSWORD, step=2, email_required=True)
+
+
+def _fp_step2():
+    """Forgot-password step 2: verify TOTP, or send an email reset link."""
+    uid = session.get("fp_uid")
+    user = User.query.get(uid) if uid else None
+    if not user:
+        return redirect(url_for("forgot_password"))
+    if request.form.get("reset_method") == "email":
+        _send_password_reset_if_email_matches(user, request.form.get("email", ""))
+        return render_template(TEMPLATE_FORGOT_PASSWORD, step=2, email_required=not bool(user.totp_secret and pyotp), email_sent=True)
+    code = request.form.get("code", "").strip().replace(" ", "")
+    if pyotp and user.totp_secret and pyotp.TOTP(user.totp_secret).verify(code, valid_window=1):
+        session["fp_step"] = 3
+        session["fp_verified"] = True
+        return render_template(TEMPLATE_FORGOT_PASSWORD, step=3)
+    return render_template(
+        TEMPLATE_FORGOT_PASSWORD,
+        step=2,
+        error="Invalid code — check your authenticator app and try again.",
+        email_fallback=True,
+    )
+
+
+def _fp_step3():
+    """Forgot-password step 3: set the new password after verification."""
+    if not session.get("fp_verified"):
+        return redirect(url_for("forgot_password"))
+    uid = session.get("fp_uid")
+    user = User.query.get(uid) if uid else None
+    if not user:
+        return redirect(url_for("forgot_password"))
+    new_pw = request.form.get("password", "")
+    confirm_pw = request.form.get("confirm_password", "")
+    if new_pw != confirm_pw:
+        return render_template(TEMPLATE_FORGOT_PASSWORD, step=3, error="Passwords do not match.")
+    try:
+        user.set_password(new_pw)
+        db.session.commit()
+        session.pop("fp_step", None)
+        session.pop("fp_uid", None)
+        session.pop("fp_verified", None)
+        log_usage("self_service_pw_reset")
+        flash("Password reset successfully. Please sign in with your new password.", "success")
+        return redirect(url_for("login"))
+    except ValueError as exc:
+        return render_template(TEMPLATE_FORGOT_PASSWORD, step=3, error=str(exc))
+
+
 @app.route("/forgot_password", methods=["GET", "POST"])
 def forgot_password():
     """Self-service password reset using TOTP or a validated account email."""
@@ -1777,65 +1837,9 @@ def forgot_password():
         session.pop("fp_verified", None)
         return render_template(TEMPLATE_FORGOT_PASSWORD, step=1)
 
-    step = session.get("fp_step", 1)
-
-    # Step 1: username lookup
-    if step == 1:
-        username = request.form.get("username", "").strip()
-        user = User.query.filter_by(username=username).first()
-        if not user:
-            return render_template(TEMPLATE_FORGOT_PASSWORD, step=1, no_2fa=True)
-        session["fp_uid"] = user.id
-        session["fp_step"] = 2
-        if user.totp_secret and pyotp is not None:
-            return render_template(TEMPLATE_FORGOT_PASSWORD, step=2, email_fallback=True)
-        return render_template(TEMPLATE_FORGOT_PASSWORD, step=2, email_required=True)
-
-    # Step 2: verify TOTP
-    if step == 2:
-        uid = session.get("fp_uid")
-        user = User.query.get(uid) if uid else None
-        if not user:
-            return redirect(url_for("forgot_password"))
-        if request.form.get("reset_method") == "email":
-            _send_password_reset_if_email_matches(user, request.form.get("email", ""))
-            return render_template(TEMPLATE_FORGOT_PASSWORD, step=2, email_required=not bool(user.totp_secret and pyotp), email_sent=True)
-        code = request.form.get("code", "").strip().replace(" ", "")
-        if pyotp and user.totp_secret and pyotp.TOTP(user.totp_secret).verify(code, valid_window=1):
-            session["fp_step"] = 3
-            session["fp_verified"] = True
-            return render_template(TEMPLATE_FORGOT_PASSWORD, step=3)
-        return render_template(
-            TEMPLATE_FORGOT_PASSWORD,
-            step=2,
-            error="Invalid code — check your authenticator app and try again.",
-            email_fallback=True,
-        )
-
-    # Step 3: set new password
-    if step == 3:
-        if not session.get("fp_verified"):
-            return redirect(url_for("forgot_password"))
-        uid = session.get("fp_uid")
-        user = User.query.get(uid) if uid else None
-        if not user:
-            return redirect(url_for("forgot_password"))
-        new_pw = request.form.get("password", "")
-        confirm_pw = request.form.get("confirm_password", "")
-        if new_pw != confirm_pw:
-            return render_template(TEMPLATE_FORGOT_PASSWORD, step=3, error="Passwords do not match.")
-        try:
-            user.set_password(new_pw)
-            db.session.commit()
-            session.pop("fp_step", None)
-            session.pop("fp_uid", None)
-            session.pop("fp_verified", None)
-            log_usage("self_service_pw_reset")
-            flash("Password reset successfully. Please sign in with your new password.", "success")
-            return redirect(url_for("login"))
-        except ValueError as exc:
-            return render_template(TEMPLATE_FORGOT_PASSWORD, step=3, error=str(exc))
-
+    handler = {1: _fp_step1, 2: _fp_step2, 3: _fp_step3}.get(session.get("fp_step", 1))
+    if handler:
+        return handler()
     return redirect(url_for("forgot_password"))
 
 
@@ -5677,8 +5681,6 @@ def download_fundtrail_pdf():
 # ─────────────────────────────────────────────────────────────────
 #  Officer Analytics — shows only the current officer's own uploads
 # ─────────────────────────────────────────────────────────────────
-@app.route("/my_analytics", methods=["GET"])
-@login_required
 def _group_cnt_amt(txns, key_attr):
     """Aggregate {key: {'cnt','amt'}} over txns by a non-empty attribute."""
     m = defaultdict(lambda: {"cnt": 0, "amt": 0.0})
@@ -5742,6 +5744,8 @@ def _top_ifsc(my_txns):
     return [(i, v["bank"], v["cnt"]) for i, v in top]
 
 
+@app.route("/my_analytics", methods=["GET"])
+@login_required
 def my_analytics():
     """Analytics filtered to the logged-in officer's own uploads only."""
     me = session.get("username")
