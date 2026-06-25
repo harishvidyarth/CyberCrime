@@ -61,3 +61,12 @@ main/build_configs/error.log
 # Native launcher runtime files (fundtrail.sh)
 .fundtrail.pid
 .fundtrail.log
+
+# ----- Test / coverage artifacts (generated) -------------------------
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# ----- Local agent / tooling state -----------------------------------
+.claude/
