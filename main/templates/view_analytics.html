@@ -22,26 +22,26 @@
 
 <div class="stat-grid mb-6">
   {% set kpis = [
-    ('primary', '📁', total_files, 'Uploaded Files', false),
-    ('primary', '📄', total_txns, 'Total Transactions', false),
-    ('primary', '💰', total_amount, 'Total Amount Traced', true),
-    ('warning', '⚠️', disputed_amt, 'Disputed Amount', true),
-    ('danger', '🔒', hold_amt, 'Total On-Hold Amount', true),
-    ('danger', '🔒', hold_count, 'On-Hold Transactions', false),
-    ('success', '🏦', unique_accts, 'Unique Accounts', false),
-    ('primary', '🏛️', unique_banks, 'Unique Banks', false),
-    ('success', '🗺️', unique_states, 'States Involved', false),
-    ('primary', '📊', max_layer, 'Max Fund Trail Depth', false),
-    ('primary', '👮', active_officers, 'Active Officers', false),
-    ('warning', '🏧', atm_count, 'ATM Withdrawals', false),
-    ('warning', '🎫', cheque_count, 'Cheque Withdrawals', false)
+    ('primary', '📁', total_files, 'Uploaded Files', false, ''),
+    ('primary', '📄', total_txns, 'Total Transactions', false, ''),
+    ('primary', '💰', total_amount, 'Total Amount Traced', true, ''),
+    ('warning', '⚠️', disputed_amt, 'Disputed Amount', true, ''),
+    ('danger', '🔒', hold_amt, 'Total On-Hold Amount', true, 'hold'),
+    ('danger', '🔒', hold_count, 'On-Hold Transactions', false, 'hold'),
+    ('success', '🏦', unique_accts, 'Unique Accounts', false, 'accounts'),
+    ('primary', '🏛️', unique_banks, 'Unique Banks', false, ''),
+    ('success', '🗺️', unique_states, 'States Involved', false, ''),
+    ('primary', '📊', max_layer, 'Max Fund Trail Depth', false, ''),
+    ('primary', '👮', active_officers, 'Active Officers', false, ''),
+    ('warning', '🏧', atm_count, 'ATM Withdrawals', false, ''),
+    ('warning', '🎫', cheque_count, 'Cheque Withdrawals', false, '')
   ] %}
-  {% for color, icon, value, label, is_cur in kpis %}
-  <div class="stat-card">
+  {% for color, icon, value, label, is_cur, kpi_key in kpis %}
+  <div class="stat-card{% if kpi_key %} stat-card-click{% endif %}"{% if kpi_key %} data-kpi="{{ kpi_key }}" role="button" tabindex="0" aria-label="{{ label }} — click for details"{% endif %}>
     <span class="stat-icon {{ color }}" aria-hidden="true">{{ icon }}</span>
     <div>
       <div class="stat-value" data-countup="{{ value|round(0)|int if is_cur else value }}"{% if is_cur %} data-prefix="₹"{% endif %}>{{ ('₹' ~ '{:,.0f}'.format(value)) if is_cur else value }}</div>
-      <div class="stat-label">{{ label }}</div>
+      <div class="stat-label">{{ label }}{% if kpi_key %} <span aria-hidden="true" style="opacity:.45">›</span>{% endif %}</div>
     </div>
   </div>
   {% endfor %}
@@ -81,94 +81,92 @@
   </div>
 </section>
 
-<div class="grid-2 mb-6">
-  <section class="ds-card">
-    <div class="card-header"><h2 class="card-title">📊 Layer-wise Distribution</h2></div>
-    <div class="table-wrap">
-      <table class="ds-table">
-        <thead><tr><th>Layer</th><th class="num">Transactions</th><th class="num">Total Amount</th><th>% of Total</th></tr></thead>
-        <tbody>
-          {% set total_txns_safe = total_txns if total_txns > 0 else 1 %}
-          {% for layer, cnt, amt in layer_dist %}
-          <tr>
-            <td class="font-semibold">Layer {{ layer }}</td>
-            <td class="num">{{ cnt }}</td>
-            <td class="num">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
-            <td>
-              <div class="flex items-center gap-2">
-                <span class="progress-bar" style="width:80px"><span style="width:{{ [(cnt * 100 // total_txns_safe), 100]|min }}%"></span></span>
-                <span class="text-xs text-muted">{{ '%.1f'|format(cnt * 100 / total_txns_safe) }}%</span>
-              </div>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
+<h2 class="card-title mb-4">📚 Breakdowns</h2>
 
-  <section class="ds-card">
-    <div class="card-header"><h2 class="card-title">🏛️ Top Banks by Volume</h2></div>
-    <div class="table-wrap">
-      <table class="ds-table">
-        <thead><tr><th>Bank</th><th class="num">Txns</th><th class="num">Total Amount</th></tr></thead>
-        <tbody>
-          {% for bank, cnt, amt in top_banks %}
-          <tr>
-            <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ bank or '—' }}</td>
-            <td class="num">{{ cnt }}</td>
-            <td class="num">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-</div>
-
-<div class="grid-2 mb-6">
-  <section class="ds-card">
-    <div class="card-header"><h2 class="card-title">🔢 Top IFSC Codes</h2></div>
-    <div class="table-wrap">
-      <table class="ds-table">
-        <thead><tr><th>IFSC</th><th>Bank</th><th class="num">Frequency</th></tr></thead>
-        <tbody>
-          {% for ifsc, bank, cnt in top_ifsc %}
-          <tr>
-            <td class="mono font-semibold">{{ ifsc or '—' }}</td>
-            <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ bank or '—' }}</td>
-            <td class="num">{{ cnt }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="ds-card">
-    <div class="card-header"><h2 class="card-title">🗺️ State-wise Distribution</h2></div>
-    <div class="table-wrap">
-      <table class="ds-table">
-        <thead><tr><th>State</th><th class="num">Txns</th><th class="num">Total Amount</th></tr></thead>
-        <tbody>
-          {% for state, cnt, amt in state_dist %}
-          <tr>
-            <td>{{ state or 'Unknown' }}</td>
-            <td class="num">{{ cnt }}</td>
-            <td class="num">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-</div>
-
-<section class="ds-card">
-  <div class="card-header">
-    <h2 class="card-title">👮 Officer Upload Activity</h2>
-    <a href="{{ url_for('download_logs') }}" class="btn btn-ghost btn-sm" style="margin-left:auto">📥 Download usage logs</a>
+<details class="ds-card mb-4" open>
+  <summary class="card-header" style="cursor:pointer"><h2 class="card-title" style="margin:0">📊 Layer-wise Distribution</h2></summary>
+  <div class="table-wrap">
+    <table class="ds-table">
+      <thead><tr><th>Layer</th><th class="num">Transactions</th><th class="num">Total Amount</th><th>% of Total</th></tr></thead>
+      <tbody>
+        {% set total_txns_safe = total_txns if total_txns > 0 else 1 %}
+        {% for layer, cnt, amt in layer_dist %}
+        <tr>
+          <td class="font-semibold">Layer {{ layer }}</td>
+          <td class="num">{{ cnt }}</td>
+          <td class="num">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
+          <td>
+            <div class="flex items-center gap-2">
+              <span class="progress-bar" style="width:80px"><span style="width:{{ [(cnt * 100 // total_txns_safe), 100]|min }}%"></span></span>
+              <span class="text-xs text-muted">{{ '%.1f'|format(cnt * 100 / total_txns_safe) }}%</span>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
+</details>
+
+<details class="ds-card mb-4">
+  <summary class="card-header" style="cursor:pointer"><h2 class="card-title" style="margin:0">🏛️ Top Banks by Volume</h2></summary>
+  <div class="table-wrap">
+    <table class="ds-table">
+      <thead><tr><th>Bank</th><th class="num">Txns</th><th class="num">Total Amount</th></tr></thead>
+      <tbody>
+        {% for bank, cnt, amt in top_banks %}
+        <tr>
+          <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ bank or '—' }}</td>
+          <td class="num">{{ cnt }}</td>
+          <td class="num">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details class="ds-card mb-4">
+  <summary class="card-header" style="cursor:pointer"><h2 class="card-title" style="margin:0">🔢 Top IFSC Codes</h2></summary>
+  <div class="table-wrap">
+    <table class="ds-table">
+      <thead><tr><th>IFSC</th><th>Bank</th><th class="num">Frequency</th></tr></thead>
+      <tbody>
+        {% for ifsc, bank, cnt in top_ifsc %}
+        <tr>
+          <td class="mono font-semibold">{{ ifsc or '—' }}</td>
+          <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ bank or '—' }}</td>
+          <td class="num">{{ cnt }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details class="ds-card mb-4">
+  <summary class="card-header" style="cursor:pointer"><h2 class="card-title" style="margin:0">🗺️ State-wise Distribution</h2></summary>
+  <div class="table-wrap">
+    <table class="ds-table">
+      <thead><tr><th>State</th><th class="num">Txns</th><th class="num">Total Amount</th></tr></thead>
+      <tbody>
+        {% for state, cnt, amt in state_dist %}
+        <tr>
+          <td>{{ state or 'Unknown' }}</td>
+          <td class="num">{{ cnt }}</td>
+          <td class="num">₹{{ '{:,.0f}'.format(amt or 0) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details class="ds-card mb-6">
+  <summary class="card-header" style="cursor:pointer">
+    <h2 class="card-title" style="margin:0">👮 Officer Upload Activity</h2>
+    <a href="{{ url_for('download_logs') }}" class="btn btn-ghost btn-sm" style="margin-left:auto">📥 Download usage logs</a>
+  </summary>
   <div class="table-wrap">
     <table class="ds-table">
       <thead><tr><th>#</th><th>Username</th><th>Full Name</th><th class="num">Files Uploaded</th></tr></thead>
@@ -186,5 +184,7 @@
       </tbody>
     </table>
   </div>
-</section>
+</details>
+
+{% include "_kpi_modal.html" %}
 {% endblock %}

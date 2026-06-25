@@ -1,0 +1,87 @@
+{# Shared drill-down modal for the clickable analytics KPI cards (Unique Accounts /
+   On-Hold). Included by my_analytics.html and view_analytics.html. The data comes
+   from /analytics/kpi_detail/<kpi> and is role-scoped server-side. #}
+<div class="modal-backdrop" id="kpiModal" role="dialog" aria-modal="true" aria-labelledby="kpiModalTitle">
+  <div class="modal" style="max-width:860px">
+    <div class="modal-header">
+      <h2 class="card-title" id="kpiModalTitle" style="margin:0">Details</h2>
+      <button type="button" class="btn btn-ghost btn-sm" data-modal-close aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="kpiModalMeta" class="text-xs text-muted mb-2">Loading…</div>
+      <div class="table-wrap">
+        <table class="ds-table" id="kpiModalTable"><thead></thead><tbody></tbody></table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <a id="kpiModalDownload" class="btn btn-secondary" href="#">⬇ Download Excel</a>
+      <button type="button" class="btn btn-ghost" data-modal-close>Close</button>
+    </div>
+  </div>
+</div>
+<script nonce="{{ csp_nonce }}">
+(function () {
+  var modal = document.getElementById('kpiModal');
+  if (!modal) return;
+  var titleEl = document.getElementById('kpiModalTitle');
+  var metaEl = document.getElementById('kpiModalMeta');
+  var table = document.getElementById('kpiModalTable');
+  var dl = document.getElementById('kpiModalDownload');
+  var CURRENCY = { accounts: ['total_amount'], hold: ['hold_amount'] };
+  var TITLES = { accounts: 'Unique Accounts', hold: 'On-Hold Transactions' };
+
+  function isNum(kpi, col) {
+    return (CURRENCY[kpi] || []).indexOf(col) >= 0 || col === 'txn_count';
+  }
+  function fmtCell(kpi, col, val) {
+    if (val === null || val === undefined || val === '') return '—';
+    if ((CURRENCY[kpi] || []).indexOf(col) >= 0) {
+      var n = Number(val) || 0;
+      return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+    }
+    return String(val);
+  }
+
+  function open(kpi) {
+    metaEl.textContent = 'Loading…';
+    table.querySelector('thead').innerHTML = '';
+    table.querySelector('tbody').innerHTML = '';
+    modal.classList.add('open');
+    titleEl.textContent = TITLES[kpi] || 'Details';
+    dl.setAttribute('href', '/analytics/kpi_download/' + kpi + '.xlsx');
+    fetch('/analytics/kpi_detail/' + kpi, { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error('http'); return r.json(); })
+      .then(function (d) {
+        var cols = d.columns || [], rows = d.rows || [];
+        metaEl.textContent = rows.length + ' row' + (rows.length === 1 ? '' : 's');
+        var htr = document.createElement('tr');
+        cols.forEach(function (c) {
+          var th = document.createElement('th');
+          th.textContent = c.replace(/_/g, ' ').toUpperCase();
+          if (isNum(kpi, c)) th.className = 'num';
+          htr.appendChild(th);
+        });
+        table.querySelector('thead').appendChild(htr);
+        var tb = table.querySelector('tbody');
+        rows.forEach(function (row) {
+          var tr = document.createElement('tr');
+          cols.forEach(function (c) {
+            var td = document.createElement('td');
+            td.textContent = fmtCell(kpi, c, row[c]);
+            if (isNum(kpi, c)) td.className = 'num';
+            tr.appendChild(td);
+          });
+          tb.appendChild(tr);
+        });
+      })
+      .catch(function () { metaEl.textContent = 'Failed to load details.'; });
+  }
+
+  document.querySelectorAll('[data-kpi]').forEach(function (card) {
+    card.addEventListener('click', function () { open(card.dataset.kpi); });
+    card.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(card.dataset.kpi); }
+    });
+  });
+})();
+</script>

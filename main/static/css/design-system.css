@@ -276,6 +276,10 @@ body.nav-collapsed #navCollapse svg { transform: scaleX(-1); }
 /* min-width:0 lets the text column shrink inside the flex card so long ₹ values
    wrap/scale instead of overflowing the card edge. */
 .stat-card > div { min-width: 0; }
+/* Clickable KPI cards (drill-down): pointer + hover lift so users know to click. */
+.stat-card-click { cursor: pointer; }
+.stat-card-click:hover { border-color: var(--color-primary); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.stat-card-click:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 /* Keep KPI values on ONE line. Big ₹ amounts are abbreviated (₹X.XX Cr/L) by
    app.js fmtINShort so they fit; the exact value is in the element's title. */
 .stat-value { font-size: var(--text-3xl); line-height: var(--leading-3xl); font-weight: var(--font-bold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
