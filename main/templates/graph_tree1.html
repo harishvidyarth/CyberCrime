@@ -4,7 +4,16 @@
 <head>
   <meta charset="UTF-8">
   <title>Fund Flow Graph</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=2.0">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('ft-theme');
+        if (t) document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    })();
+  </script>
   <!-- Vendored locally for fully offline / air-gapped use (previously external CDNs,
        which break on disconnected machines and were partly blocked by the CSP). -->
   <script src="{{ url_for('static', filename='d3.v7.min.js') }}"></script>
@@ -13,6 +22,31 @@
   <script src="{{ url_for('static', filename='vfs_fonts.js') }}"></script>
 
   <style>
+    :root {
+      --graph-layer-1: #A7F3D0;
+      --graph-layer-2: #F97316;
+      --graph-layer-other: #f8f7f5;
+      --graph-layer-leaf: #15803d;
+      --graph-layer-repeated: #e79aff;
+      --graph-layer-hold-stroke: #dc2626;
+      --graph-node-text: #000000;
+      --graph-node-text-darker: #1f2937;
+      --graph-node-stroke: #1e293b;
+      --graph-link-stroke: #888;
+    }
+    [data-theme="dark"] {
+      --graph-layer-1: #065f46;
+      --graph-layer-2: #c2410c;
+      --graph-layer-other: #1f2937;
+      --graph-layer-leaf: #059669;
+      --graph-layer-repeated: #e79aff;
+      --graph-layer-hold-stroke: #f87171;
+      --graph-node-text: #f9fafb;
+      --graph-node-text-darker: #cbd5e1;
+      --graph-node-stroke: #4b5563;
+      --graph-link-stroke: #555;
+    }
+
     /* Left Panel - Compact and separate styling */
     #leftPanel {
       position: fixed;
@@ -21,14 +55,15 @@
       width: 320px;
       max-height: 400px;
       overflow-y: auto;
-      background-color: #f9fafb;
+      background-color: var(--color-surface);
       box-shadow: 0 0 20px rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--color-border);
       border-radius: 12px;
       padding: 16px 20px;
       z-index: 10;
       display: none;
       font-family: 'Segoe UI', sans-serif;
-      color: #1f2937;
+      color: var(--color-text-primary);
       font-size: 16px;
       line-height: 1.5;
     }
@@ -37,8 +72,8 @@
       margin-top: 0;
       font-size: 16px;
       font-weight: 600;
-      color: #111827;
-      border-bottom: 1px solid #e5e7eb;
+      color: var(--color-text-primary);
+      border-bottom: 1px solid var(--color-border);
       padding-bottom: 6px;
       margin-bottom: 12px;
     }
@@ -51,13 +86,13 @@
 
     #leftPanel .left-label {
       font-weight: 700;
-      color: #374151;
+      color: var(--color-text-secondary);
       min-width: 110px;
     }
 
     #leftPanel .left-value {
       font-weight: 500;
-      color: #4b5563;
+      color: var(--color-text-primary);
       text-align: right;
       flex: 1;
     }
@@ -69,7 +104,7 @@
       margin-top: -8px;
       margin-right: -6px;
       font-size: 18px;
-      color: #6b7280;
+      color: var(--color-text-muted);
       background: none;
       border: none;
     }
@@ -82,14 +117,15 @@
       width: 360px;
       max-height: 85vh;
       overflow-y: auto;
-      background-color: #f3f4f6;
+      background-color: var(--color-surface);
       box-shadow: 0 0 20px rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--color-border);
       border-radius: 12px;
       padding: 20px 24px;
       z-index: 10;
       display: none;
       font-family: 'Segoe UI', sans-serif;
-      color: #1f2937;
+      color: var(--color-text-primary);
       font-size: 16px;
       line-height: 1.5;
     }
@@ -98,12 +134,13 @@
       margin-top: 0;
       font-size: 18px;
       font-weight: 700;
-      border-bottom: 1px solid #e5e7eb;
+      border-bottom: 1px solid var(--color-border);
       padding-bottom: 6px;
       margin-bottom: 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      color: var(--color-text-primary);
     }
 
     #kycToggleIcon {
@@ -120,21 +157,23 @@
     #kycDetailsSection {
       margin-top: 20px;
       padding-top: 20px;
-      border-top: 1px solid #e5e7eb;
+      border-top: 1px solid var(--color-border);
     }
 
     #kycDetailsSection h3 {
       font-size: 16px;
       font-weight: 600;
       margin-bottom: 12px;
-      color: #374151;
+      color: var(--color-text-primary);
     }
 
     #kycForm input,
     #kycForm textarea {
       flex: 1;
       padding: 6px 8px;
-      border: 1px solid #d1d5db;
+      border: 1px solid var(--color-border);
+      background-color: var(--color-surface-alt);
+      color: var(--color-text-primary);
       border-radius: 4px;
       font-size: 14px;
       font-family: inherit;
@@ -146,7 +185,7 @@
     }
 
     #saveKycBtn {
-      background: #1d4ed8;
+      background: var(--color-primary);
       color: white;
       border: none;
       padding: 10px 20px;
@@ -159,11 +198,11 @@
     }
 
     #saveKycBtn:hover {
-      background: #2563eb;
+      background: var(--color-primary-dark);
     }
 
     #editKycBtn {
-      background: #047857;
+      background: var(--color-success);
       color: white;
       border: none;
       padding: 10px 20px;
@@ -177,12 +216,14 @@
     }
 
     #editKycBtn:hover {
-      background: #059669;
+      background: var(--color-success-light);
+      color: var(--color-success);
     }
 
     #kycForm input:disabled,
     #kycForm textarea:disabled {
-      background-color: #f3f4f6;
+      background-color: var(--color-surface);
+      color: var(--color-text-secondary);
       cursor: not-allowed;
     }
 
@@ -194,13 +235,13 @@
 
     .label {
       font-weight: 700;
-      color: #374151;
+      color: var(--color-text-secondary);
       min-width: 130px;
     }
 
     .value {
       font-weight: 500;
-      color: #4b5563;
+      color: var(--color-text-primary);
       flex: 1;
       text-align: right;
     }
@@ -212,12 +253,12 @@
       font-size: 20px;
       background: none;
       border: none;
-      color: #6b7280;
+      color: var(--color-text-muted);
       margin-right: 10px;
     }
 
     #downloadDetailsPdf {
-      background: #1d4ed8;
+      background: var(--color-primary);
       color: white;
       border: none;
       padding: 10px 20px;
@@ -230,7 +271,7 @@
     }
 
     #downloadDetailsPdf:hover {
-      background: #2563eb;
+      background: var(--color-primary-dark);
     }
 
     /* Statewise Summary Panel */
@@ -243,14 +284,15 @@
       max-width: 1200px;
       max-height: 80vh;
       overflow-y: auto;
-      background-color: #ffffff;
+      background-color: var(--color-surface);
       box-shadow: 0 0 20px rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--color-border);
       border-radius: 12px;
       padding: 20px 24px;
       z-index: 10;
       display: none;
       font-family: 'Segoe UI', sans-serif;
-      color: #1f2937;
+      color: var(--color-text-primary);
       font-size: 16px;
       line-height: 1.5;
     }
@@ -259,9 +301,10 @@
       margin-top: 0;
       font-size: 18px;
       font-weight: 700;
-      border-bottom: 1px solid #e5e7eb;
+      border-bottom: 1px solid var(--color-border);
       padding-bottom: 6px;
       margin-bottom: 16px;
+      color: var(--color-text-primary);
     }
 
     #summaryPanel .summary-section {
@@ -271,7 +314,7 @@
     #summaryPanel .summary-section h3 {
       font-size: 16px;
       font-weight: 600;
-      color: #374151;
+      color: var(--color-text-primary);
       margin-bottom: 10px;
     }
 
@@ -283,13 +326,13 @@
 
     #summaryPanel .summary-label {
       font-weight: 700;
-      color: #374151;
+      color: var(--color-text-secondary);
       min-width: 150px;
     }
 
     #summaryPanel .summary-value {
       font-weight: 500;
-      color: #4b5563;
+      color: var(--color-text-primary);
       flex: 1;
       text-align: right;
     }
@@ -297,28 +340,28 @@
     #summaryPanel .ifsc-list {
       max-height: 150px;
       overflow-y: auto;
-      border: 1px solid #e5e7eb;
+      border: 1px solid var(--color-border);
       padding: 10px;
       border-radius: 6px;
-      background-color: #f9fafb;
+      background-color: var(--color-surface-alt);
     }
 
     .victim-detail {
       margin-bottom: 20px;
       padding: 10px;
-      border: 1px solid #e5e7eb;
+      border: 1px solid var(--color-border);
       border-radius: 6px;
-      background-color: #f9fafb;
+      background-color: var(--color-surface-alt);
     }
 
     .victim-detail h4 {
       margin-top: 0;
-      color: #374151;
+      color: var(--color-text-primary);
     }
 
     .victim-detail p {
       margin: 5px 0;
-      color: #6b7280;
+      color: var(--color-text-secondary);
     }
 
     #closeSummary {
@@ -328,7 +371,7 @@
       font-size: 20px;
       background: none;
       border: none;
-      color: #6b7280;
+      color: var(--color-text-muted);
       margin-right: 10px;
     }
 
@@ -338,7 +381,7 @@
       text-align: center;
       padding: 8px;
       font-size: 12px;
-      background: rgba(0, 0, 0, 0.7);
+      background: rgba(0, 0, 0, 0.85);
       color: #fff;
       border-radius: 4px;
       pointer-events: none;
@@ -348,16 +391,21 @@
 
     /* Chart Container */
     #chart {
+      flex: 1;
       width: 100%;
-      height: 100vh;
       position: relative;
-      overflow: auto;
+      overflow: hidden;
+      background: var(--color-surface-alt);
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
 
     /* Icon buttons for header actions */
     .icon-btn {
-      background: #e5e7eb;
-      border: none;
+      background: var(--color-surface-alt);
+      border: 1px solid var(--color-border);
       border-radius: 999px;
       width: 40px;
       height: 40px;
@@ -366,8 +414,9 @@
       justify-content: center;
       cursor: pointer;
       font-size: 18px;
-      color: #0f172a;
+      color: var(--color-text-primary);
       transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+      flex-shrink: 0;
     }
 
     /* Force the inline SVG icons to a fixed size (fixes Safari flex collapse to 0x0) */
@@ -490,22 +539,32 @@
       z-index: 9999;
     }
 
-    svg#treeSvg {
+     svg#treeSvg {
       width: 100%;
       height: 100%;
       display: block;
+      background: var(--color-surface-alt);
+    }
+
+    html, body {
+      height: 100vh;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
     }
 
     /* Optional override for dashboard-page */
     .dashboard-page {
-      background: #f1f5f9;
+      background: var(--color-surface-alt);
     }
 
     /* Put on Hold modal */
     .hold-modal-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.55);
+      background: rgba(0, 0, 0, 0.65);
       display: none;
       align-items: center;
       justify-content: center;
@@ -514,22 +573,17 @@
     }
 
     .hold-modal {
-      background: #ffffff;
+      background: var(--color-surface);
       border-radius: 12px;
-      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
       max-width: 1000px;
       width: 100%;
       max-height: 85vh;
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      border: 1px solid #e5e7eb;
-    }
-
-    dialog.hold-modal {
-      color: inherit;
-      padding: 0;
-      margin: 0;
+      border: 1px solid var(--color-border);
+      color: var(--color-text-primary);
     }
 
     .hold-modal-header {
@@ -537,8 +591,8 @@
       align-items: center;
       justify-content: space-between;
       padding: 14px 18px;
-      border-bottom: 1px solid #e5e7eb;
-      background: #0f172a;
+      border-bottom: 1px solid var(--color-border);
+      background: var(--color-sidebar);
       color: #fff;
     }
 
@@ -555,8 +609,8 @@
     }
 
     .hold-header-icon-btn {
-      background: #e5e7eb;
-      border: none;
+      background: var(--color-surface-alt);
+      border: 1px solid var(--color-border);
       border-radius: 999px;
       width: 34px;
       height: 34px;
@@ -565,19 +619,21 @@
       justify-content: center;
       cursor: pointer;
       font-size: 18px;
-      color: #0f172a;
+      color: var(--color-text-primary);
       transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
     }
 
     .hold-header-icon-btn:hover {
       transform: translateY(-1px);
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
-      background: #dbeafe;
+      background: var(--color-primary-light);
+      color: var(--color-primary);
     }
 
     .hold-modal-body {
       padding: 14px 18px;
       overflow: auto;
+      background-color: var(--color-surface);
     }
 
     .hold-modal-close {
@@ -597,20 +653,20 @@
 
     .hold-table th,
     .hold-table td {
-      border: 1px solid #e5e7eb;
+      border: 1px solid var(--color-border);
       padding: 8px 10px;
       text-align: left;
     }
 
     .hold-table th {
-      background: #f3f4f6;
+      background: var(--color-surface-alt);
       font-weight: 700;
-      color: #000000;
+      color: var(--color-text-primary);
     }
 
     .hold-filter-btn {
-      background: #ffffff;
-      border: 1px solid #cbd5e1;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
       border-radius: 4px;
       width: 22px;
       height: 22px;
@@ -624,56 +680,54 @@
     }
 
     .hold-filter-btn:hover {
-      background: #e2f3ff;
-      border-color: #38bdf8;
+      background: var(--color-primary-light);
+      border-color: var(--color-primary);
     }
 
     .hold-filter-btn svg {
       width: 14px;
       height: 14px;
-      fill: #0f9f62;
+      fill: var(--color-success);
     }
 
     .hold-filter-menu {
       position: absolute;
-      background: #ffffff;
-      border: 1px solid #d1d5db;
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
       border-radius: 8px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
       width: 260px;
       max-height: 420px;
-      /* Allow the entire filter popup to scroll if needed
-         so that options like 9 and 10 are always reachable */
       overflow-y: auto;
       overflow-x: hidden;
       display: none;
       z-index: 12000;
       font-size: 13px;
+      color: var(--color-text-primary);
     }
 
-    /* Make sure the close (×) button in the filter header is clearly visible and clickable */
     .hold-filter-menu .menu-header button {
       background: none;
       border: none;
       cursor: pointer;
       font-size: 18px;
-      color: #6b7280;
+      color: var(--color-text-muted);
       padding: 0 4px;
       line-height: 1;
     }
 
     .hold-filter-menu .menu-header button:hover {
-      color: #111827;
+      color: var(--color-text-primary);
     }
 
     .hold-filter-menu .menu-header {
       padding: 10px 12px;
-      border-bottom: 1px solid #e5e7eb;
+      border-bottom: 1px solid var(--color-border);
       display: flex;
       align-items: center;
       justify-content: space-between;
       font-weight: 600;
-      color: #111827;
+      color: var(--color-text-primary);
     }
 
     .hold-filter-menu .menu-actions,
@@ -681,31 +735,32 @@
       padding: 8px 12px;
       display: flex;
       gap: 8px;
-      border-bottom: 1px solid #e5e7eb;
-      background: #f8fafc;
+      border-bottom: 1px solid var(--color-border);
+      background: var(--color-surface-alt);
     }
 
     .hold-filter-menu .menu-actions button,
     .hold-filter-menu .menu-sort button {
       flex: 1;
-      border: 1px solid #cbd5e1;
-      background: #ffffff;
+      border: 1px solid var(--color-border);
+      background: var(--color-surface);
       border-radius: 6px;
       padding: 6px;
       cursor: pointer;
       font-weight: 600;
-      color: #111827;
+      color: var(--color-text-primary);
     }
 
     .hold-filter-menu .menu-actions button:hover,
     .hold-filter-menu .menu-sort button:hover {
-      background: #e2e8f0;
+      background: var(--color-surface-alt);
     }
 
     .hold-filter-menu .menu-body {
       max-height: 200px;
       overflow: auto;
       padding: 8px 12px;
+      background: var(--color-surface);
     }
 
     .hold-filter-menu .menu-body label {
@@ -718,10 +773,10 @@
 
     .hold-filter-menu .menu-footer {
       padding: 10px 12px;
-      border-top: 1px solid #e5e7eb;
+      border-top: 1px solid var(--color-border);
       display: flex;
       gap: 8px;
-      background: #f8fafc;
+      background: var(--color-surface-alt);
     }
 
     .hold-filter-menu .menu-footer button {
@@ -754,9 +809,21 @@
       text-decoration: underline;
     }
 
+    @keyframes blink-blue-node {
+      0%, 100% {
+        stroke-opacity: 1;
+        fill-opacity: 1;
+      }
+      50% {
+        stroke-opacity: 0.3;
+        fill-opacity: 0.3;
+      }
+    }
+
     .hold-highlight {
       stroke: #2563eb !important;
-      stroke-width: 3 !important;
+      stroke-width: 4.5px !important;
+      animation: blink-blue-node 1.2s infinite ease-in-out !important;
     }
   </style>
 </head>
@@ -769,15 +836,14 @@
       <img src="{{ url_for('static', filename='tn_police_logo.png') }}" alt="TN Logo" class="logo-small">
       <div>
         <h2 style="margin: 0;">Fund Flow Graph - Ack No: {{ ack_no }}</h2>
-        <h3 style="margin: 5px 0 0 0; font-size: 18px; color: #fbbf24;" title="Total amount transacted at Layer 1 — not the put-on-hold amount.">Amount Lost (Layer&nbsp;1) : {{ layer_1_total }}</h3>
+        <h3 style="margin: 5px 0 0 0; font-size: 18px; color: #fbbf24;">Amount Lost : {{ layer_1_total }}</h3>
       </div>
     </div>
     <div class="user-info" style="display: flex; align-items: center; gap: 12px;">
-      <label for="headerSearch" style="display:none">Search account number</label>
       <input id="headerSearch" class="search-input" type="text" placeholder="Search account number" aria-label="Search account number" list="accountList">
       <datalist id="accountList"></datalist>
       <button id="legendToggle" class="icon-btn" title="Show Legend" aria-label="Show Legend"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2z"/><path d="M22 4h-6a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"/></svg></button>
-      <a id="downloadExcelBtn" class="icon-btn" title="Download Case Excel" aria-label="Download Case Excel" href="{{ url_for('download_case_excel', ack_no=ack_no) }}" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:inherit;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></a>
+      <a id="downloadExcelBtn" class="icon-btn" title="Download Case Excel" aria-label="Download Case Excel" href="{{ url_for('download_case_excel', ack_no=ack_no) }}" style="display: inline-flex !important; align-items: center !important; justify-content: center !important; text-decoration: none !important; color: inherit !important; width: 40px !important; height: 40px !important; border-radius: 50% !important; flex: 0 0 40px !important; box-sizing: border-box !important;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></a>
       <button id="statewiseSummaryBtn" class="icon-btn state" title="Statewise Summary"
         aria-label="Statewise Summary"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="14"/><line x1="12" y1="20" x2="12" y2="8"/><line x1="18" y1="20" x2="18" y2="4"/></svg></button>
       <button id="expandAllBtn" class="icon-btn expand" title="Expand All Nodes"
@@ -800,12 +866,30 @@
   </header>
 
   <!-- Graph Area -->
-  <div id="chart">
+  <div id="chart" style="position: relative;">
+    <!-- Loading Spinner Overlay -->
+    <div id="graphLoader" style="
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: var(--color-surface, #ffffff);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 50;
+      transition: opacity 0.3s ease;
+    ">
+      <div class="spinner" style="
+        width: 40px; height: 40px;
+        border: 4px solid var(--color-border, #e2e8f0);
+        border-top-color: var(--color-primary, #3b82f6);
+        border-radius: 50%;
+        animation: spin 1.0s linear infinite;
+      "></div>
+      <p style="margin-top: 16px; font-weight: 600; color: var(--color-text-secondary, #64748b);">Loading graph data...</p>
+    </div>
     <svg id="treeSvg"></svg>
     <div class="tooltip"></div>
 
     <!-- Right panel -->
-    <div id="detailsPanel">
+    <div id="detailsPanel" role="region" aria-live="polite" aria-label="Transaction details">
       <button id="closeDetails">×</button>
       <h2>
         Transaction Details
@@ -820,10 +904,10 @@
         <h3>KYC Details</h3>
         <form id="kycForm">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-          <div class="detail-row"><label for="kycTxnId"><b>Txn ID:</b></label><input type="text" id="kycTxnId" readonly></div>
-          <div class="detail-row"><label for="kycName"><b>Holder Name:</b></label><input type="text" id="kycName" required disabled></div>
-          <div class="detail-row"><label for="kycAadhar"><b>Aadhaar No:</b></label><input type="text" id="kycAadhar" required disabled></div>
-          <div class="detail-row"><label for="kycMobile"><b>Mobile No:</b></label><input type="text" id="kycMobile" required disabled></div>
+          <div class="detail-row"><label for="kycTxnId"><b>Txn ID:</b></label><input id="kycTxnId" readonly></div>
+          <div class="detail-row"><label for="kycName"><b>Holder Name:</b></label><input id="kycName" required disabled></div>
+          <div class="detail-row"><label for="kycAadhar"><b>Aadhaar No:</b></label><input id="kycAadhar" required disabled></div>
+          <div class="detail-row"><label for="kycMobile"><b>Mobile No:</b></label><input id="kycMobile" required disabled></div>
           <div class="detail-row"><label for="kycAddress"><b>Address:</b></label><textarea id="kycAddress" required disabled></textarea>
           </div>
           <div style="margin-top: 12px;">
@@ -838,14 +922,14 @@
     </div>
 
     <!-- Left panel -->
-    <div id="leftPanel">
+    <div id="leftPanel" role="region" aria-live="polite" aria-label="Special transaction info">
       <button id="closeLeftPanel">×</button>
       <h4>ATM / Cheque / Hold Info</h4>
       <div id="leftContent"></div>
     </div>
 
     <!-- Statewise Summary Panel -->
-    <div id="summaryPanel">
+    <div id="summaryPanel" role="region" aria-live="polite" aria-label="Statewise summary">
       <button id="closeSummary">×</button>
       <h2>Statewise Summary - Ack No: {{ ack_no }}</h2>
       <div id="summaryContent">
@@ -855,7 +939,7 @@
 
     <!-- Repeated Accounts Modal -->
     <div id="repeatModalOverlay" class="hold-modal-overlay" aria-hidden="true">
-      <dialog class="hold-modal" aria-modal="true" aria-labelledby="repeatModalTitle">
+      <div class="hold-modal" role="dialog" aria-modal="true" aria-labelledby="repeatModalTitle">
         <div class="hold-modal-header">
           <div class="hold-modal-header-title">
             <h3 id="repeatModalTitle" style="margin:0;">Repeated Accounts</h3>
@@ -886,12 +970,12 @@
             No repeated accounts found in this trail.
           </div>
         </div>
-      </dialog>
+      </div>
     </div>
 
     <!-- Put on Hold Modal -->
     <div id="holdModalOverlay" class="hold-modal-overlay" aria-hidden="true">
-      <dialog class="hold-modal" aria-modal="true" aria-labelledby="holdModalTitle">
+      <div class="hold-modal" role="dialog" aria-modal="true" aria-labelledby="holdModalTitle">
         <div class="hold-modal-header">
           <div class="hold-modal-header-title">
             <h3 id="holdModalTitle" style="margin:0;">Put on Hold Transactions</h3>
@@ -956,29 +1040,28 @@
                         <path d="M4 6h12l-4.5 5.25v3.5L8.5 16v-4.75z" />
                       </svg>
                     </button>
-                  </th>
-                  <th>
-                    Court Order Date
-                    <button class="hold-filter-btn" data-column="court_order_date" title="Filter Court Order Date"
-                      aria-label="Filter Court Order Date">
+                                <th>
+                    MRM Status
+                    <button class="hold-filter-btn" data-column="mrm_status" title="Filter MRM Status"
+                      aria-label="Filter MRM Status">
                       <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                         <path d="M4 6h12l-4.5 5.25v3.5L8.5 16v-4.75z" />
                       </svg>
                     </button>
                   </th>
                   <th>
-                    Status of Refund
-                    <button class="hold-filter-btn" data-column="refund_status" title="Filter Status of Refund"
-                      aria-label="Filter Status of Refund">
+                    Refund Type
+                    <button class="hold-filter-btn" data-column="refund_type" title="Filter Refund Type"
+                      aria-label="Filter Refund Type">
                       <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                         <path d="M4 6h12l-4.5 5.25v3.5L8.5 16v-4.75z" />
                       </svg>
                     </button>
                   </th>
                   <th>
-                    Amount Refund
-                    <button class="hold-filter-btn" data-column="refund_amount" title="Filter Amount Refund"
-                      aria-label="Filter Amount Refund">
+                    Refunded Amount
+                    <button class="hold-filter-btn" data-column="refund_amount" title="Filter Refunded Amount"
+                      aria-label="Filter Refunded Amount">
                       <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
                         <path d="M4 6h12l-4.5 5.25v3.5L8.5 16v-4.75z" />
                       </svg>
@@ -1000,14 +1083,14 @@
             </table>
           </div>
         </div>
-      </dialog>
+      </div>
     </div>
     <div id="holdFilterMenu" class="hold-filter-menu" aria-hidden="true"></div>
     <div id="atmFilterMenu" class="hold-filter-menu" aria-hidden="true"></div>
 
     <!-- ATM Modal -->
     <div id="atmModalOverlay" class="hold-modal-overlay" aria-hidden="true" style="display:none;">
-      <dialog class="hold-modal" aria-modal="true" aria-labelledby="atmModalTitle">
+      <div class="hold-modal" role="dialog" aria-modal="true" aria-labelledby="atmModalTitle">
         <div class="hold-modal-header">
           <div class="hold-modal-header-title">
             <h3 id="atmModalTitle" style="margin:0;">ATM Withdrawals</h3>
@@ -1020,30 +1103,18 @@
           <p id="atmStatusText" style="margin-top:0; color:#050505;">Loading ATM data...</p>
           <div style="overflow:auto; max-height:60vh;">
             <table id="atmTable" class="hold-table">
-              <thead id="atmTableHead">
-                <tr>
-                  <th>S. No.</th>
-                  <th>Layer</th>
-                  <th>Account No</th>
-                  <th>Transaction ID</th>
-                  <th>Withdrawal Date & Time</th>
-                  <th>Withdrawal Amount</th>
-                  <th>Disputed Amount</th>
-                  <th>ATM ID</th>
-                  <th>ATM Location</th>
-                </tr>
-              </thead>
+              <thead id="atmTableHead"></thead>
               <tbody id="atmTableBody"></tbody>
             </table>
           </div>
         </div>
-      </dialog>
+      </div>
     </div>
   </div>
 
   <!-- Letter Details Modal -->
   <div id="letterModalOverlay" class="hold-modal-overlay" aria-hidden="true">
-    <dialog class="hold-modal" aria-modal="true" aria-labelledby="letterModalTitle">
+    <div class="hold-modal" role="dialog" aria-modal="true" aria-labelledby="letterModalTitle">
       <div class="hold-modal-header">
         <div class="hold-modal-header-title">
           <h3 id="letterModalTitle" style="margin:0;">Generate Letter</h3>
@@ -1069,47 +1140,28 @@
             </div>
           </div>
           <div style="display:flex; gap:12px; flex-wrap:wrap;">
-            <div style="flex:1; min-width:220px;">
-              <label for="officer_name">Officer Name</label><br>
-              <input type="text" id="officer_name" name="officer_name"
+            <label style="flex:1; min-width:220px;">Officer Name<br><input id="officer_name" name="officer_name"
                 value="{{ current_user.name if current_user.is_authenticated and current_user.name else '' }}" required
-                style="width:100%; padding:8px; margin-top:6px;">
-            </div>
-            <div style="flex:1; min-width:220px;">
-              <label for="officer_designation">Officer Designation</label><br>
-              <input type="text" id="officer_designation" name="officer_designation"
+                style="width:100%; padding:8px; margin-top:6px;"></label>
+            <label style="flex:1; min-width:220px;">Officer Designation<br><input id="officer_designation"
+                name="officer_designation"
                 value="{{ current_user.rank if current_user.is_authenticated and current_user.rank else '' }}" required
-                style="width:100%; padding:8px; margin-top:6px;">
-            </div>
-            <div style="flex:1; min-width:220px;">
-              <label for="officer_phone">Officer Phone</label><br>
-              <input type="text" id="officer_phone" name="officer_phone"
-                required style="width:100%; padding:8px; margin-top:6px;">
-            </div>
-            <div style="flex:1; min-width:220px;">
-              <label for="officer_email">Officer Email</label><br>
-              <input type="text" id="officer_email" name="officer_email"
+                style="width:100%; padding:8px; margin-top:6px;"></label>
+            <label style="flex:1; min-width:220px;">Officer Phone<br><input id="officer_phone" name="officer_phone"
+                required style="width:100%; padding:8px; margin-top:6px;"></label>
+            <label style="flex:1; min-width:220px;">Officer Email<br><input id="officer_email" name="officer_email"
                 value="{{ current_user.email if current_user.is_authenticated and current_user.email else '' }}"
-                required style="width:100%; padding:8px; margin-top:6px;">
-            </div>
-            <div style="flex:1; min-width:220px;">
-              <label for="letter_date">Letter Date</label><br>
-              <input type="date" id="letter_date" name="letter_date" required style="width:100%; padding:8px; margin-top:6px;">
-            </div>
-            <div style="flex:1; min-width:220px;">
-              <label for="crime_no">Crime No with Section</label><br>
-              <input type="text" id="crime_no" name="crime_no" required style="width:100%; padding:8px; margin-top:6px;">
-            </div>
-            <div style="flex:1 1 100%; min-width:300px;">
-              <label for="ncrp_ack_no">NCRP Acknowledgement No</label><br>
-              <input type="text" id="ncrp_ack_no" name="ncrp_ack_no" value="{{ ack_no }}" required
-                style="width:100%; padding:8px; margin-top:6px;">
-            </div>
-            <div style="flex:1 1 100%; min-width:300px;">
-              <label for="disputed_amount">Disputed Amount (Optional Override)</label><br>
-              <input id="disputed_amount" name="disputed_amount" type="number" step="0.01" placeholder="Leave blank to use calculated amount"
-                style="width:100%; padding:8px; margin-top:6px;">
-            </div>
+                required style="width:100%; padding:8px; margin-top:6px;"></label>
+            <label style="flex:1; min-width:220px;">Letter Date<br><input type="date" id="letter_date"
+                name="letter_date" required style="width:100%; padding:8px; margin-top:6px;"></label>
+            <label style="flex:1; min-width:220px;">Crime No with Section<br><input id="crime_no" name="crime_no"
+                required style="width:100%; padding:8px; margin-top:6px;"></label>
+            <label style="flex:1 1 100%; min-width:300px;">NCRP Acknowledgement No<br><input id="ncrp_ack_no"
+                name="ncrp_ack_no" value="{{ ack_no }}" required
+                style="width:100%; padding:8px; margin-top:6px;"></label>
+            <label style="flex:1 1 100%; min-width:300px;">Disputed Amount (Optional Override)<br><input id="disputed_amount" 
+                name="disputed_amount" type="number" step="0.01" placeholder="Leave blank to use calculated amount"
+                style="width:100%; padding:8px; margin-top:6px;"></label>
           </div>
           <div style="margin-top:12px; display:flex; gap:8px;">
             <button type="button" id="generateLetterBtn"
@@ -1119,7 +1171,7 @@
           </div>
         </form>
       </div>
-    </dialog>
+    </div>
   </div>
 
   <!-- Scripts -->
@@ -1212,11 +1264,9 @@
             s = s.replace(/\.0$/, '');
             td.textContent = s;
           } else if (key === 'atm_id') {
-            const sVal = String(v).trim();
-            td.textContent = sVal.replace(/^ATM\s*ID\s*[:-]?\s*/i, '');
+            td.textContent = String(v).replace(/^\s*ATM\s*ID\s*[:-]\s*/i, '');
           } else if (key === 'atm_location') {
-            const sVal = String(v).trim();
-            td.textContent = sVal.replace(/^Place(?:\/Location)?\s+of\s+ATM\s*[:-]?\s*/i, '');
+            td.textContent = String(v).replace(/^\s*Place\s*(?:\/Location)?\s*of\s*ATM\s*[:-]\s*/i, '');
           } else {
             td.textContent = String(v);
           }
@@ -1451,17 +1501,19 @@
         const svg = d3.select("#treeSvg");
         const nodes = svg.selectAll(".node");
         let found = null;
+        let foundEl = null;
         nodes.each(function (d) {
           const name = String(d?.data?.name || "").toLowerCase();
           if (!found && name.includes(q)) {
             found = d;
+            foundEl = this;
           }
         });
         nodes.select("rect").classed("search-highlight", false)
           .attr("stroke", function (d) { return d?.data?.hold_info ? "#dc2626" : "#1e293b"; })
           .attr("stroke-width", function (d) { return d?.data?.hold_info ? 3 : 1.5; });
-        if (!found) return;
-        nodes.filter(d => d === found).select("rect").classed("search-highlight", true);
+        if (!found || !foundEl) return;
+        d3.select(foundEl).select("rect").classed("search-highlight", true);
         const svgEl = d3.select("#treeSvg");
         const gSel = svgEl.select("g");
         if (!gSel.empty()) {
@@ -1596,7 +1648,7 @@
     if (holdLetterBtn) {
       holdLetterBtn.onclick = () => {
         showIconName("Letter Generation");
-        // Letter generation is handled via openLetterModal triggers.
+        // TODO: Add letter generation logic if required
       };
     }
     // KYC button removed; no-op
@@ -1615,7 +1667,7 @@
         const mm = String(d.getMonth() + 1).padStart(2, '0');
         const yy = d.getFullYear();
         return `${dd}-${mm}-${yy}`;
-      } catch (e) { console.debug('formatDate failed', e); return String(yyyyMmDd); }
+      } catch (e) { return String(yyyyMmDd); }
     }
 
     async function generateLettersForType(type) {
@@ -1765,7 +1817,7 @@
         return;
       }
 
-      const btn = e.currentTarget;
+      const btn = this;
       const originalText = btn.textContent;
       btn.textContent = 'Generating...';
       btn.disabled = true;
@@ -1825,7 +1877,7 @@
           try {
             const errData = await res.json();
             errMsg = errData.error || errData.message || errMsg;
-          } catch (err) { console.debug('letter response body not JSON', err); }
+          } catch (_) { /* response body wasn't JSON */ }
           console.error('Failed to generate letters:', errMsg);
           alert(errMsg);
           return;
@@ -2074,7 +2126,8 @@
   </script>
 
   <!-- D3 already loaded once (vendored) in <head>; no second CDN copy needed. -->
-  <script src="{{ url_for('static', filename='graph.js') }}?v=2.1"></script>
+  <script src="{{ url_for('static', filename='js/graph-helpers.js') }}?v=3.6"></script>
+  <script src="{{ url_for('static', filename='graph.js') }}?v=4.5"></script>
   <!-- 🌟 Enhanced PROFESSIONAL LEGEND PANEL -->
   <div class="legend-box" style="
     display: none;
@@ -2111,7 +2164,7 @@
       <li style="margin-bottom: 10px;"><strong>🎫 Cheque:</strong> Funds withdrawn from this account via cheque.</li>
       <li style="margin-bottom: 10px;"><strong>🔒 Hold:</strong> Funds at this account are currently frozen (on hold).</li>
       <li style="margin-bottom: 10px;"><strong>💥 Burst:</strong> Account forwards funds to 20+ accounts; auto-expansion is disabled for performance.</li>
-      <li style="margin-bottom: 10px;"><strong><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:#7c3aed;vertical-align:middle;margin-right:2px;"></span> Repeated account:</strong> Same account recurs in 2+ places of the trail (possible mule). Use the Repeated Accounts button to find them.</li>
+      <li style="margin-bottom: 10px;"><strong><span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:var(--graph-layer-repeated);vertical-align:middle;margin-right:2px;"></span> Repeated account:</strong> Same account recurs in 2+ places of the trail (possible mule). Use the Repeated Accounts button to find them.</li>
     </ul>
 
     <!-- Dashed Divider -->
@@ -2177,7 +2230,7 @@
         var svg = svgSel(); var g = globalThis.graphG || svg.select('g');
         if (!g || g.empty()) return;
         var node = g.node(); if (!node) return;
-        var b; try { b = node.getBBox(); } catch (e) { console.debug('getBBox failed', e); return; }
+        var b; try { b = node.getBBox(); } catch (e) { return; }
         if (!b.width || !b.height) return;
         var fw = svg.node().clientWidth || 1200, fh = svg.node().clientHeight || 700;
         var scale = Math.max(0.04, Math.min(0.9 / Math.max(b.width / fw, b.height / fh), 4));

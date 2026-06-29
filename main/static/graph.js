@@ -2,17 +2,43 @@
 const branchCache = new Map();
 const branchPhoneCache = new Map();
 const isViewer = globalThis.window === undefined ? false : Boolean(globalThis.isViewerRole);
-
-// Sanitize HTML to prevent XSS
-function escapeHtml(unsafe) {
-  if (unsafe === null || unsafe === undefined) return '';
-  return String(unsafe)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+// escapeHtml is loaded from graph-helpers.js
+function showToast(message, category = 'info') {
+  let stack = document.getElementById('toastStack') || document.querySelector('.toast-stack');
+  if (!stack) {
+    stack = document.createElement('div');
+    stack.id = 'toastStack';
+    stack.className = 'toast-stack';
+    document.body.appendChild(stack);
+  }
+  const toast = document.createElement('div');
+  toast.className = `toast ${category}`;
+  toast.setAttribute('role', 'status');
+  
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 't-msg';
+  msgDiv.textContent = message;
+  
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 't-close toast-close';
+  closeBtn.setAttribute('aria-label', 'Dismiss notification');
+  closeBtn.innerHTML = '&times;';
+  
+  toast.appendChild(msgDiv);
+  toast.appendChild(closeBtn);
+  stack.appendChild(toast);
+  
+  const dismiss = () => {
+    if (toast.classList.contains('is-hiding')) return;
+    toast.classList.add('is-hiding');
+    setTimeout(() => { toast.remove(); }, 220);
+  };
+  
+  closeBtn.addEventListener('click', dismiss);
+  setTimeout(dismiss, 5000);
 }
+
 
 async function fetchBranchInfo(ifsc) {
   if (!ifsc) return { BRANCH: 'Unknown' };
@@ -29,9 +55,7 @@ async function fetchBranchInfo(ifsc) {
       branch = data?.BRANCH || data?.Branch || data?.BRANCH_NAME || data['Branch Name'] || data?.BranchName || '';
       phone = data?.PHONE || data?.Phone || data?.Contact || data?.Telephone || data['Phone No'] || data['Contact Number'] || data['PhoneNumber'] || '';
     }
-  } catch (err) {
-    console.debug('fetchBranchInfo: parse failed', err);
-  }
+  } catch (_) { }
   const finalBranch = branch && String(branch).trim() ? String(branch).trim() : 'Unknown';
   const finalPhone = phone || '';
   branchCache.set(key, finalBranch);
@@ -69,6 +93,18 @@ const leftPanel = document.getElementById('leftPanel');
 const leftContent = document.getElementById('leftContent');
 const closeLeft = document.getElementById('closeLeftPanel');
 closeLeft.onclick = () => leftPanel.style.display = 'none';
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (detailsPanel) detailsPanel.style.display = 'none';
+    if (leftPanel) leftPanel.style.display = 'none';
+    if (typeof closeHoldModal === 'function') closeHoldModal();
+    const repeatOverlay = document.getElementById('repeatModalOverlay');
+    if (repeatOverlay) repeatOverlay.style.display = 'none';
+    const summaryPanel = document.getElementById('summaryPanel');
+    if (summaryPanel) summaryPanel.style.display = 'none';
+  }
+});
 
 // Put on hold modal elements
 const holdModalOverlay = document.getElementById('holdModalOverlay');
@@ -161,6 +197,14 @@ function renderHoldTable(rows) {
       };
     });
   }
+
+  holdTableBody.querySelectorAll('.hold-account-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const acc = link.dataset.accountNumber;
+      expandHoldAccount(acc);
+    });
+  });
 }
 
 function formatHoldValue(row, column) {
@@ -175,12 +219,16 @@ function formatHoldValue(row, column) {
       return row.ifsc_code || 'N/A';
     case 'amount':
       return `₹${Number(row.amount ?? 0).toLocaleString('en-IN')}`;
-    case 'court_order_date':
-      return row.court_order_date || 'N/A';
-    case 'refund_status':
-      return row.refund_status || 'N/A';
+    case 'mrm_status':
+      if (row.mrm && row.mrm.latest_label) {
+        return `${row.mrm.latest_label} (Stage ${row.mrm.latest_step})`;
+      }
+      return 'Not Started';
+    case 'refund_type':
+      return (row.mrm && row.mrm.refund_type) || 'N/A';
     case 'refund_amount':
-      return row.refund_amount ? `₹${Number(row.refund_amount).toLocaleString('en-IN')}` : 'N/A';
+      const val = row.mrm ? row.mrm.refund_amount : null;
+      return val != null ? `₹${Number(val).toLocaleString('en-IN')}` : 'N/A';
     case 'layer':
       return row.layer == null ? 'N/A' : String(row.layer);
     default:
@@ -188,60 +236,7 @@ function formatHoldValue(row, column) {
   }
 }
 
-function normalizeFilterValue(column, rawValue) {
-  if (rawValue === undefined || rawValue === null) return 'N/A';
-  const value = String(rawValue).trim();
-
-  if (column === 'amount' || column === 'refund_amount') {
-    const numeric = Number(value.replace(/[₹,\s]/g, ''));
-    return Number.isFinite(numeric) ? String(numeric) : 'N/A';
-  }
-
-  if (column === 'layer') {
-    const numeric = Number(value.replace(/[^\d.-]/g, ''));
-    return Number.isFinite(numeric) ? String(numeric) : 'N/A';
-  }
-
-  return value;
-}
-
-function getHoldSortValue(row, column) {
-  switch (column) {
-    case 'amount':
-      return Number(row.amount ?? 0);
-    case 'layer':
-      return Number(row.layer ?? 0);
-    case 'refund_amount':
-      return Number(row.refund_amount ?? 0);
-    case 'account_number':
-      return row.account_number || '';
-    case 'bank_name':
-      return row.bank_name || '';
-    case 'branch_name':
-      return row.branch_name || '';
-    case 'ifsc_code':
-      return row.ifsc_code || '';
-    case 'court_order_date':
-      return row.court_order_date || '';
-    case 'refund_status':
-      return row.refund_status || '';
-    default:
-      return '';
-  }
-}
-
-function sortHoldRows(rows) {
-  if (!holdSort.column || !holdSort.direction) return rows;
-  const sorted = [...rows];
-  sorted.sort((a, b) => {
-    const aVal = getHoldSortValue(a, holdSort.column);
-    const bVal = getHoldSortValue(b, holdSort.column);
-    if (aVal < bVal) return holdSort.direction === 'asc' ? -1 : 1;
-    if (aVal > bVal) return holdSort.direction === 'asc' ? 1 : -1;
-    return 0;
-  });
-  return sorted;
-}
+// normalizeFilterValue, getHoldSortValue, and sortHoldRows are loaded from graph-helpers.js
 
 function applyHoldFilters() {
   if (!holdTableBody) return;
@@ -253,7 +248,7 @@ function applyHoldFilters() {
     });
   });
 
-  const sortedRows = sortHoldRows(filtered);
+  const sortedRows = sortHoldRows(filtered, holdSort.column, holdSort.direction);
 
   holdTableBody.textContent = '';
 
@@ -276,10 +271,14 @@ function applyHoldFilters() {
     tdIndex.textContent = idx + 1;
     tr.appendChild(tdIndex);
 
-    // Account Number (plain text — held accounts are not in the rendered tree,
-    // so the old expand-on-click link only ever alert()ed "Account not found").
+    // Account Number Link
     const tdAccount = document.createElement('td');
-    tdAccount.textContent = row.account_number || 'N/A';
+    const link = document.createElement('a');
+    link.href = '#';
+    link.className = 'hold-account-link';
+    link.dataset.accountNumber = row.account_number || '';
+    link.textContent = row.account_number || 'N/A';
+    tdAccount.appendChild(link);
     tr.appendChild(tdAccount);
 
     // Other Columns
@@ -288,8 +287,8 @@ function applyHoldFilters() {
       row.branch_name || 'N/A',
       row.ifsc_code || 'N/A',
       formatHoldValue(row, 'amount'),
-      formatHoldValue(row, 'court_order_date'),
-      formatHoldValue(row, 'refund_status'),
+      formatHoldValue(row, 'mrm_status'),
+      formatHoldValue(row, 'refund_type'),
       formatHoldValue(row, 'refund_amount'),
       row.layer || 'N/A'
     ];
@@ -304,6 +303,14 @@ function applyHoldFilters() {
   });
 
   holdTableBody.appendChild(fragment);
+
+  holdTableBody.querySelectorAll('.hold-account-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const acc = link.dataset.accountNumber;
+      expandHoldAccount(acc);
+    });
+  });
 
   // No per-row letter buttons; header edit (pencil) opens the letter popup for selected rows
 }
@@ -504,69 +511,7 @@ function showHoldFilterMenu(button) {
 // (the set never changes when nodes are merely expanded/collapsed).
 let repeatedAccounts = new Set();
 
-function computeRepeatedAccounts(root) {
-  const counts = new Map();
-  // Start below the root so the ACK/root node itself is never counted; every node
-  // visited from here is a real account (depth >= 1).
-  const stack = [];
-  if (root) {
-    if (root.children) stack.push(...root.children);
-    if (root._children) stack.push(...root._children);
-  }
-  while (stack.length) {
-    const node = stack.pop();
-    if (!node) continue;
-    const name = node.data?.name ? String(node.data.name).trim() : '';
-    if (name && name !== 'N/A' && name.toUpperCase() !== 'NA') {
-      counts.set(name, (counts.get(name) || 0) + 1);
-    }
-    if (node.children) for (const k of node.children) stack.push(k);
-    if (node._children) for (const k of node._children) stack.push(k);
-  }
-  const repeated = new Set();
-  counts.forEach((c, name) => { if (c >= 2) repeated.add(name); });
-  return repeated;
-}
-
-// Per-account detail for the Repeated Accounts list: how many positions an account
-// occupies and in which layers / banks. Same traversal/definition as the purple
-// marking, so the list and the marking are always consistent.
-function computeRepeatedAccountDetails(root) {
-  const map = new Map(); // name -> {count, layers:Set, banks:Set}
-  const stack = [];
-  if (root) {
-    if (root.children) stack.push(...root.children);
-    if (root._children) stack.push(...root._children);
-  }
-  while (stack.length) {
-    const node = stack.pop();
-    if (!node) continue;
-    const d = node.data || {};
-    const name = d.name ? String(d.name).trim() : '';
-    if (name && name !== 'N/A' && name.toUpperCase() !== 'NA') {
-      let e = map.get(name);
-      if (!e) { e = { count: 0, layers: new Set(), banks: new Set() }; map.set(name, e); }
-      e.count += 1;
-      if (d.layer != null && d.layer !== '') e.layers.add(d.layer);
-      if (d.bank) e.banks.add(d.bank);
-    }
-    if (node.children) for (const k of node.children) stack.push(k);
-    if (node._children) for (const k of node._children) stack.push(k);
-  }
-  const rows = [];
-  map.forEach((e, name) => {
-    if (e.count >= 2) {
-      rows.push({
-        account: name,
-        count: e.count,
-        layers: [...e.layers].sort((a, b) => Number(a) - Number(b)),
-        banks: [...e.banks],
-      });
-    }
-  });
-  rows.sort((a, b) => b.count - a.count);
-  return rows;
-}
+// computeRepeatedAccounts and computeRepeatedAccountDetails are loaded from graph-helpers.js
 
 // Button handler: open a list modal (like Put-on-Hold) of the repeated accounts.
 // It does NOT mass-expand/redraw the tree (which made nodes appear to "vanish");
@@ -613,24 +558,7 @@ function locateRepeatedAccount(acc) {
   if (typeof expandHoldAccount === 'function') expandHoldAccount(acc);
 }
 
-function findPathToAccount(accountNumber) {
-  if (!currentRoot || !accountNumber) return null;
-  const target = String(accountNumber).trim();
-  const stack = [{ node: currentRoot, path: [currentRoot] }];
-
-  while (stack.length > 0) {
-    const { node, path } = stack.pop();
-    const name = node?.data?.name ? String(node.data.name).trim() : '';
-    if (name === target) return path;
-
-    const next = [];
-    if (node.children) next.push(...node.children);
-    if (node._children) next.push(...node._children);
-
-    next.forEach(child => stack.push({ node: child, path: [...path, child] }));
-  }
-  return null;
-}
+// findPathToAccount is loaded from graph-helpers.js
 
 function expandNodesInPath(path) {
   if (!path) return;
@@ -645,21 +573,89 @@ function expandNodesInPath(path) {
 function highlightHoldNode(accountNumber) {
   if (!g || !accountNumber) return;
   g.selectAll('.node rect').classed('hold-highlight', false);
+  let matchedNode = null;
   g.selectAll('.node').each(function (d) {
     const name = d?.data?.name ? String(d.data.name).trim() : '';
     if (name === String(accountNumber).trim()) {
       d3.select(this).select('rect').classed('hold-highlight', true);
+      matchedNode = d;
+    }
+  });
+
+  if (matchedNode && svg) {
+    const svgNode = svg.node();
+    const width = svgNode.clientWidth || 1200;
+    const height = svgNode.clientHeight || 800;
+    const scale = 0.85; // A clean zoom level for details
+    const translateX = (width / 2) - (matchedNode.x * scale);
+    const translateY = (height / 2) - (matchedNode.y * scale);
+
+    svg.transition()
+      .duration(800)
+      .call(
+        globalThis.zoomBehavior.transform,
+        d3.zoomIdentity.translate(translateX, translateY).scale(scale)
+      );
+  }
+}
+
+function restoreOriginalChildren() {
+  if (!currentRoot) return;
+  currentRoot.descendants().forEach(n => {
+    if (n._original_children) {
+      n.children = n._original_children;
+      delete n._original_children;
     }
   });
 }
 
 function expandHoldAccount(accountNumber) {
-  const path = findPathToAccount(accountNumber);
+  const path = findPathToAccount(currentRoot, accountNumber);
   if (!path) {
-    alert('Account not found in the current graph.');
+    showToast('Account not found in the current graph.', 'error');
     return;
   }
-  expandNodesInPath(path);
+
+  // For each node in the path (except the target itself)
+  for (let i = 0; i < path.length - 1; i++) {
+    const parentNode = path[i];
+    const childNode = path[i + 1];
+
+    if (parentNode.burst) {
+      // Save the original children array for this burst node
+      if (!parentNode._original_children) {
+        parentNode._original_children = parentNode.children || parentNode._children || [];
+      }
+      // Find the summary node if it exists
+      const summaryNode = parentNode._original_children.find(c => c.data.is_summary_node);
+      
+      // Get current children or start empty
+      let currentChildren = parentNode.children || [];
+      
+      // Remove summary node from current list if it's there
+      currentChildren = currentChildren.filter(c => c !== summaryNode);
+      
+      // Append the new child path node if not already present
+      if (!currentChildren.includes(childNode)) {
+        currentChildren.push(childNode);
+      }
+      
+      // Append the summary node back to the end
+      if (summaryNode) {
+        currentChildren.push(summaryNode);
+      }
+      
+      parentNode.children = currentChildren;
+      parentNode._children = null;
+    } else {
+      // Expand non-burst parent nodes in the path normally (keep all siblings)
+      if (parentNode._children) {
+        parentNode.children = parentNode._children;
+        parentNode._children = null;
+      }
+    }
+  }
+
   drawTree(currentRoot);
   highlightHoldNode(accountNumber);
 }
@@ -696,19 +692,7 @@ function expandHoldPaths(root) {
   }
 }
 
-function cleanTreeData(root) {
-  // Remove children with null or undefined accounts recursively (keep empty strings, "N/A", or "NA" as valid placeholders)
-  if (!root?.children) return;
-  root.children = root.children.filter(child => {
-    if (!child || typeof child !== 'object' || !child.data) return false;
-    const name = child.data.name;
-    // Exclude only if name is null or undefined
-    if (name === null || name === undefined) return false;
-    // Recursively clean descendants
-    cleanTreeData(child);
-    return true;
-  });
-}
+// cleanTreeData is loaded from graph-helpers.js
 
 function resizeTree() {
   const headerH = document.querySelector('header')?.clientHeight || 0;
@@ -722,13 +706,14 @@ globalThis.addEventListener('resize', () => {
 });
 resizeTree();
 
-async function loadGraphData() {
-  try {
-    const res = await fetch(`/graph_data/${ackNo}`);
+fetch(`/graph_data/${ackNo}`)
+  .then(res => {
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     }
-    const data = await res.json();
+    return res.json();
+  })
+  .then(data => {
     if (!data || data.error) {
       const chartEl = document.getElementById('chart');
       if (chartEl) {
@@ -743,14 +728,7 @@ async function loadGraphData() {
     }
     globalThis.graphData = data; // Set global for statewise summary modal
 
-    // Deep clean the data before creating hierarchy
-    function deepCleanData(node) {
-      if (!node || typeof node !== 'object') return null;
-      if (node.children) {
-        node.children = node.children.map(deepCleanData).filter(Boolean);
-      }
-      return node;
-    }
+    // deepCleanData is loaded from graph-helpers.js
 
     const cleanedData = deepCleanData(data);
     if (!cleanedData?.children || cleanedData.children.length === 0) {
@@ -791,6 +769,7 @@ async function loadGraphData() {
 
     cleanTreeData(root);
     bfsAssignLayers(root);
+    processBurstNodes(root);
     if (!root.children || root.children.length === 0) {
       const chartEl = document.getElementById('chart');
       if (chartEl) {
@@ -811,7 +790,7 @@ async function loadGraphData() {
     // Smart auto-expansion: reveal every Put-On-Hold account by expanding only the
     // branches that lead to one (the rest stay collapsed). Manual collapse/expand
     // and hold-highlighting behaviour are unaffected.
-    expandHoldPaths(root);
+    // expandHoldPaths(root);
     let count = 1;
     root.children?.forEach(child => {
       child.data.victim_label = `Victim ${count++}`;
@@ -820,10 +799,27 @@ async function loadGraphData() {
     // Flag mule/intermediary accounts that re-appear in the trail (computed once;
     // stable across expand/collapse). The fill logic colours these nodes purple.
     repeatedAccounts = computeRepeatedAccounts(root);
-    await populateBranchNames(root);
-    drawTree(root);
-    setTimeout(() => drawTree(root), 80);
-  } catch (error) {
+    function hideGraphLoader() {
+      const loader = document.getElementById('graphLoader');
+      if (loader) {
+        loader.style.opacity = '0';
+        setTimeout(() => loader.remove(), 300);
+      }
+    }
+
+    populateBranchNames(root).then(() => {
+      drawTree(root);
+      setTimeout(() => {
+        drawTree(root);
+        hideGraphLoader();
+      }, 80);
+    });
+  })
+  .catch(error => {
+    // Hide loader on error too
+    const loader = document.getElementById('graphLoader');
+    if (loader) loader.remove();
+
     console.error('Error fetching graph data:', error);
     const chartEl = document.getElementById('chart');
     if (chartEl) {
@@ -843,45 +839,208 @@ async function loadGraphData() {
       chartEl.textContent = '';
       chartEl.appendChild(msgDiv);
     }
-  }
-}
+  });
 
-loadGraphData();
+// bfsAssignLayers and getTotalRepeatedAmount are loaded from graph-helpers.js
 
-
-function bfsAssignLayers(root) {
-  if (!root?.data) return;
-  const queue = [root];
-  root.data.layer = 1;
-  while (queue.length > 0) {
-    const node = queue.shift();
-    if (!node?.data) continue;
-    const currentLayer = node.data.layer || 1;
-    if (node.children) {
-      node.children.forEach(child => {
-        if (!child?.data) return;
-        child.data.layer = currentLayer + 1;
-        queue.push(child);
-      });
+function processBurstNodes(root) {
+  if (!root) return;
+  root.descendants().forEach(d => {
+    const originalChildren = d.children || [];
+    if (originalChildren.length >= 20) {
+      d.burst = true;
+      d.burst_total_count = originalChildren.length;
+      
+      const holdChildren = originalChildren.filter(c => c.data.hold_info);
+      const otherChildren = originalChildren.filter(c => !c.data.hold_info);
+      
+      if (otherChildren.length > 0) {
+        const summaryData = {
+          name: `+ ${otherChildren.length} successful transfers (no hold)`,
+          is_summary_node: true,
+          parent_acc: d.data.name,
+          other_txns_count: otherChildren.length,
+          other_children_data: otherChildren.map(c => c.data)
+        };
+        const summaryNode = d3.hierarchy(summaryData);
+        summaryNode.parent = d;
+        summaryNode.depth = d.depth + 1;
+        summaryNode.data.layer = d.data.layer + 1;
+        
+        d.children = [...holdChildren, summaryNode];
+      }
     }
-  }
-  // Ensure all descendants have a layer
-  if (root.descendants) {
-    root.descendants().forEach(d => {
-      if (d?.data && !d.data.layer) d.data.layer = 1;
-    });
-  }
+  });
 }
-// 🧮 Helper: calculate total repeated transaction amount
-function getTotalRepeatedAmount(txns) {
-  if (!txns || txns.length === 0) return 0;
 
-  const uniqueTxns = Array.from(
-    new Map(txns.map(txn => [txn.txn_id, txn])).values()
-  );
-
-  return uniqueTxns.reduce((sum, txn) => sum + (Number.parseFloat(txn.amount) || 0), 0);
+function getHoldDescendants(node) {
+  const result = [];
+  function traverse(n) {
+    if (n !== node && n.data && n.data.hold_info) {
+      result.push(n);
+    }
+    const kids = n._original_children || n.children || n._children || [];
+    kids.forEach(traverse);
+  }
+  traverse(node);
+  return result;
 }
+
+function showBurstHoldPopup(node) {
+  const holdChildren = getHoldDescendants(node);
+  
+  const existing = document.getElementById('burstHoldModal');
+  if (existing) existing.remove();
+  
+  const modal = document.createElement('div');
+  modal.id = 'burstHoldModal';
+  modal.style.cssText = `
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 9999;
+  `;
+  
+  let listHtml = '';
+  if (holdChildren.length === 0) {
+    listHtml = `
+      <div style="text-align:center; padding:20px; color:var(--text-secondary,#64748b);">
+        No put-on-hold accounts found under this node.
+      </div>
+    `;
+  } else {
+    listHtml = holdChildren.map(c => {
+      const layerVal = (c.data.layer !== undefined && c.data.layer >= 2) ? (c.data.layer - 2) : (c.data.layer || '—');
+      
+      // Determine if the node is currently fully expanded/open on the graph
+      let isOpen = true;
+      let curr = c;
+      while (curr && curr.parent) {
+        if (!curr.parent.children || !curr.parent.children.includes(curr)) {
+          isOpen = false;
+          break;
+        }
+        curr = curr.parent;
+      }
+      
+      const statusBadge = isOpen 
+        ? `<span style="font-size:11px; background:#dcfce7; color:#15803d; padding:2px 6px; border-radius:4px; font-weight:600; margin-right:4px;">🟢 Open</span>` 
+        : '';
+
+      return `
+        <div class="burst-hold-item" style="
+          padding: 12px 16px;
+          border: 1px solid var(--border,#e2e8f0);
+          border-radius: 8px;
+          background: var(--white,#fff);
+          margin-bottom: 10px;
+          transition: all 0.2s;
+        ">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span style="font-weight:600; font-family:monospace; color:var(--text-primary,#1e293b);">${escapeHtml(c.data.name)}</span>
+            <div style="display:flex; align-items:center; gap:6px;">
+              ${statusBadge}
+              <button class="burst-hold-view-btn" style="
+                background: var(--brand,#8b5cf6);
+                color: #ffffff;
+                border: none;
+                padding: 4px 10px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: 12px;
+                font-weight: 600;
+              ">View</button>
+            </div>
+          </div>
+          <div style="font-size:12px; color:var(--text-secondary,#64748b);">
+            Bank: ${escapeHtml(c.data.bank || '—')} | IFSC: ${escapeHtml(c.data.ifsc || '—')}
+          </div>
+          <div style="font-size:12px; font-weight:600; color:var(--success,#16a34a); margin-top:4px;">
+            Hold Amount: ₹${Number(c.data.hold_info.amount || 0).toLocaleString('en-IN')} (Layer: ${layerVal})
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+  
+  modal.innerHTML = `
+    <div style="
+      background: var(--white,#fff);
+      border: 1px solid var(--border,#e2e8f0);
+      border-radius: 16px;
+      width: 90%; max-width: 460px;
+      padding: 24px;
+      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+    ">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 style="margin:0; font-size:16px; color:var(--text-primary,#1e293b);">POH Accounts (${holdChildren.length})</h3>
+        <button class="burst-hold-close" style="
+          background:none; border:none; font-size:20px; cursor:pointer; color:var(--text-secondary,#94a3b8);
+        ">&times;</button>
+      </div>
+      <p style="font-size:12px; color:var(--text-secondary,#64748b); margin-bottom:16px; line-height:1.4;">
+        Click on any account below to expand the graph to that layer and highlight the node.
+      </p>
+      <div style="max-height:320px; overflow-y:auto; padding-right:4px;">
+        ${listHtml}
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  // Attach event listeners dynamically to avoid CSP inline onclick script blocks
+  const closeBtn = modal.querySelector('.burst-hold-close');
+  if (closeBtn) {
+    closeBtn.onclick = () => {
+      modal.remove();
+    };
+  }
+  
+  const viewBtns = modal.querySelectorAll('.burst-hold-view-btn');
+  viewBtns.forEach((btn, idx) => {
+    btn.onclick = () => {
+      modal.remove();
+      const accName = holdChildren[idx].data.name;
+      expandHoldAccount(accName);
+    };
+  });
+  
+  const style = document.createElement('style');
+  style.id = 'burstHoldStyle';
+  style.innerHTML = `
+    .burst-hold-item:hover {
+      border-color: var(--brand,#2451d6) !important;
+      background: var(--bg,#f8fafc) !important;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+    [data-theme="dark"] #burstHoldModal > div {
+      background: #1e293b !important;
+      border-color: #334155 !important;
+    }
+    [data-theme="dark"] .burst-hold-item {
+      background: #0f172a !important;
+      border-color: #334155 !important;
+    }
+    [data-theme="dark"] .burst-hold-item:hover {
+      background: #1e293b !important;
+      border-color: var(--brand,#3b82f6) !important;
+    }
+  `;
+  const oldStyle = document.getElementById('burstHoldStyle');
+  if (oldStyle) oldStyle.remove();
+  document.head.appendChild(style);
+}
+
+globalThis.selectBurstHoldAccount = (acc) => {
+  const modal = document.getElementById('burstHoldModal');
+  if (modal) modal.remove();
+  if (typeof expandHoldAccount === 'function') {
+    expandHoldAccount(acc);
+  }
+};
 
 function toggleCollapse(d) {
   if (d.children) {
@@ -904,6 +1063,7 @@ let expandAllAnimating = false;
 function toggleExpandAllNodes() {
   if (!currentRoot) return false;
 
+  restoreOriginalChildren();
   expandAllActive = !expandAllActive;
 
   const btn = document.getElementById('expandAllBtn');
@@ -970,6 +1130,251 @@ function toggleExpandAllNodes() {
   return expandAllActive;
 }
 
+function showDetailsForNode(d) {
+  if (d.data.is_summary_node) {
+    let html = `
+      <h3 style="margin-top:0; color:var(--brand,#2451d6);">Summarized Transfers</h3>
+      <p style="font-size:12.5px; color:var(--text-secondary,#64748b); margin-bottom:15px; line-height:1.45;">
+        These are the successful transfers from parent account <strong>${escapeHtml(d.data.parent_acc)}</strong> that do not have a put on hold status.
+      </p>
+      <div style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border,#e2e8f0); border-radius: 8px; box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);">
+        <table style="width:100%; border-collapse:collapse; font-size:12px; text-align:left;">
+          <thead>
+            <tr style="background:var(--bg,#f8fafc); border-bottom:1px solid var(--border,#e2e8f0);">
+              <th style="padding:10px; font-weight:600; color:var(--text-secondary,#475569);">Account / Wallet ID</th>
+              <th style="padding:10px; font-weight:600; color:var(--text-secondary,#475569);">Bank</th>
+              <th style="padding:10px; font-weight:600; color:var(--text-secondary,#475569); text-align:right;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+    
+    if (Array.isArray(d.data.other_children_data)) {
+      d.data.other_children_data.forEach(item => {
+        html += `
+          <tr style="border-bottom:1px solid var(--border,#e2e8f0); background:var(--white,#fff);">
+            <td style="padding:10px; font-family:monospace; font-weight:500;">${escapeHtml(item.name || '—')}</td>
+            <td style="padding:10px; color:var(--text-secondary,#475569);">${escapeHtml(item.bank || '—')}</td>
+            <td style="padding:10px; text-align:right; font-weight:600; color:var(--success,#16a34a);">₹${Number(item.amt || 0).toLocaleString('en-IN')}</td>
+          </tr>
+        `;
+      });
+    }
+    
+    html += `
+          </tbody>
+        </table>
+      </div>
+    `;
+    
+    detailsContent.innerHTML = html;
+    
+    // Hide KYC section
+    const kycSection = document.getElementById('kycDetailsSection');
+    if (kycSection) kycSection.style.display = "none";
+    
+    detailsPanel.style.display = 'block';
+    return;
+  }
+
+  if (d.data.ifsc) {
+    // Use a safe ID (replace non-alphanumeric characters)
+    const safeId = `branch-${String(d.data.name || '').replace(/[^a-zA-Z0-9_-]/g, '')}`;
+
+    const isRepeated = Array.isArray(d.data.transactions_from_parent) && d.data.transactions_from_parent.length > 1;
+    const branchPhone = d.data.branch_phone || branchPhoneCache.get(d.data.ifsc) || '';
+    let baseHtml =
+      `<div class="detail-row"><span class="label">Layer:</span> ${escapeHtml(d.data.layer - 2 || '—')}</div>` +
+      `<div class="detail-row"><span class="label">Account:</span> ${escapeHtml(d.data.name || '—')}</div>` +
+      `<div class="detail-row"><span class="label">IFSC:</span> ${escapeHtml(d.data.ifsc || '—')}</div>` +
+      `<div class="detail-row" id="${safeId}"><span class="label">Branch:</span> ${escapeHtml(d.data.branch || branchCache.get(d.data.ifsc) || 'Unknown')}</div>` +
+      `<div class="detail-row" id="${safeId}-phone"><span class="label">Branch Phone:</span> ${escapeHtml(branchPhone || '—')}</div>` +
+      `<div class="detail-row"><span class="label">Bank/FI:</span> ${escapeHtml(d.data.bank || '—')}</div>`;
+    if (!isRepeated) {
+      baseHtml +=
+        `<div class="detail-row"><span class="label">Date:</span> ${escapeHtml(d.data.date || '—')}</div>` +
+        `<div class="detail-row"><span class="label">Txn ID:</span> ${escapeHtml(d.data.txid || '—')}</div>` +
+        `<div class="detail-row"><span class="label">Amount:</span> ₹${escapeHtml(d.data.amt || '0.0')}</div>` +
+        `<div class="detail-row"><span class="label">Disputed:</span> ₹${escapeHtml(d.data.disputed || '0.0')}</div>`;
+
+      // Only show the letter button where a letter is actually meaningful:
+      // a Put-on-Hold account (Layer-1 letters are generated from the toolbar's
+      // per-bank button). For ordinary accounts the button is hidden, so there's
+      // no empty-ZIP / "Bad Request" path.
+      if (d.data.name && d.data.hold_info && typeof globalThis.openLetterModal === 'function' && !isViewer) {
+        baseHtml += `
+        <div style="text-align:center; margin-top:15px; margin-bottom: 5px;">
+          <button class="generate-path-letters-btn" style="background:#10b981; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold; width:100%; box-shadow:0 2px 4px rgba(0,0,0,0.1);" data-account="${escapeHtml(d.data.name)}">
+            📜 Generate Letters (Path to Root)
+          </button>
+        </div>`;
+      }
+    }
+    detailsContent.innerHTML = baseHtml;
+
+    const genPathBtn = detailsContent.querySelector('.generate-path-letters-btn');
+    if (genPathBtn) {
+      genPathBtn.addEventListener('click', () => {
+        const acc = genPathBtn.dataset.account;
+        const path = findPathToAccount(currentRoot, acc);
+        if (path) {
+          const accountsInPath = path
+            .filter(n => n.data?.name && n.data.name !== 'Flow' && (n.data.layer === undefined || n.data.layer > 0))
+            .map(n => n.data.name);
+          const isPoh = Boolean(d.data.hold_info);
+          if (typeof globalThis.openLetterModal === 'function') {
+            globalThis.openLetterModal(accountsInPath.join(', '), 'suspect', isPoh);
+          }
+        }
+      });
+    }
+
+    // If phone or branch missing, fetch and update elements
+    if (d.data.ifsc && (!branchPhoneCache.get(d.data.ifsc) || !branchCache.get(d.data.ifsc) || branchCache.get(d.data.ifsc) === 'Unknown')) {
+      const phoneEl = document.getElementById(`${safeId}-phone`);
+      const branchEl = document.getElementById(`${safeId}`);
+      if (branchEl) branchEl.innerHTML = `<span class="label">Branch:</span> <div class="spinner" style="display:inline-block; vertical-align:middle; width:12px; height:12px; margin-left:4px;"></div> Loading...`;
+      if (phoneEl) phoneEl.innerHTML = `<span class="label">Branch Phone:</span> Loading...`;
+      
+      fetchBranchInfo(d.data.ifsc).then(info => {
+        const phone = branchPhoneCache.get(d.data.ifsc) || info?.PHONE || info?.Phone || '';
+        const branchName = branchCache.get(d.data.ifsc) || info?.BRANCH || info?.Branch || 'Unknown';
+        if (phoneEl) phoneEl.innerHTML = `<span class="label">Branch Phone:</span> ${escapeHtml(phone || '—')}`;
+        if (branchEl) branchEl.innerHTML = `<span class="label">Branch:</span> ${escapeHtml(branchName || 'Unknown')}`;
+      }).catch(() => {
+        if (branchEl) branchEl.innerHTML = `<span class="label">Branch:</span> Unknown (failed)`;
+        if (phoneEl) phoneEl.innerHTML = `<span class="label">Branch Phone:</span> —`;
+      });
+    }
+
+    // Setup KYC section with current transaction data
+    const kycSection = document.getElementById('kycDetailsSection');
+    const kycTxnId = document.getElementById('kycTxnId');
+    const kycName = document.getElementById('kycName');
+    const kycAadhar = document.getElementById('kycAadhar');
+    const kycMobile = document.getElementById('kycMobile');
+    const kycAddress = document.getElementById('kycAddress');
+    const saveKycBtn = document.getElementById('saveKycBtn');
+    const editKycBtn = document.getElementById('editKycBtn');
+    const kycForm = document.getElementById('kycForm');
+
+    // Hide KYC section by default when new transaction is selected
+    if (kycSection) {
+      kycSection.style.display = "none";
+    }
+
+    // Update form values with current transaction data
+    if (kycTxnId) kycTxnId.value = d.data.txid || '';
+    if (kycName) kycName.value = d.data.kyc_name || '';
+    if (kycAadhar) kycAadhar.value = d.data.kyc_aadhar || '';
+    if (kycMobile) kycMobile.value = d.data.kyc_mobile || '';
+    if (kycAddress) kycAddress.value = d.data.kyc_address || '';
+
+    // Function to disable KYC inputs
+    const disableKycInputs = () => {
+      ['kycName', 'kycAadhar', 'kycMobile', 'kycAddress'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = true;
+      });
+      if (saveKycBtn) saveKycBtn.style.display = "none";
+      if (editKycBtn && !isViewer) editKycBtn.style.display = "block";
+    };
+
+    // Function to enable KYC inputs
+    const enableKycInputs = () => {
+      ['kycName', 'kycAadhar', 'kycMobile', 'kycAddress'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = false;
+      });
+      if (saveKycBtn) saveKycBtn.style.display = "block";
+      if (editKycBtn) editKycBtn.style.display = "none";
+    };
+
+    // If viewer, disable KYC editing entirely
+    if (isViewer) {
+      disableKycInputs();
+      if (editKycBtn) editKycBtn.style.display = "none";
+    } else {
+      // Always disable inputs by default (Edit button will enable them)
+      disableKycInputs();
+
+      // Add Edit button click handler
+      if (editKycBtn) {
+        editKycBtn.onclick = null; // Remove old handler
+        editKycBtn.onclick = () => {
+          enableKycInputs();
+        };
+      }
+    }
+
+    // Remove existing form submit listener if any, then add new one
+    if (kycForm) {
+      // Create a new form handler function for this transaction
+      const formHandler = (e) => {
+        if (isViewer) {
+          e.preventDefault();
+          return;
+        }
+        e.preventDefault();
+        const txnId = document.getElementById('kycTxnId')?.value || '';
+        const name = document.getElementById('kycName')?.value || '';
+        const aadhar = document.getElementById('kycAadhar')?.value || '';
+        const mobile = document.getElementById('kycMobile')?.value || '';
+        const address = document.getElementById('kycAddress')?.value || '';
+
+        fetch("/save_kyc", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            'X-CSRFToken': csrfToken
+          },
+          body: JSON.stringify({ txn_id: txnId, name, aadhar, mobile, address }),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.status === "success") {
+              showToast("KYC saved successfully!", "success");
+              d.data.kyc_name = name;
+              d.data.kyc_aadhar = aadhar;
+              d.data.kyc_mobile = mobile;
+              d.data.kyc_address = address;
+              // Disable inputs after saving and show Edit button
+              ['kycName', 'kycAadhar', 'kycMobile', 'kycAddress'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = true;
+              });
+              const saveBtn = document.getElementById('saveKycBtn');
+              const editBtn = document.getElementById('editKycBtn');
+              if (saveBtn) saveBtn.style.display = "none";
+              if (editBtn && !isViewer) editBtn.style.display = "block";
+            } else {
+              showToast("Error saving KYC: " + data.message, "error");
+            }
+          });
+      };
+
+      // Remove old listener and add new one
+      kycForm.onsubmit = null;
+      kycForm.addEventListener("submit", formHandler);
+    }
+  }
+
+  detailsPanel.style.display = 'block';
+  if (d.data.ifsc) {
+    const branchEl = document.getElementById(safeId);
+    const cached = d.data.branch || branchCache.get(d.data.ifsc);
+    if (cached && branchEl) {
+      branchEl.innerHTML = `<span class="label">Branch:</span> ${escapeHtml(cached)}`;
+    } else {
+      fetchBranchInfo(d.data.ifsc).then(branchData => {
+        const branchName = branchCache.get(d.data.ifsc) || branchData?.BRANCH || 'Not found';
+        d.data.branch = branchName;
+        if (branchEl) branchEl.innerHTML = `<span class="label">Branch:</span> ${escapeHtml(branchName)}`;
+      });
+    }
+  }
+}
+
 function drawTree(root) {
   if (!root?.children || root.children.length === 0) return;
   g.selectAll('*').remove();
@@ -998,7 +1403,7 @@ function drawTree(root) {
     .join('path')
     .attr('class', 'link')
     .attr('d', d3.linkVertical().x(d => d.x).y(d => d.y))
-    .attr('stroke', '#888')
+    .attr('stroke', 'var(--graph-link-stroke)')
     .attr('stroke-width', 1.5)
     .attr('fill', 'none');
 
@@ -1006,7 +1411,15 @@ function drawTree(root) {
     .data(root.descendants())
     .join('g')
     .attr('class', 'node')
-    .attr('transform', d => `translate(${d.x},${d.y})`);
+    .attr('transform', d => `translate(${d.x},${d.y})`)
+    .attr('tabindex', '0')
+    .attr('role', 'button')
+    .attr('aria-label', d => {
+      if (d.depth === 0) return `Acknowledgement Number ${ackNo}`;
+      if (d.depth === 1) return `Victim account number ${d.data.name || 'N/A'}`;
+      const disputStr = d.data.disputed ? `, Disputed Amount: ₹${Number(d.data.disputed).toLocaleString('en-IN')}` : '';
+      return `Layer ${d.data.layer - 2} Beneficiary Account ${d.data.name || 'N/A'}, Bank: ${d.data.bank || 'Unknown'}, Amount: ₹${Number(d.data.amt || 0).toLocaleString('en-IN')}${disputStr}`;
+    });
 
   let victimCounter = 1;
   nodes.each(function (d) {
@@ -1021,37 +1434,53 @@ function drawTree(root) {
       .attr('height', boxHeight)
       .attr('rx', 14)
       .attr('fill', d => {
+        if (d.data.is_summary_node) return 'var(--bg,#f1f5f9)';
         // Mule/intermediary accounts that recur in the trail are marked purple so
         // the IO can spot reuse at a glance (see computeRepeatedAccounts).
         const acct = d.data?.name ? String(d.data.name).trim() : '';
-        if (acct && repeatedAccounts.has(acct)) return '#7c3aed';
+        if (acct && repeatedAccounts.has(acct)) return '#e79aff';
         const isLeafNode = !d.children && !d._children;
-        if (isLeafNode && !d.burst) return '#15803d';
-        return layerColors[d.data.layer] || '#ccc';
+        if (isLeafNode && !d.burst) return 'var(--graph-layer-leaf)';
+        if (d.data.layer === 1) return 'var(--graph-layer-1)';
+        if (d.data.layer === 2) return 'var(--graph-layer-2)';
+        return 'var(--graph-layer-other)';
       })
-      .attr('stroke', d.data.hold_info ? '#dc2626' : '#1e293b')
-      .attr('stroke-width', d.data.hold_info ? 3 : 1.5)
-      .style('filter', d.data.hold_info
-        ? 'drop-shadow(0 0 8px rgba(220, 38, 38, 0.7))'
-        : 'drop-shadow(2px 2px 6px rgba(0,0,0,0.15))');
+      .attr('stroke', d => {
+        if (d.data.is_summary_node) return 'var(--border,#cbd5e1)';
+        return d.data.hold_info ? 'var(--graph-layer-hold-stroke)' : 'var(--graph-node-stroke)';
+      })
+      .attr('stroke-width', d => {
+        if (d.data.is_summary_node) return 2;
+        return d.data.hold_info ? 3 : 1.5;
+      })
+      .attr('stroke-dasharray', d => {
+        if (d.data.is_summary_node) return '5,5';
+        return null;
+      })
+      .style('filter', d => {
+        if (d.data.is_summary_node) return 'drop-shadow(2px 2px 4px rgba(0,0,0,0.08))';
+        return d.data.hold_info
+          ? 'drop-shadow(0 0 8px rgba(220, 38, 38, 0.7))'
+          : 'drop-shadow(2px 2px 6px rgba(0,0,0,0.15))';
+      });
 
     n.selectAll('text').remove();
 
     if (d.depth === 0) {
       n.append('text').attr('x', 0).attr('y', -10).attr('text-anchor', 'middle')
-        .style('font-size', '13px').style('font-weight', 'bold').style('fill', '#000')
+        .style('font-size', '13px').style('font-weight', 'bold').style('fill', 'var(--graph-node-text)')
         .text('Acknowledgement No');
       n.append('text').attr('x', 0).attr('y', 10).attr('text-anchor', 'middle')
-        .style('font-size', '13px').style('fill', '#000').text(ackNo);
+        .style('font-size', '13px').style('fill', 'var(--graph-node-text)').text(ackNo);
     }
 
     if (d.depth === 1) {
       const victimNo = victimCounter++;
       n.append('text').attr('x', 0).attr('y', -14).attr('text-anchor', 'middle')
-        .style('font-size', '13px').style('font-weight', 'bold').style('fill', '#000')
+        .style('font-size', '13px').style('font-weight', 'bold').style('fill', 'var(--graph-node-text)')
         .text(`Victim Account No: ${victimNo}`);
       n.append('text').attr('x', 0).attr('y', 6).attr('text-anchor', 'middle')
-        .style('font-size', '12px').style('fill', '#000')
+        .style('font-size', '12px').style('fill', 'var(--graph-node-text)')
         .text(`Acc No: ${d.data.name || 'N/A'}`);
       let bankName = d.data.action || d.data.bank || 'Unknown Bank';
 
@@ -1059,27 +1488,54 @@ function drawTree(root) {
         .attr('x', 0).attr('y', 24)
         .attr('text-anchor', 'middle')
         .style('font-size', '12px')
-        .style('fill', '#1f2937')
+        .style('fill', 'var(--graph-node-text-darker)')
         .text(`Bank: ${bankName}`);
 
     }
-    if (d.data.layer > 2) {
+     if (d.data.layer > 2) {
+      if (d.data.is_summary_node) {
+        n.append("text")
+          .attr("x", 0)
+          .attr("y", -20)
+          .attr("text-anchor", "middle")
+          .style("font-size", "22px")
+          .style("font-weight", "bold")
+          .style("fill", "var(--text-secondary,#475569)")
+          .text(`+${d.data.other_txns_count}`);
 
-      const isRepeated = d.data.transactions_from_parent &&
-        d.data.transactions_from_parent.length > 1;
+        n.append("text")
+          .attr("x", 0)
+          .attr("y", 5)
+          .attr("text-anchor", "middle")
+          .style("font-size", "12px")
+          .style("font-weight", "600")
+          .style("fill", "var(--text-secondary,#475569)")
+          .text("Successful Transfers");
 
-      // ✅ Remove old amount before adding new
-      n.selectAll(".amt-text").remove();
+        n.append("text")
+          .attr("x", 0)
+          .attr("y", 25)
+          .attr("text-anchor", "middle")
+          .style("font-size", "11px")
+          .style("font-style", "italic")
+          .style("fill", "var(--text-secondary,#64748b)")
+          .text("(No Hold - Click to list)");
+      } else {
+        const isRepeated = d.data.transactions_from_parent &&
+          d.data.transactions_from_parent.length > 1;
 
-      // Acc No
-      n.append("text")
-        .attr("x", 0)
-        .attr("y", -30)
-        .attr("text-anchor", "middle")
-        .style("font-size", "13px")
-        .style("font-weight", "bold")
-        .style("fill", "#000")
-        .text(`Acc No: ${d.data.name ?? "Acc ?"}`);
+        // ✅ Remove old amount before adding new
+        n.selectAll(".amt-text").remove();
+
+        // Acc No
+        n.append("text")
+          .attr("x", 0)
+          .attr("y", -30)
+          .attr("text-anchor", "middle")
+          .style("font-size", "13px")
+          .style("font-weight", "bold")
+          .style("fill", "var(--graph-node-text)")
+          .text(`Acc No: ${d.data.name ?? "Acc ?"}`);
 
       // Bank Name
       if (d.data.bank) {
@@ -1088,7 +1544,7 @@ function drawTree(root) {
           .attr("y", -10)
           .attr("text-anchor", "middle")
           .style("font-size", "12px")
-          .style("fill", "#000")
+          .style("fill", "var(--graph-node-text)")
           .text(`Bank: ${d.data.bank}`);
       }
 
@@ -1096,17 +1552,18 @@ function drawTree(root) {
         .attr('x', 0).attr('y', 5)
         .attr('text-anchor', 'middle')
         .style('font-size', '12px')
-        .style('fill', '#1f2937')
+        .style('fill', 'var(--graph-node-text-darker)')
         .text(`IFSC Code: ${d.data.ifsc}`);
 
-      const branchLabel = d.data.branch || branchCache.get(d.data.ifsc) || 'Unknown';
+      const cachedBranch = d.data.branch || branchCache.get(d.data.ifsc);
+      const branchLabel = cachedBranch ? cachedBranch : (d.data.ifsc ? 'Loading...' : 'Unknown');
       const branchText = n.append("text")
         .attr("x", 0)
         .attr("y", 22)
         .attr("text-anchor", "middle")
         .attr("class", "branch-text")
         .style("font-size", "12px")
-        .style("fill", "#1f2937")
+        .style("fill", "var(--graph-node-text-darker)")
         .text(`Branch: ${branchLabel}`);
 
       // If branch is not available yet, fetch it and update the text element
@@ -1116,6 +1573,8 @@ function drawTree(root) {
           d.data.branch = branchName;
           // Update the specific text element
           branchText.text(`Branch: ${branchName}`);
+        }).catch(() => {
+          branchText.text('Branch: Unknown (failed)');
         });
       }
 
@@ -1128,7 +1587,7 @@ function drawTree(root) {
           .attr("y", 38)
           .attr("text-anchor", "middle")
           .style("font-size", "12px")
-          .style("fill", "#000")
+          .style("fill", "var(--graph-node-text)")
           .text(`Amt: ₹${amount}`);
       }
 
@@ -1142,11 +1601,11 @@ function drawTree(root) {
           .attr("text-anchor", "middle")
           .style("font-size", "11px")
           .style("font-weight", "700")
-          .style("fill", "#1f2937")
+          .style("fill", "var(--graph-node-text-darker)")
           .text(`Refund: ${d.data.hold_info.refund_status || 'Not Refunded'}`);
       }
-
     }
+  }
 
     // Adjust box width and text sizing to prevent overflow
     try {
@@ -1184,7 +1643,6 @@ function drawTree(root) {
       }
     } catch (e) {
       // silently ignore sizing errors
-      console.debug('branch label sizing error', e);
     }
 
     const iconData = [];
@@ -1205,22 +1663,22 @@ function drawTree(root) {
     }
 
     // 💥: Burst transaction node (20+ children)
-    const totalChildren = (d.children?.length || 0) + (d._children?.length || 0);
+    const totalChildren = d.burst_total_count || (d.children?.length || 0) + (d._children?.length || 0);
 
     if (d.burst || totalChildren >= 20) {
       if (!d.burst) {
         d.burst = true;
-        // Disable expanding this node
-        d._children = null;
-        d.children = null;
+        d.burst_total_count = totalChildren;
       }
       iconData.push({
         emoji: '💥',
         onClick: () => {
           leftContent.innerHTML = `
-           <strong>Burst Transaction Alert</strong><br><br>
-           This node has ${escapeHtml(totalChildren)} child transactions.<br>
-           To avoid graph clutter, expansion is disabled.
+           <strong>Burst Transaction Details</strong><br><br>
+           This node has ${escapeHtml(totalChildren)} child transactions.<br><br>
+           To avoid graph clutter:<br>
+           - Only nodes <strong>put on hold</strong> are expanded on the graph.<br>
+           - The other successful transfers are grouped in the summary node.
          `;
           leftPanel.style.display = 'block';
         }
@@ -1284,7 +1742,6 @@ function drawTree(root) {
           const mrmContainer = document.getElementById('mrmContainer');
           const holdInfo = d.data.hold_info || {};
           const holdTxnId = holdInfo.txn_id;
-          const mrmCtx = { mrmContainer, holdTxnId, d };
 
           // Doc icon toggles the MRM section; (re)load its state each time it opens.
           if (toggleBtn && formSection) {
@@ -1292,8 +1749,116 @@ function drawTree(root) {
               const isHidden = formSection.style.display === 'none' || formSection.style.display === '';
               formSection.style.display = isHidden ? 'block' : 'none';
               toggleBtn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
-              if (isHidden) loadMrm(mrmCtx);
+              if (isHidden) loadMrm();
             };
+          }
+
+          function loadMrm() {
+            if (!mrmContainer || !holdTxnId) {
+              if (mrmContainer) mrmContainer.textContent = 'MRM is unavailable for this transaction.';
+              return;
+            }
+            mrmContainer.innerHTML = '<div style="display:flex; align-items:center; gap:8px; padding:10px 0;"><div class="spinner"></div><span>Loading MRM status…</span></div>';
+            fetch(`/mrm_timeline/${encodeURIComponent(ackNo)}/${encodeURIComponent(holdTxnId)}`)
+              .then(r => (r.ok ? r.json() : Promise.reject(new Error('MRM timeline request failed'))))
+              .then(renderMrm)
+              .catch(() => {
+                mrmContainer.innerHTML = '<div style="color:var(--color-danger); font-weight:600; margin-bottom:8px;">Failed to load MRM status.</div><button id="mrmRetryBtn" class="btn btn-sm btn-secondary" style="width:100%;">Retry</button>';
+                const retryBtn = document.getElementById('mrmRetryBtn');
+                if (retryBtn) {
+                  retryBtn.onclick = (e) => {
+                    e.preventDefault();
+                    loadMrm();
+                  };
+                }
+              });
+          }
+
+          function renderMrm(mrm) {
+            const steps = mrm.steps || [];
+            let html = '<ol style="list-style:none; margin:0; padding:0;">';
+            steps.forEach(s => {
+              const isNext = s.index === mrm.next_step;
+              const markInactive = isNext
+                ? '<span style="color:#2563eb;">●</span>'
+                : '<span style="color:#cbd5e1;">○</span>';
+              const mark = s.done
+                ? '<span style="color:#10b981; font-weight:700;">✓</span>'
+                : markInactive;
+              const color = (s.done || isNext) ? '#0f172a' : '#94a3b8';
+              const meta = s.done
+                ? `<div style="color:#6b7280; font-size:11.5px; margin-left:20px;">Completed: ${escapeHtml(s.date)}</div>`
+                : '';
+              html += `<li style="padding:5px 0; border-bottom:1px solid #f1f5f9;">
+                <div style="display:flex; gap:8px; align-items:center;">${mark}
+                  <span style="font-weight:${s.done ? 600 : 500}; color:${color};">${s.index}. ${escapeHtml(s.label)}</span></div>${meta}</li>`;
+            });
+            html += '</ol>';
+
+            if (mrm.refund_type) {
+              const label = mrm.refund_type === 'FULL' ? 'Fully Refunded' : 'Partially Refunded';
+              html += `<div style="margin-top:8px; font-size:12.5px;"><b>Refund:</b> ${escapeHtml(label)} — ₹${Number(mrm.refund_amount || 0).toLocaleString('en-IN')}</div>`;
+            }
+
+            if (!isViewer && mrm.next_step) {
+              const isRefundStage = mrm.next_step === mrm.refund_step;
+              html += `<div style="margin-top:10px; padding-top:8px; border-top:1px dashed #e5e7eb;">`;
+              html += `<label style="font-weight:600; display:block; margin-bottom:4px;">Next: ${escapeHtml(mrm.next_label)}</label>`;
+              html += `<label style="font-size:11.5px; color:#6b7280;">Date of completion</label>`;
+              html += `<input id="mrmStageDate" type="date" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;">`;
+              if (isRefundStage) {
+                html += `<label style="font-size:11.5px; color:#6b7280;">Refund type</label>`;
+                html += `<select id="mrmRefundType" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;"><option value="FULL">Fully Refunded</option><option value="PARTIAL">Partially Refunded</option></select>`;
+                html += `<label style="font-size:11.5px; color:#6b7280;">Amount refunded (₹)</label>`;
+                html += `<input id="mrmRefundAmount" type="text" inputmode="decimal" placeholder="₹" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;">`;
+              }
+              html += `<button id="mrmSaveBtn" type="button" style="width:100%; background:#2563eb; color:white; border:none; padding:9px 16px; border-radius:8px; cursor:pointer; font-weight:600;">Save Status</button>`;
+              html += `</div>`;
+            } else if (!mrm.next_step) {
+              html += `<div style="margin-top:10px; color:#10b981; font-weight:600;">✓ MRM workflow complete.</div>`;
+            }
+
+            if (Array.isArray(mrm.audit) && mrm.audit.length) {
+              html += `<div style="margin-top:10px; padding-top:8px; border-top:1px solid #e5e7eb;"><div style="font-weight:600; margin-bottom:4px;">Audit trail</div>`;
+              mrm.audit.forEach(a => {
+                html += `<div style="font-size:11.5px; color:#475569; margin-bottom:3px;">${a.step}. ${escapeHtml(a.label)} — ${escapeHtml(a.date_completed)} · by ${escapeHtml(a.performed_by || '—')} <span style="color:#94a3b8;">(${escapeHtml(a.recorded_at)})</span></div>`;
+              });
+              html += `</div>`;
+            }
+
+            mrmContainer.innerHTML = html;
+            const saveBtn = document.getElementById('mrmSaveBtn');
+            if (saveBtn) saveBtn.onclick = () => saveMrm(mrm.next_step, mrm.next_step === mrm.refund_step);
+          }
+
+          function saveMrm(step, isRefundStage) {
+            const dateEl = document.getElementById('mrmStageDate');
+            const dateVal = dateEl ? dateEl.value : '';
+            if (!dateVal) { showToast('Please enter the date of completion for this stage.', 'warning'); return; }
+            const payload = { ack_no: ackNo, hold_txn_id: holdTxnId, step: step, date: dateVal };
+            if (isRefundStage) {
+              const typeEl = document.getElementById('mrmRefundType');
+              const amtEl = document.getElementById('mrmRefundAmount');
+              payload.refund_type = typeEl ? typeEl.value : '';
+              const rawAmt = amtEl ? amtEl.value.replace(/[^\d.]/g, '') : '';
+              if (!rawAmt) { showToast('Please enter the refunded amount.', 'warning'); return; }
+              payload.refund_amount = Number(rawAmt);
+            }
+            fetch('/save_mrm_status', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+              body: JSON.stringify(payload),
+            })
+              .then(res => res.json().then(data => ({ ok: res.ok, data })))
+              .then(({ ok, data }) => {
+                if (!ok || data.status !== 'success') { showToast(data.message || 'Failed to save MRM status.', 'error'); return; }
+                if (isRefundStage) {
+                  d.data.hold_info.refund_status = payload.refund_type === 'FULL' ? 'Refunded' : 'Partially Refunded';
+                  d.data.hold_info.refund_amount = payload.refund_amount;
+                }
+                renderMrm(data.mrm);
+              })
+              .catch(() => showToast('Failed to save MRM status.', 'error'));
           }
 
           // Attach click
@@ -1354,7 +1919,7 @@ function drawTree(root) {
         .attr("y", 42) // Adjust vertical position as needed
         .attr("text-anchor", "middle")
         .style("font-size", "13px")
-        .style("fill", "#222")
+        .style("fill", "var(--graph-node-text-darker)")
         .text(`Total amt  ₹${totalAmount.toLocaleString('en-IN')}`);
       // 🔁 Add repeated icon
       iconData.push({
@@ -1390,176 +1955,31 @@ function drawTree(root) {
     let clickTimer;
     n.on('click', function (event) {
       if (event.target.classList.contains('icon')) return;
-      if (d.burst) return;
       clearTimeout(clickTimer);
       clickTimer = setTimeout(() => {
-        toggleCollapse(d);
-        drawTree(currentRoot);
+        if (d.burst) {
+          showBurstHoldPopup(d);
+        } else {
+          toggleCollapse(d);
+          drawTree(currentRoot);
+        }
       }, 250);
     }).on('dblclick', (event) => {
       event.stopPropagation();
       clearTimeout(clickTimer);
-      if (d.data.ifsc) {
-        // Use a safe ID (replace non-alphanumeric characters)
-        const safeId = `branch-${String(d.data.name || '').replace(/[^a-zA-Z0-9_-]/g, '')}`;
-
-        const isRepeated = Array.isArray(d.data.transactions_from_parent) && d.data.transactions_from_parent.length > 1;
-        const branchPhone = d.data.branch_phone || branchPhoneCache.get(d.data.ifsc) || '';
-        let baseHtml =
-          `<div class="detail-row"><span class="label">Layer:</span> ${escapeHtml(d.data.layer - 2 || '—')}</div>` +
-          `<div class="detail-row"><span class="label">Account:</span> ${escapeHtml(d.data.name || '—')}</div>` +
-          `<div class="detail-row"><span class="label">IFSC:</span> ${escapeHtml(d.data.ifsc || '—')}</div>` +
-          `<div class="detail-row" id="${safeId}"><span class="label">Branch:</span> ${escapeHtml(d.data.branch || branchCache.get(d.data.ifsc) || 'Unknown')}</div>` +
-          `<div class="detail-row" id="${safeId}-phone"><span class="label">Branch Phone:</span> ${escapeHtml(branchPhone || '—')}</div>` +
-          `<div class="detail-row"><span class="label">Bank/FI:</span> ${escapeHtml(d.data.bank || '—')}</div>`;
-        if (!isRepeated) {
-          baseHtml +=
-            `<div class="detail-row"><span class="label">Date:</span> ${escapeHtml(d.data.date || '—')}</div>` +
-            `<div class="detail-row"><span class="label">Txn ID:</span> ${escapeHtml(d.data.txid || '—')}</div>` +
-            `<div class="detail-row"><span class="label">Amount:</span> ₹${escapeHtml(d.data.amt || '0.0')}</div>` +
-            `<div class="detail-row"><span class="label">Disputed:</span> ₹${escapeHtml(d.data.disputed || '0.0')}</div>`;
-
-          // Only show the letter button where a letter is actually meaningful:
-          // a Put-on-Hold account (Layer-1 letters are generated from the toolbar's
-          // per-bank button). For ordinary accounts the button is hidden, so there's
-          // no empty-ZIP / "Bad Request" path.
-          if (d.data.name && d.data.hold_info && typeof globalThis.openLetterModal === 'function' && !isViewer) {
-            baseHtml += `
-            <div style="text-align:center; margin-top:15px; margin-bottom: 5px;">
-              <button class="generate-path-letters-btn" style="background:#10b981; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:bold; width:100%; box-shadow:0 2px 4px rgba(0,0,0,0.1);" data-account="${escapeHtml(d.data.name)}">
-                📜 Generate Letters (Path to Root)
-              </button>
-            </div>`;
+      showDetailsForNode(d);
+    }).on('keydown', (event) => {
+      if (event.key === ' ' || event.key === 'Enter') {
+        event.preventDefault();
+        if (event.key === ' ') {
+          if (d.burst) {
+            showBurstHoldPopup(d);
+          } else {
+            toggleCollapse(d);
+            drawTree(currentRoot);
           }
-        }
-        detailsContent.innerHTML = baseHtml;
-
-        const genPathBtn = detailsContent.querySelector('.generate-path-letters-btn');
-        if (genPathBtn) {
-          genPathBtn.addEventListener('click', () => {
-            const acc = genPathBtn.dataset.account;
-            const path = findPathToAccount(acc);
-            if (path) {
-              const accountsInPath = collectAccountsInPath(path);
-              const isPoh = Boolean(d.data.hold_info);
-              if (typeof globalThis.openLetterModal === 'function') {
-                globalThis.openLetterModal(accountsInPath.join(', '), 'suspect', isPoh);
-              }
-            }
-          });
-        }
-
-        // If phone or branch missing, fetch and update elements
-        if (d.data.ifsc && (!branchPhoneCache.get(d.data.ifsc) || !branchCache.get(d.data.ifsc) || branchCache.get(d.data.ifsc) === 'Unknown')) {
-          fetchBranchInfo(d.data.ifsc).then(info => {
-            const phone = branchPhoneCache.get(d.data.ifsc) || info?.PHONE || info?.Phone || '';
-            const branchName = branchCache.get(d.data.ifsc) || info?.BRANCH || info?.Branch || 'Unknown';
-            const phoneEl = document.getElementById(`${safeId}-phone`);
-            const branchEl = document.getElementById(`${safeId}`);
-            if (phoneEl) phoneEl.innerHTML = `<span class="label">Branch Phone:</span> ${escapeHtml(phone || '—')}`;
-            if (branchEl) branchEl.innerHTML = `<span class="label">Branch:</span> ${escapeHtml(branchName || 'Unknown')}`;
-          }).catch(() => { });
-        }
-
-        // Setup KYC section with current transaction data
-        const kycSection = document.getElementById('kycDetailsSection');
-        const kycTxnId = document.getElementById('kycTxnId');
-        const kycName = document.getElementById('kycName');
-        const kycAadhar = document.getElementById('kycAadhar');
-        const kycMobile = document.getElementById('kycMobile');
-        const kycAddress = document.getElementById('kycAddress');
-        const saveKycBtn = document.getElementById('saveKycBtn');
-        const editKycBtn = document.getElementById('editKycBtn');
-        const kycForm = document.getElementById('kycForm');
-
-        // Hide KYC section by default when new transaction is selected
-        if (kycSection) {
-          kycSection.style.display = "none";
-        }
-
-        // Update form values with current transaction data
-        if (kycTxnId) kycTxnId.value = d.data.txid || '';
-        if (kycName) kycName.value = d.data.kyc_name || '';
-        if (kycAadhar) kycAadhar.value = d.data.kyc_aadhar || '';
-        if (kycMobile) kycMobile.value = d.data.kyc_mobile || '';
-        if (kycAddress) kycAddress.value = d.data.kyc_address || '';
-
-        // Function to disable KYC inputs
-        const disableKycInputs = () => {
-          setKycInputsDisabled(true);
-          if (saveKycBtn) saveKycBtn.style.display = "none";
-          if (editKycBtn && !isViewer) editKycBtn.style.display = "block";
-        };
-
-        // Function to enable KYC inputs
-        const enableKycInputs = () => {
-          setKycInputsDisabled(false);
-          if (saveKycBtn) saveKycBtn.style.display = "block";
-          if (editKycBtn) editKycBtn.style.display = "none";
-        };
-
-        // If viewer, disable KYC editing entirely
-        if (isViewer) {
-          disableKycInputs();
-          if (editKycBtn) editKycBtn.style.display = "none";
-        } else {
-          // Always disable inputs by default (Edit button will enable them)
-          disableKycInputs();
-
-          // Add Edit button click handler
-          if (editKycBtn) {
-            editKycBtn.onclick = null; // Remove old handler
-            editKycBtn.onclick = () => {
-              enableKycInputs();
-            };
-          }
-        }
-
-        // Remove existing form submit listener if any, then add new one
-        if (kycForm) {
-          // Create a new form handler function for this transaction
-          const formHandler = (e) => {
-            if (isViewer) {
-              e.preventDefault();
-              return;
-            }
-            e.preventDefault();
-            const txnId = document.getElementById('kycTxnId')?.value || '';
-            const name = document.getElementById('kycName')?.value || '';
-            const aadhar = document.getElementById('kycAadhar')?.value || '';
-            const mobile = document.getElementById('kycMobile')?.value || '';
-            const address = document.getElementById('kycAddress')?.value || '';
-
-            fetch("/save_kyc", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                'X-CSRFToken': csrfToken
-              },
-              body: JSON.stringify({ txn_id: txnId, name, aadhar, mobile, address }),
-            })
-              .then((res) => res.json())
-              .then((data) => applyKycSaveResult(data, { name, aadhar, mobile, address }, d));
-          };
-
-          // Remove old listener and add new one
-          kycForm.onsubmit = null;
-          kycForm.addEventListener("submit", formHandler);
-        }
-      }
-
-      detailsPanel.style.display = 'block';
-      if (d.data.ifsc) {
-        const branchEl = document.getElementById(safeId);
-        const cached = d.data.branch || branchCache.get(d.data.ifsc);
-        if (cached && branchEl) {
-          branchEl.innerHTML = `<span class="label">Branch:</span> ${escapeHtml(cached)}`;
-        } else {
-          fetchBranchInfo(d.data.ifsc).then(branchData => {
-            const branchName = branchCache.get(d.data.ifsc) || branchData?.BRANCH || 'Not found';
-            d.data.branch = branchName;
-            if (branchEl) branchEl.innerHTML = `<span class="label">Branch:</span> ${escapeHtml(branchName)}`;
-          });
+        } else if (event.key === 'Enter') {
+          showDetailsForNode(d);
         }
       }
     });
@@ -1591,141 +2011,6 @@ function addIcon(container, x, y, emoji, onClick) {
     .text(emoji).on('click', onClick);
 }
 
-// Apply the /save_kyc response: update the node datum and reset the KYC panel.
-function applyKycSaveResult(data, kyc, node) {
-  if (data.status === "success") {
-    alert("KYC saved successfully!");
-    node.data.kyc_name = kyc.name;
-    node.data.kyc_aadhar = kyc.aadhar;
-    node.data.kyc_mobile = kyc.mobile;
-    node.data.kyc_address = kyc.address;
-    setKycInputsDisabled(true);
-    const saveBtn = document.getElementById('saveKycBtn');
-    const editBtn = document.getElementById('editKycBtn');
-    if (saveBtn) saveBtn.style.display = "none";
-    if (editBtn && !isViewer) editBtn.style.display = "block";
-  } else {
-    alert("Error saving KYC: " + data.message);
-  }
-}
-
-// Enable/disable all KYC input fields together.
-function setKycInputsDisabled(disabled) {
-  ['kycName', 'kycAadhar', 'kycMobile', 'kycAddress'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.disabled = disabled;
-  });
-}
-
-// Accounts along a root path (excludes the synthetic 'Flow' root and layer<=0).
-function collectAccountsInPath(path) {
-  return path
-    .filter(n => n.data?.name && n.data.name !== 'Flow' && (n.data.layer === undefined || n.data.layer > 0))
-    .map(n => n.data.name);
-}
-
-// ── Status of MRM (Money Restoration Module): 7-stage sequential workflow ──
-function loadMrm(ctx) {
-  const { mrmContainer, holdTxnId } = ctx;
-  if (!mrmContainer || !holdTxnId) {
-    if (mrmContainer) mrmContainer.textContent = 'MRM is unavailable for this transaction.';
-    return;
-  }
-  fetch(`/mrm_timeline/${encodeURIComponent(ackNo)}/${encodeURIComponent(holdTxnId)}`)
-    .then(r => (r.ok ? r.json() : Promise.reject(new Error('MRM timeline request failed'))))
-    .then(mrm => renderMrm(mrm, ctx))
-    .catch(() => { mrmContainer.textContent = 'Failed to load MRM status.'; });
-}
-
-function renderMrm(mrm, ctx) {
-  const { mrmContainer } = ctx;
-  const steps = mrm.steps || [];
-  let html = '<ol style="list-style:none; margin:0; padding:0;">';
-  steps.forEach(s => {
-    const isNext = s.index === mrm.next_step;
-    const markInactive = isNext
-      ? '<span style="color:#2563eb;">●</span>'
-      : '<span style="color:#cbd5e1;">○</span>';
-    const mark = s.done
-      ? '<span style="color:#10b981; font-weight:700;">✓</span>'
-      : markInactive;
-    const color = (s.done || isNext) ? '#0f172a' : '#94a3b8';
-    const meta = s.done
-      ? `<div style="color:#6b7280; font-size:11.5px; margin-left:20px;">Completed: ${escapeHtml(s.date)}</div>`
-      : '';
-    html += `<li style="padding:5px 0; border-bottom:1px solid #f1f5f9;">
-                <div style="display:flex; gap:8px; align-items:center;">${mark}
-                  <span style="font-weight:${s.done ? 600 : 500}; color:${color};">${s.index}. ${escapeHtml(s.label)}</span></div>${meta}</li>`;
-  });
-  html += '</ol>';
-
-  if (mrm.refund_type) {
-    const label = mrm.refund_type === 'FULL' ? 'Fully Refunded' : 'Partially Refunded';
-    html += `<div style="margin-top:8px; font-size:12.5px;"><b>Refund:</b> ${escapeHtml(label)} — ₹${Number(mrm.refund_amount || 0).toLocaleString('en-IN')}</div>`;
-  }
-
-  if (!isViewer && mrm.next_step) {
-    const isRefundStage = mrm.next_step === mrm.refund_step;
-    html += `<div style="margin-top:10px; padding-top:8px; border-top:1px dashed #e5e7eb;">`;
-    html += `<label style="font-weight:600; display:block; margin-bottom:4px;">Next: ${escapeHtml(mrm.next_label)}</label>`;
-    html += `<label style="font-size:11.5px; color:#6b7280;">Date of completion</label>`;
-    html += `<input id="mrmStageDate" type="date" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;">`;
-    if (isRefundStage) {
-      html += `<label style="font-size:11.5px; color:#6b7280;">Refund type</label>`;
-      html += `<select id="mrmRefundType" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;"><option value="FULL">Fully Refunded</option><option value="PARTIAL">Partially Refunded</option></select>`;
-      html += `<label style="font-size:11.5px; color:#6b7280;">Amount refunded (₹)</label>`;
-      html += `<input id="mrmRefundAmount" type="text" inputmode="decimal" placeholder="₹" style="width:100%; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:6px;">`;
-    }
-    html += `<button id="mrmSaveBtn" type="button" style="width:100%; background:#2563eb; color:white; border:none; padding:9px 16px; border-radius:8px; cursor:pointer; font-weight:600;">Save Status</button>`;
-    html += `</div>`;
-  } else if (!mrm.next_step) {
-    html += `<div style="margin-top:10px; color:#10b981; font-weight:600;">✓ MRM workflow complete.</div>`;
-  }
-
-  if (Array.isArray(mrm.audit) && mrm.audit.length) {
-    html += `<div style="margin-top:10px; padding-top:8px; border-top:1px solid #e5e7eb;"><div style="font-weight:600; margin-bottom:4px;">Audit trail</div>`;
-    mrm.audit.forEach(a => {
-      html += `<div style="font-size:11.5px; color:#475569; margin-bottom:3px;">${a.step}. ${escapeHtml(a.label)} — ${escapeHtml(a.date_completed)} · by ${escapeHtml(a.performed_by || '—')} <span style="color:#94a3b8;">(${escapeHtml(a.recorded_at)})</span></div>`;
-    });
-    html += `</div>`;
-  }
-
-  mrmContainer.innerHTML = html;
-  const saveBtn = document.getElementById('mrmSaveBtn');
-  if (saveBtn) saveBtn.onclick = () => saveMrm(mrm.next_step, mrm.next_step === mrm.refund_step, ctx);
-}
-
-function saveMrm(step, isRefundStage, ctx) {
-  const { holdTxnId, d } = ctx;
-  const dateEl = document.getElementById('mrmStageDate');
-  const dateVal = dateEl ? dateEl.value : '';
-  if (!dateVal) { alert('Please enter the date of completion for this stage.'); return; }
-  const payload = { ack_no: ackNo, hold_txn_id: holdTxnId, step: step, date: dateVal };
-  if (isRefundStage) {
-    const typeEl = document.getElementById('mrmRefundType');
-    const amtEl = document.getElementById('mrmRefundAmount');
-    payload.refund_type = typeEl ? typeEl.value : '';
-    const rawAmt = amtEl ? amtEl.value.replace(/[^\d.]/g, '') : '';
-    if (!rawAmt) { alert('Please enter the refunded amount.'); return; }
-    payload.refund_amount = Number(rawAmt);
-  }
-  fetch('/save_mrm_status', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-    body: JSON.stringify(payload),
-  })
-    .then(res => res.json().then(data => ({ ok: res.ok, data })))
-    .then(({ ok, data }) => {
-      if (!ok || data.status !== 'success') { alert(data.message || 'Failed to save MRM status.'); return; }
-      if (isRefundStage) {
-        d.data.hold_info.refund_status = payload.refund_type === 'FULL' ? 'Refunded' : 'Partially Refunded';
-        d.data.hold_info.refund_amount = payload.refund_amount;
-      }
-      renderMrm(data.mrm, ctx);
-    })
-    .catch(() => alert('Failed to save MRM status.'));
-}
-
 function downloadHoldGraphPdf(path, ackNo) {
   // Exclude the root 'Flow' node from the path
   path = path.slice(1);
@@ -1733,6 +2018,7 @@ function downloadHoldGraphPdf(path, ackNo) {
   // Prepare data for backend
   const nodes = path.map((node, index) => {
     const d = node.data;
+    const isLast = index === path.length - 1;
 
     // Determine Bank Name logic
     let bankName;
@@ -1742,10 +2028,9 @@ function downloadHoldGraphPdf(path, ackNo) {
       bankName = d.bank || "Unknown Bank";
     }
 
-    // Extract Hold Amount for every node in the path (not just the last) so a
-    // hold on an intermediate node is not dropped from the PDF.
+    // Extract Hold Amount for the last node
     let holdAmount = null;
-    if (d.hold_info?.amount) {
+    if (isLast && d.hold_info?.amount) {
       holdAmount = d.hold_info.amount;
     }
 
@@ -1800,6 +2085,6 @@ function downloadHoldGraphPdf(path, ackNo) {
     })
     .catch(error => {
       console.error('Error generating PDF via backend:', error);
-      alert('Failed to generate PDF. Please try again.');
+      showToast('Failed to generate PDF. Please try again.', 'error');
     });
 }
