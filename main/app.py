@@ -914,8 +914,20 @@ app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 # and `python app.py` (dev) read/write the SAME database — a past source of
 # "upload saved but dashboard empty" confusion.
 logger.info("Database: %s (frozen=%s, data_dir=%s)", db_url, bool(getattr(sys, "frozen", False)), secure_base)
-print(f"[STARTUP] Database: {db_url} (data_dir={secure_base})")
-sys.stdout.flush()
+# In the PyInstaller *windowed* exe sys.stdout/sys.stderr are None, so a bare
+# print()/flush() raises AttributeError and the app never starts. Route every
+# startup/console message through this guard.
+def _safe_print(msg):
+    if sys.stdout is None:
+        return
+    try:
+        print(msg)
+        sys.stdout.flush()
+    except Exception:
+        pass
+
+
+_safe_print(f"[STARTUP] Database: {db_url} (data_dir={secure_base})")
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True, "pool_recycle": 1800}
 
 # Concurrency: enable SQLite WAL + a per-connection busy timeout so several officers
@@ -1266,6 +1278,14 @@ def ensure_complaint_columns():
     })
 
 
+def ensure_poh_refund_columns():
+    """Add newly introduced columns to the poh_refund_details table if missing."""
+    _ensure_columns("poh_refund_details", {
+        # Persist the hold amount so a re-upload that omits the hold row can't zero it.
+        "put_on_hold_amount": "FLOAT",
+    })
+
+
 def _mrm_row_from_hold_txn(t, poh, refund_date_fn):
     """Build an MRMTracking row seeded from one hold transaction, or None if no
     stage could be dated. Mirrors the legacy refund/court -> MRM step mapping."""
@@ -1464,6 +1484,7 @@ with app.app_context():
     ensure_transaction_columns()
     ensure_user_columns()
     ensure_complaint_columns()
+    ensure_poh_refund_columns()
     ensure_usage_log_table()
     if not app.config.get("TESTING") and os.environ.get("RUN_BACKFILL", "1") == "1":
         ensure_mrm_backfill()
@@ -1954,6 +1975,48 @@ def logout():
 # ---------------------------------------------------------------------------
 
 
+def hold_dedup(txns):
+    """Collapse the put-on-hold amount to ONE value per distinct
+    (ack_no, put_on_hold_txn_id). The upload copies the same hold onto every
+    transaction row sharing (to_account, txn_id), so a raw sum over rows
+    double-counts. Returns {(ack_no, hold_txn_id): amount}; callers do
+    sum(...values()) for the held total and len(...) for the held count.
+    Only rows with a non-null put_on_hold_txn_id participate."""
+    seen = {}
+    for t in txns:
+        if t.put_on_hold_txn_id:
+            seen[(t.ack_no, t.put_on_hold_txn_id)] = t.put_on_hold_amount or 0
+    return seen
+
+
+def held_amount_scalar(extra_filter=None):
+    """SQL-side equivalent of sum(hold_dedup(...).values()): sum one
+    put_on_hold_amount per distinct (ack_no, put_on_hold_txn_id) so duplicate
+    transaction rows that share a hold are not counted twice. Always filters
+    put_on_hold_txn_id IS NOT NULL. Pass extra_filter to scope (e.g. by
+    upload_id)."""
+    sub = db.session.query(func.max(Transaction.put_on_hold_amount).label("amt")).filter(
+        Transaction.put_on_hold_txn_id.isnot(None)
+    )
+    if extra_filter is not None:
+        sub = sub.filter(extra_filter)
+    sub = sub.group_by(Transaction.ack_no, Transaction.put_on_hold_txn_id).subquery()
+    return float(db.session.query(func.coalesce(func.sum(sub.c.amt), 0.0)).scalar() or 0.0)
+
+
+def held_count_scalar(extra_filter=None):
+    """SQL-side equivalent of len(hold_dedup(...)): number of distinct
+    (ack_no, put_on_hold_txn_id) holds, so duplicate transaction rows sharing a
+    hold are counted once."""
+    sub = db.session.query(Transaction.ack_no, Transaction.put_on_hold_txn_id).filter(
+        Transaction.put_on_hold_txn_id.isnot(None)
+    )
+    if extra_filter is not None:
+        sub = sub.filter(extra_filter)
+    sub = sub.group_by(Transaction.ack_no, Transaction.put_on_hold_txn_id).subquery()
+    return int(db.session.query(func.count()).select_from(sub).scalar() or 0)
+
+
 @app.route("/admin_dashboard", methods=["GET"])
 def admin_dashboard():
     """Admin home. Redirects (not 403) for non-admins — preserved historical
@@ -1969,7 +2032,7 @@ def admin_dashboard():
         "total_cases": total_cases,
         "active_cases": active_cases,
         "total_txns": db.session.query(func.count(Transaction.id)).scalar() or 0,
-        "held_amount": db.session.query(func.sum(Transaction.put_on_hold_amount)).scalar() or 0.0,
+        "held_amount": held_amount_scalar(),
         "recovered_amount": db.session.query(func.sum(Transaction.refund_amount)).scalar() or 0.0,
     }
     recent_cases = _cases_q().order_by(Complaint.upload_time.desc()).limit(10).all()
@@ -2007,12 +2070,7 @@ def index():
         "total_cases": len(my_cases),
         "active_cases": sum(1 for c in my_cases if (c.status or "Open") != "Closed"),
         "total_txns": base.count(),
-        "held_amount": (
-            db.session.query(func.sum(Transaction.put_on_hold_amount))
-            .filter(Transaction.upload_id.in_(my_file_ids or [-1]))
-            .scalar()
-            or 0.0
-        ),
+        "held_amount": held_amount_scalar(Transaction.upload_id.in_(my_file_ids or [-1])),
         "recovered_amount": (
             db.session.query(func.sum(Transaction.refund_amount))
             .filter(Transaction.upload_id.in_(my_file_ids or [-1]))
@@ -2668,6 +2726,10 @@ def upload_excel():
                         transaction.court_order_date = poh_details.court_order_date
                         transaction.refund_status = poh_details.refund_status
                         transaction.refund_amount = poh_details.refund_amount
+                        # If this upload's hold sheet didn't carry the amount, restore
+                        # the persisted one so a re-upload can't zero it out.
+                        if not transaction.put_on_hold_amount and poh_details.put_on_hold_amount is not None:
+                            transaction.put_on_hold_amount = poh_details.put_on_hold_amount
 
                 # Use savepoint to isolate database write constraint issues
                 with db.session.begin_nested():
@@ -2932,6 +2994,10 @@ def _restore_poh_details(transactions, ack_no):
                 t.court_order_date = pdata.court_order_date
                 t.refund_status = pdata.refund_status
                 t.refund_amount = pdata.refund_amount
+                # If a re-upload's bank sheet omitted the hold amount, fall back to
+                # the persisted value so the held figure isn't silently zeroed.
+                if not t.put_on_hold_amount and pdata.put_on_hold_amount is not None:
+                    t.put_on_hold_amount = pdata.put_on_hold_amount
                 updated_count += 1
         logger.info(f"Restored persistent POH details for {updated_count} transactions")
     except Exception as e:
@@ -3076,6 +3142,19 @@ def _build_graph_hierarchy(rows, from_to_map, from_layer_map):
                     "transactions_from_parent": from_to_map[t.from_account][t.to_account],
                 }
                 parent["children"].append(child)
+            else:
+                # First-write-wins above means a hold carried by a LATER transaction
+                # to the same to_account is otherwise invisible. Backfill the hold
+                # onto the existing node when it doesn't already carry one.
+                if t.put_on_hold_txn_id and not existing.get("hold_info"):
+                    existing["hold_info"] = {
+                        "txn_id": t.put_on_hold_txn_id,
+                        "amount": t.put_on_hold_amount,
+                        "date": t.put_on_hold_date,
+                        "court_order_date": t.court_order_date,
+                        "refund_status": t.refund_status,
+                        "refund_amount": t.refund_amount,
+                    }
 
     return root
 
@@ -3715,6 +3794,10 @@ def save_hold_refund():
         poh_details.court_order_date = txn.court_order_date
         poh_details.refund_status = txn.refund_status
         poh_details.refund_amount = txn.refund_amount
+        # Persist the hold amount so a later re-upload can restore it; never clobber
+        # a stored value with a null.
+        if txn.put_on_hold_amount is not None:
+            poh_details.put_on_hold_amount = txn.put_on_hold_amount
 
         db.session.commit()
         log_usage(
@@ -3872,6 +3955,9 @@ def _apply_mrm_refund(row, txn, ack_no, hold_txn_id, refund_type, refund_amount)
     poh.court_order_date = txn.court_order_date
     poh.refund_status = txn.refund_status
     poh.refund_amount = refund_amount
+    # Persist the hold amount so a later re-upload can restore it (never clobber with null).
+    if txn.put_on_hold_amount is not None:
+        poh.put_on_hold_amount = txn.put_on_hold_amount
 
 
 def _load_mrm_targets(ack_no, hold_txn_id):
@@ -4347,7 +4433,7 @@ def generate_letter_docx():
 
                 dates = []
                 if is_poh:
-                    amount_lost = sum(t.put_on_hold_amount for t in transactions if t.put_on_hold_amount)
+                    amount_lost = sum(hold_dedup(transactions).values())
                     dates = [t.put_on_hold_date for t in transactions if t.put_on_hold_date]
                 else:
                     amount_lost = sum(t.amount for t in transactions if t.amount)
@@ -4870,8 +4956,9 @@ def manage_files():
         ack_nos = list({t.ack_no for t in txns if t.ack_no})
         total_amt = sum(t.amount or 0 for t in txns)
         disputed_amt = sum(t.disputed_amount or 0 for t in txns)
-        hold_count = sum(1 for t in txns if t.put_on_hold_txn_id)
-        hold_amt = sum(t.put_on_hold_amount or 0 for t in txns if t.put_on_hold_txn_id)
+        _holds = hold_dedup(txns)
+        hold_count = len(_holds)
+        hold_amt = sum(_holds.values())
         layers = sorted({t.layer for t in txns if t.layer})
         file_stats.append(
             {
@@ -5057,10 +5144,8 @@ def view_analytics():
     total_txns = db.session.query(func.count(Transaction.id)).scalar() or 0
     total_amount = float(db.session.query(func.sum(Transaction.amount)).scalar() or 0)
     disputed_amt = float(db.session.query(func.sum(Transaction.disputed_amount)).scalar() or 0)
-    hold_amt = float(db.session.query(func.sum(Transaction.put_on_hold_amount)).scalar() or 0)
-    hold_count = (
-        db.session.query(func.count(Transaction.id)).filter(Transaction.put_on_hold_txn_id.isnot(None)).scalar() or 0
-    )
+    hold_amt = held_amount_scalar()
+    hold_count = held_count_scalar()
     unique_accts = db.session.query(func.count(func.distinct(Transaction.to_account))).scalar() or 0
     unique_banks = db.session.query(func.count(func.distinct(Transaction.bank_name))).scalar() or 0
     unique_states = (
@@ -5078,8 +5163,9 @@ def view_analytics():
         ack_nos = list({t.ack_no for t in txns if t.ack_no})
         fa = sum(t.amount or 0 for t in txns)
         fd = sum(t.disputed_amount or 0 for t in txns)
-        fh = sum(t.put_on_hold_amount or 0 for t in txns)
-        fhc = sum(1 for t in txns if t.put_on_hold_txn_id)
+        _fholds = hold_dedup(txns)
+        fh = sum(_fholds.values())
+        fhc = len(_fholds)
         file_rows.append(
             {
                 "filename": f.filename,
@@ -5480,13 +5566,13 @@ with app.app_context():
                 )
             if _is_posix():
                 os.chmod(creds_path, 0o600)
-            print(f"[SETUP] Credentials also saved to: {creds_path}")
+            _safe_print(f"[SETUP] Credentials also saved to: {creds_path}")
         except Exception as exc:
             logger.warning(f"Could not write INITIAL_CREDENTIALS.txt: {exc}")
 
-        print(f"[SETUP] Initial admin password: {admin_password}")
-        print(f"[SETUP] Initial officer password: {officer_password}")
-        print("[SETUP] Change these passwords immediately!")
+        _safe_print(f"[SETUP] Initial admin password: {admin_password}")
+        _safe_print(f"[SETUP] Initial officer password: {officer_password}")
+        _safe_print("[SETUP] Change these passwords immediately!")
 
     # Consolidate the old split POH/KYC SQLite files into the main DB (one-time).
     migrate_split_dbs_into_main()
@@ -5879,12 +5965,13 @@ def _group_cnt_amt(txns, key_attr):
 
 def _my_kpis(my_txns):
     """KPI dict for the officer analytics page (keys match template context)."""
+    _holds = hold_dedup(my_txns)
     return {
         "total_txns": len(my_txns),
         "total_amount": sum(t.amount or 0 for t in my_txns),
         "disputed_amt": sum(t.disputed_amount or 0 for t in my_txns),
-        "hold_amt": sum(t.put_on_hold_amount or 0 for t in my_txns if t.put_on_hold_txn_id),
-        "hold_count": sum(1 for t in my_txns if t.put_on_hold_txn_id),
+        "hold_amt": sum(_holds.values()),
+        "hold_count": len(_holds),
         "unique_accts": len({t.to_account for t in my_txns if t.to_account}),
         "unique_banks": len({t.bank_name for t in my_txns if t.bank_name}),
         "max_layer": max((t.layer for t in my_txns if t.layer), default=0),
@@ -5898,6 +5985,7 @@ def _my_file_rows(my_files, my_txns):
     rows = []
     for f in my_files:
         ftxns = [t for t in my_txns if t.upload_id == f.id]
+        _fholds = hold_dedup(ftxns)
         rows.append(
             {
                 "id": f.id,
@@ -5907,8 +5995,8 @@ def _my_file_rows(my_files, my_txns):
                 "ack_nos": list({t.ack_no for t in ftxns if t.ack_no}),
                 "total_amt": sum(t.amount or 0 for t in ftxns),
                 "disputed_amt": sum(t.disputed_amount or 0 for t in ftxns),
-                "hold_count": sum(1 for t in ftxns if t.put_on_hold_txn_id),
-                "hold_amt": sum(t.put_on_hold_amount or 0 for t in ftxns if t.put_on_hold_txn_id),
+                "hold_count": len(_fholds),
+                "hold_amt": sum(_fholds.values()),
             }
         )
     return rows
@@ -6208,6 +6296,7 @@ def _analytics_export_frames(uploader=None):
         Transaction.amount,
         Transaction.disputed_amount,
         Transaction.put_on_hold_amount,
+        Transaction.put_on_hold_txn_id,  # for hold dedup only; dropped before export
         Transaction.refund_status,
         Transaction.refund_amount,
         Transaction.txn_date,
@@ -6216,20 +6305,34 @@ def _analytics_export_frames(uploader=None):
         ids = [f.id for f in UploadedFile.query.with_entities(UploadedFile.id).filter_by(uploader=uploader)]
         txn_q = txn_q.filter(Transaction.upload_id.in_(ids or [-1]))
     txns = pd.DataFrame(txn_q.all())
-    summary = (
-        (
+    if not txns.empty:
+        # Held = one put_on_hold_amount per distinct (ack_no, put_on_hold_txn_id):
+        # the upload copies the same hold onto every row sharing (to_account, txn_id),
+        # so a raw groupby sum double-counts. Dedup first, then sum per ACK.
+        _held_mask = txns["put_on_hold_txn_id"].notna() & (
+            txns["put_on_hold_txn_id"].astype(str).str.strip() != ""
+        )
+        _held_by_ack = (
+            txns[_held_mask]
+            .drop_duplicates(subset=["ack_no", "put_on_hold_txn_id"])
+            .groupby("ack_no")["put_on_hold_amount"]
+            .sum()
+        )
+        summary = (
             txns.groupby("ack_no")
             .agg(
                 transactions=("ack_no", "size"),
                 total_amount=("amount", "sum"),
-                held=("put_on_hold_amount", "sum"),
                 refunded=("refund_amount", "sum"),
             )
             .reset_index()
         )
-        if not txns.empty
-        else pd.DataFrame()
-    )
+        summary["held"] = summary["ack_no"].map(_held_by_ack).fillna(0.0)
+        summary = summary[["ack_no", "transactions", "total_amount", "held", "refunded"]]
+        # Keep the detailed Transactions sheet exactly as before (no helper column).
+        txns = txns.drop(columns=["put_on_hold_txn_id"])
+    else:
+        summary = pd.DataFrame()
     return summary, txns
 
 
@@ -6303,19 +6406,30 @@ def _kpi_dataframe(kpi, uploader=None):
 
     if kpi == "hold":
         cols = ["ack_no", "account", "hold_amount", "hold_date", "refund_status"]
-        rows = (
+        raw = (
             base.with_entities(
                 Transaction.ack_no,
                 Transaction.to_account,
                 Transaction.put_on_hold_amount,
                 Transaction.put_on_hold_date,
                 Transaction.refund_status,
+                Transaction.put_on_hold_txn_id,
             )
             .filter(Transaction.put_on_hold_txn_id.isnot(None))
             .order_by(Transaction.put_on_hold_amount.desc())
             .all()
         )
-        return cols, [dict(zip(cols, r, strict=True)) for r in rows]
+        # One row per distinct (ack_no, hold_txn_id) so the list matches the
+        # de-duplicated KPI count and held total.
+        seen = set()
+        rows = []
+        for r in raw:
+            key = (r[0], r[5])
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(dict(zip(cols, r[:5], strict=True)))
+        return cols, rows
 
     return None, None
 
@@ -6359,7 +6473,6 @@ def refund_dashboard():
     q = (
         db.session.query(
             Transaction.ack_no,
-            func.sum(Transaction.put_on_hold_amount).label("held"),
             func.sum(Transaction.refund_amount).label("refunded"),
             func.count(Transaction.id).label("txns"),
         )
@@ -6369,11 +6482,27 @@ def refund_dashboard():
     if allowed is not None:
         q = q.filter(Transaction.ack_no.in_(allowed))
     rows = q.all()
+    # Held per ACK = one put_on_hold_amount per distinct (ack_no, hold_txn_id);
+    # a raw func.sum here double-counts duplicate rows sharing a hold.
+    _held_inner = (
+        db.session.query(
+            Transaction.ack_no.label("ack_no"),
+            func.max(Transaction.put_on_hold_amount).label("amt"),
+        )
+        .filter(Transaction.put_on_hold_txn_id.isnot(None))
+        .group_by(Transaction.ack_no, Transaction.put_on_hold_txn_id)
+        .subquery()
+    )
+    held_by_ack = dict(
+        db.session.query(_held_inner.c.ack_no, func.sum(_held_inner.c.amt))
+        .group_by(_held_inner.c.ack_no)
+        .all()
+    )
     cases = []
     total_held = total_refunded = 0.0
     status_map = {c.ack_no: c.status for c in Complaint.query.all()}
     for r in rows:
-        held = r.held or 0.0
+        held = held_by_ack.get(r.ack_no, 0.0) or 0.0
         refunded = r.refunded or 0.0
         total_held += held
         total_refunded += refunded
@@ -6473,7 +6602,7 @@ def admin_metrics():
         weeks.append({"label": end.strftime("%d %b"), "count": count})
 
     status_counts = dict(db.session.query(Complaint.status, func.count(Complaint.id)).group_by(Complaint.status).all())
-    held = db.session.query(func.sum(Transaction.put_on_hold_amount)).scalar() or 0.0
+    held = held_amount_scalar()
     refunded = db.session.query(func.sum(Transaction.refund_amount)).scalar() or 0.0
     officer_rows = (
         db.session.query(UploadedFile.uploader, func.count(func.distinct(UploadedFile.id)))
@@ -6514,6 +6643,7 @@ if __name__ == "__main__":
         ensure_transaction_columns()
         ensure_user_columns()
         ensure_complaint_columns()
+        ensure_poh_refund_columns()
         if not app.config.get("TESTING") and os.environ.get("RUN_BACKFILL", "1") == "1":
             ensure_mrm_backfill()
 

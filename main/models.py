@@ -100,6 +100,9 @@ class POHRefundDetails(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ack_no = db.Column(db.String(100), index=True)
     txn_id = db.Column(db.String(100), index=True)  # Corresponds to put_on_hold_txn_id
+    # Persist the hold amount too, so a re-upload whose bank sheet omits this hold
+    # row does not zero it out (the refund fields already survive this way).
+    put_on_hold_amount = db.Column(db.Float)
     court_order_date = db.Column(db.String(20))
     refund_status = db.Column(db.String(50))
     refund_amount = db.Column(db.Float)

@@ -161,14 +161,6 @@ function renderHoldTable(rows) {
       };
     });
   }
-
-  holdTableBody.querySelectorAll('.hold-account-link').forEach(link => {
-    link.addEventListener('click', (e) => {
-      e.preventDefault();
-      const acc = link.dataset.accountNumber;
-      expandHoldAccount(acc);
-    });
-  });
 }
 
 function formatHoldValue(row, column) {
@@ -284,14 +276,10 @@ function applyHoldFilters() {
     tdIndex.textContent = idx + 1;
     tr.appendChild(tdIndex);
 
-    // Account Number Link
+    // Account Number (plain text — held accounts are not in the rendered tree,
+    // so the old expand-on-click link only ever alert()ed "Account not found").
     const tdAccount = document.createElement('td');
-    const link = document.createElement('a');
-    link.href = '#';
-    link.className = 'hold-account-link';
-    link.dataset.accountNumber = row.account_number || '';
-    link.textContent = row.account_number || 'N/A';
-    tdAccount.appendChild(link);
+    tdAccount.textContent = row.account_number || 'N/A';
     tr.appendChild(tdAccount);
 
     // Other Columns
@@ -316,14 +304,6 @@ function applyHoldFilters() {
   });
 
   holdTableBody.appendChild(fragment);
-
-  holdTableBody.querySelectorAll('.hold-account-link').forEach(link => {
-    link.addEventListener('click', (e) => {
-      e.preventDefault();
-      const acc = link.dataset.accountNumber;
-      expandHoldAccount(acc);
-    });
-  });
 
   // No per-row letter buttons; header edit (pencil) opens the letter popup for selected rows
 }
@@ -1753,7 +1733,6 @@ function downloadHoldGraphPdf(path, ackNo) {
   // Prepare data for backend
   const nodes = path.map((node, index) => {
     const d = node.data;
-    const isLast = index === path.length - 1;
 
     // Determine Bank Name logic
     let bankName;
@@ -1763,9 +1742,10 @@ function downloadHoldGraphPdf(path, ackNo) {
       bankName = d.bank || "Unknown Bank";
     }
 
-    // Extract Hold Amount for the last node
+    // Extract Hold Amount for every node in the path (not just the last) so a
+    // hold on an intermediate node is not dropped from the PDF.
     let holdAmount = null;
-    if (isLast && d.hold_info?.amount) {
+    if (d.hold_info?.amount) {
       holdAmount = d.hold_info.amount;
     }
 
