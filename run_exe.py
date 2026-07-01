@@ -16,6 +16,15 @@ import threading
 import time
 import webbrowser
 
+# PyInstaller *windowed* builds (FundTrail.spec console=False) start the process with
+# sys.stdout / sys.stderr == None. Reattach them to a null sink HERE — before `import app`
+# (below) configures logging and runs import-time prints — so the frozen exe can never
+# crash with "AttributeError: 'NoneType' object has no attribute 'flush'" on startup.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 _PORT = int(os.environ.get("PORT", "5050"))
 _URL = f"http://127.0.0.1:{_PORT}"
 

@@ -6,7 +6,7 @@
   <title>Fund Flow Graph</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/design-system.css') }}?v=2.0">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <script>
+  <script nonce="{{ csp_nonce }}">
     (function () {
       try {
         var t = localStorage.getItem('ft-theme');
@@ -365,14 +365,20 @@
     }
 
     #closeSummary {
-      float: right;
+      position: absolute;
+      top: 10px;
+      right: 20px;
       font-weight: bold;
       cursor: pointer;
-      font-size: 20px;
+      font-size: 24px;
       background: none;
       border: none;
       color: var(--color-text-muted);
-      margin-right: 10px;
+      transition: color 0.15s ease;
+      z-index: 12;
+    }
+    #closeSummary:hover {
+      color: var(--color-text-primary);
     }
 
     /* Tooltip */
@@ -820,10 +826,22 @@
       }
     }
 
-    .hold-highlight {
-      stroke: #2563eb !important;
-      stroke-width: 4.5px !important;
-      animation: blink-blue-node 1.2s infinite ease-in-out !important;
+    .nav-button {
+      transition: all 0.2s ease !important;
+    }
+    .nav-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04);
+    }
+    .dashboard-btn:hover {
+      background: #e2e8f0 !important;
+      color: #0f172a !important;
+      border-color: #94a3b8 !important;
+    }
+    .logout-btn:hover {
+      background: #fee2e2 !important;
+      color: #b91c1c !important;
+      border-color: #fca5a5 !important;
     }
   </style>
 </head>
@@ -853,14 +871,46 @@
       <button id="atmWithdrawalBtn" class="icon-btn" title="ATM Withdrawal" aria-label="ATM Withdrawal"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><path d="M6 15h2"/></svg></button>
       <button id="layer1LettersBtn" class="icon-btn" title="Generate Layer 1 Letters (Per Bank)"
         aria-label="Generate Layer 1 Letters (Per Bank)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e3a5f" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="21" x2="21" y2="21"/><line x1="3" y1="10" x2="21" y2="10"/><polyline points="5 6 12 3 19 6"/><line x1="4" y1="10" x2="4" y2="21"/><line x1="20" y1="10" x2="20" y2="21"/><line x1="8" y1="14" x2="8" y2="17"/><line x1="12" y1="14" x2="12" y2="17"/><line x1="16" y1="14" x2="16" y2="17"/></svg></button>
-      <div
-        style="display: flex; flex-direction: column; align-items: flex-start; margin-left: 12px; font-size: 13px; line-height: 1.4;">
-        <a href="{{ url_for('admin_dashboard') if session.get('role') == 'Admin' else url_for('index') }}" style="color: #60a5fa; text-decoration: none; font-weight: bold;">Dashboard</a>
-        <div style="display: flex; align-items: center;">
-          <span style="color: #cbd5e1; margin-right: 4px;">|</span>
-          <a href="{{ url_for('logout') }}" style="color: #ef4444; text-decoration: none; font-weight: bold;">Logout</a>
-        </div>
-      </div>
+      <!-- Dashboard Button -->
+      <a href="{{ url_for('admin_dashboard') if session.get('role') == 'Admin' else url_for('index') }}" class="nav-button dashboard-btn" title="Go to Dashboard" style="
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: #f1f5f9;
+        color: #334155;
+        border: 1px solid #cbd5e1;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: none;
+        height: 38px;
+        box-sizing: border-box;
+        margin-left: 6px;
+      }">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+        Dashboard
+      </a>
+
+      <!-- Logout Button -->
+      <a href="{{ url_for('logout') }}" class="nav-button logout-btn" title="Logout" style="
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: #fef2f2;
+        color: #dc2626;
+        border: 1px solid #fee2e2;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: none;
+        height: 38px;
+        box-sizing: border-box;
+      }">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        Logout
+      </a>
     </div>
 
   </header>
@@ -2127,7 +2177,7 @@
 
   <!-- D3 already loaded once (vendored) in <head>; no second CDN copy needed. -->
   <script src="{{ url_for('static', filename='js/graph-helpers.js') }}?v=3.6"></script>
-  <script src="{{ url_for('static', filename='graph.js') }}?v=4.5"></script>
+  <script src="{{ url_for('static', filename='graph_v4.js') }}?v=4.6"></script>
   <!-- 🌟 Enhanced PROFESSIONAL LEGEND PANEL -->
   <div class="legend-box" style="
     display: none;

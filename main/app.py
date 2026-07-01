@@ -21,6 +21,18 @@ Run locally with `python app.py`, or in production with
 `gunicorn --preload "app:app"` (see Dockerfile).
 """
 
+import os
+import sys
+
+# PyInstaller *windowed* builds (FundTrail.spec console=False) start with
+# sys.stdout / sys.stderr == None. Reattach them to a null sink BEFORE logging is
+# configured (basicConfig / StreamHandler below) and before any print(), so nothing at
+# import time can raise "AttributeError: 'NoneType' object has no attribute 'flush'".
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")  # noqa: SIM115 - lives for the process lifetime
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")  # noqa: SIM115 - lives for the process lifetime
+
 import secrets
 import string
 import time
@@ -2293,21 +2305,57 @@ def upload_excel():
             flash("⚠️ No Acknowledgement numbers found in the Excel file!", "warning")
             return redirect(ROUTE_INDEX)
 
-        # ✅ Step 3: Dedup on ACK No. Reject the upload if any ACK in this file
-        # already has transactions (prevents double-counted amounts / missing
-        # complaints). The orphaned disk copy is removed by the finally block
-        # since upload_persisted is still False at this point.
-        dup_tx = Transaction.query.filter(Transaction.ack_no.in_(acknos_in_excel)).first()
-        if dup_tx:
-            return jsonify({
-                "error": f"ACK {dup_tx.ack_no} already has data. Delete the existing upload first."
-            }), 409
+        # ✅ Step 3: Dedup on ACK No. By default reject an upload whose ACK already
+        # has transactions (prevents double-counted amounts / missing complaints).
+        # The user may pass force=replace (the "Replace existing" button) to OVERWRITE:
+        # we then atomically purge the prior case data for those ACKs and re-ingest.
+        force_replace = (request.form.get("force") or "").strip().lower() == "replace"
 
-        # Filename dedup (belt-and-suspenders): reject re-uploading a file with the
-        # same name by the same uploader. Delete the existing one first to re-upload.
-        if UploadedFile.query.filter_by(filename=filename, uploader=session.get("username")).first():
+        def _purge_for_replace(acks):
+            """Delete all stored data for the given ACK(s) so the new file can replace
+            it. Group-isolation: a non-SuperAdmin may only replace their own cases.
+            Returns False (no delete) if any conflicting ACK belongs to another group."""
+            for _a in acks:
+                _c = Complaint.query.filter_by(ack_no=_a).first()
+                if _c and not is_superadmin() and _c.owner_admin_id not in (None, current_user.id):
+                    return False
+            existing = Transaction.query.filter(Transaction.ack_no.in_(acks)).all()
+            tx_ids = [t.txn_id for t in existing if t.txn_id]
+            up_ids = {t.upload_id for t in existing if t.upload_id}
+            if tx_ids:
+                KYCDetails.query.filter(KYCDetails.txn_id.in_(tx_ids)).delete(synchronize_session="fetch")
+            for _Model in (MRMStatusLog, MRMTracking, POHRefundDetails, CaseNote, Transaction, Complaint):
+                _Model.query.filter(_Model.ack_no.in_(acks)).delete(synchronize_session="fetch")
+            for _uid in up_ids:
+                UploadedFile.query.filter_by(id=_uid).delete(synchronize_session="fetch")
+            # Drop any prior same-name upload row by this uploader too.
+            UploadedFile.query.filter_by(filename=filename, uploader=session.get("username")).delete(
+                synchronize_session="fetch"
+            )
+            db.session.commit()
+            return True
+
+        dup_tx = Transaction.query.filter(Transaction.ack_no.in_(acknos_in_excel)).first()
+        name_dup = UploadedFile.query.filter_by(filename=filename, uploader=session.get("username")).first()
+
+        if force_replace and (dup_tx or name_dup):
+            if not _purge_for_replace(acknos_in_excel):
+                return jsonify({
+                    "error": f"ACK {dup_tx.ack_no if dup_tx else acknos_in_excel[0]} belongs to a "
+                             f"different admin group, so you cannot replace it.",
+                    "replaceable": False,
+                }), 403
+        elif dup_tx:
             return jsonify({
-                "error": f'"{filename}" was already uploaded. Delete the existing upload first to re-upload.'
+                "error": f"ACK {dup_tx.ack_no} already has data. Click \"Replace existing\" to "
+                         f"overwrite it with this file, or delete the existing upload first.",
+                "replaceable": True, "ack": dup_tx.ack_no,
+            }), 409
+        elif name_dup:
+            return jsonify({
+                "error": f"\"{filename}\" was already uploaded. Click \"Replace existing\" to "
+                         f"overwrite it, or delete the existing upload first.",
+                "replaceable": True,
             }), 409
 
         # Re-read file to get binary data for storage

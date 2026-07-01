@@ -70,3 +70,12 @@ htmlcov/
 
 # ----- Local agent / tooling state -----------------------------------
 .claude/
+
+# ----- Generated comparison report (local only; screenshots embed case PII) ----
+FundTrail_Old_vs_New_Report.tex
+FundTrail_Old_vs_New_Report.pdf
+report_assets/
+
+# ----- Internship report (local only; figures embed case PII) -----
+FundTrail_Internship_Report.tex
+FundTrail_Internship_Report.pdf
