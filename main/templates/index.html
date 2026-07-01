@@ -248,13 +248,16 @@
               var msg = document.createElement('div');
               msg.className = 'text-muted mt-1';
               msg.style.fontSize = '12px';
-              msg.textContent = body.error || 'Already uploaded.';
+              var ackNo = body.ack || '';
+              msg.textContent = ackNo ? ('This ACK (' + ackNo + ') already has data.') : 'This ACK already has data.';
               var b = document.createElement('button');
               b.type = 'button';
               b.className = 'btn btn-danger btn-sm mt-1 replace-btn';
               b.textContent = 'Replace existing & re-upload';
               b.addEventListener('click', function () {
-                if (!globalThis.confirm('This permanently deletes the existing data for this case and replaces it with the new file. Continue?')) return;
+                var q = 'This will permanently delete all existing transaction data for ACK '
+                        + (ackNo || 'this case') + ' and replace it with the new file. Are you sure?';
+                if (!globalThis.confirm(q)) return;
                 b.disabled = true; failed = Math.max(0, failed - 1);
                 msg.remove(); b.remove();
                 sendOne(i, true);

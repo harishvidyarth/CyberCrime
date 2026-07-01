@@ -130,6 +130,35 @@ def _run_server():
         os._exit(1)
 
 
+class _SaveApi:
+    """Exposed to the web page as window.pywebview.api. The embedded webview has no
+    "Downloads" folder, so exports can't fall through to a browser download. The page
+    fetches the export bytes (carrying its session cookie), base64-encodes them, and
+    calls save_file() — which opens a NATIVE Save-As dialog and writes the chosen path."""
+
+    window = None  # set to the created window below
+
+    def save_file(self, b64, suggested_name="export.xlsx"):
+        import base64
+        import webview as _wv
+        try:
+            win = _SaveApi.window
+            result = win.create_file_dialog(_wv.SAVE_DIALOG, save_filename=suggested_name)
+            if not result:
+                return ""  # user cancelled
+            path = result[0] if isinstance(result, (list, tuple)) else result
+            payload = b64.split(",", 1)[-1]  # tolerate a data: URL prefix
+            with open(path, "wb") as fh:
+                fh.write(base64.b64decode(payload))
+            return path
+        except Exception as exc:  # pragma: no cover - desktop only
+            try:
+                _msgbox(f"Could not save the file:\n{exc}", "FundTrail — save error")
+            except Exception:
+                pass
+            return ""
+
+
 if __name__ == "__main__":
     _show_initial_credentials()
     server_thread = threading.Thread(target=_run_server, daemon=True)
@@ -138,7 +167,9 @@ if __name__ == "__main__":
     try:
         import webview  # pywebview — native standalone window
 
-        webview.create_window("FundTrail", _URL, width=1280, height=820)
+        _SaveApi.window = webview.create_window(
+            "FundTrail", _URL, width=1280, height=820, js_api=_SaveApi()
+        )
         webview.start()
     except Exception:
         try:

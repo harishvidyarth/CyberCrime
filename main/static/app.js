@@ -222,3 +222,36 @@
     });
   });
 })();
+
+// Desktop (.exe) export: the embedded pywebview window has no Downloads folder, so a
+// normal file-attachment link goes nowhere. For any [data-export] link/button, when
+// running inside pywebview, fetch the bytes (session cookie included), then hand them to
+// the native Save-As dialog via window.pywebview.api.save_file. In a real browser we do
+// nothing special — the normal download proceeds.
+(function () {
+  function toDataURL(blob) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(r.result); };
+      r.onerror = reject;
+      r.readAsDataURL(blob);
+    });
+  }
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('[data-export]');
+    if (!a) return;
+    var api = window.pywebview && window.pywebview.api;
+    if (!api || !api.save_file) return; // browser: let the normal download happen
+    e.preventDefault();
+    var url = a.getAttribute('href') || a.getAttribute('data-url');
+    var name = a.getAttribute('data-export') || 'export.xlsx';
+    a.style.pointerEvents = 'none';
+    fetch(url, { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+      .then(toDataURL)
+      .then(function (dataUrl) { return api.save_file(dataUrl, name); })
+      .then(function (path) { if (path) window.alert('Saved to:\n' + path); })
+      .catch(function (err) { window.alert('Export failed: ' + (err && err.message ? err.message : err)); })
+      .finally(function () { a.style.pointerEvents = ''; });
+  });
+})();

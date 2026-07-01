@@ -96,6 +96,23 @@
 /* ─── BASE ──────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 html { font-size: 16px; }
+/* Desktop (pywebview) build: explicitly allow text selection/copy so account numbers,
+   IFSC codes, amounts etc. can be highlighted and copied with the mouse. Interactive
+   chrome (avatars, sortable headers, buttons) opt out individually below. */
+body, p, span, td, th, li, a, label, input, textarea, code, pre,
+.ds-table, .card, .stat-value, .selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Windows / Edge WebView2 (the .exe's embedded browser) draws its OWN reveal + clear
+   icons on password/search inputs, which collide with the app's own eye-toggle button.
+   Suppress the native chrome so only the app's toggle shows. */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear,
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button { display: none; }
+
 body {
   margin: 0;
   font-family: var(--font-sans);

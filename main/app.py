@@ -100,7 +100,7 @@ from models import (
     User,
     db,
 )
-from sqlalchemy import desc, func, inspect, or_, text
+from sqlalchemy import and_, desc, func, inspect, or_, text
 from sqlalchemy.orm import defer
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -602,6 +602,124 @@ DISTRICT_TO_STATE = {
 # ---------------------------------------------------------------------------
 # 3. IFSC bank/state lookup & case access
 # ---------------------------------------------------------------------------
+#
+# IFSC dataset (loaded in ifsc_utils.load_ifsc_table via main/IFSC_CODES.pkl):
+# Razorpay-format pickle, 176,873 records, imported June 2026.
+# No internal version metadata — cannot verify against RBI publish date.
+# Fields: BANK, BRANCH, ADDRESS, CITY1, CITY2, STATE, MICR, PHONE, STD CODE.
+# No DISTRICT field — CITY1 is used as district proxy (fallback: CITY2).
+# To update: download latest from https://github.com/razorpay/ifsc
+# or RBI directly at https://www.rbi.org.in/Scripts/bs_viewcontent.aspx?Id=2009
+# and replace this file, then restart the app.
+
+# India has exactly 28 States + 8 Union Territories (36 total). IFSC/transaction data
+# carries dirty variants ("TN", "TamilNadu", "ORISSA", blanks). We normalise every state
+# value to one canonical UPPERCASE name so the analytics distinct-state count never
+# exceeds 36. Order of application: value.upper().strip() -> STATE_NORMALISE lookup ->
+# canonical if present in CANONICAL_STATES, else the cleaned value (logged as unrecognised).
+CANONICAL_STATES = {
+    "ANDHRA PRADESH", "ARUNACHAL PRADESH", "ASSAM", "BIHAR", "CHHATTISGARH", "GOA",
+    "GUJARAT", "HARYANA", "HIMACHAL PRADESH", "JHARKHAND", "KARNATAKA", "KERALA",
+    "MADHYA PRADESH", "MAHARASHTRA", "MANIPUR", "MEGHALAYA", "MIZORAM", "NAGALAND",
+    "ODISHA", "PUNJAB", "RAJASTHAN", "SIKKIM", "TAMIL NADU", "TELANGANA", "TRIPURA",
+    "UTTAR PRADESH", "UTTARAKHAND", "WEST BENGAL",
+    # 8 Union Territories
+    "ANDAMAN AND NICOBAR ISLANDS", "CHANDIGARH",
+    "DADRA AND NAGAR HAVELI AND DAMAN AND DIU", "DELHI", "JAMMU AND KASHMIR", "LADAKH",
+    "LAKSHADWEEP", "PUDUCHERRY",
+}
+
+STATE_NORMALISE = {
+    "TN": "TAMIL NADU", "TAMILNADU": "TAMIL NADU",
+    "MH": "MAHARASHTRA", "MAHA": "MAHARASHTRA",
+    "AP": "ANDHRA PRADESH", "ANDHRAPRADESH": "ANDHRA PRADESH",
+    "KA": "KARNATAKA", "KARNATKA": "KARNATAKA",
+    "DL": "DELHI", "NEW DELHI": "DELHI", "NCT OF DELHI": "DELHI", "DELHI (NCT)": "DELHI",
+    "J&K": "JAMMU AND KASHMIR", "JAMMU & KASHMIR": "JAMMU AND KASHMIR",
+    "JAMMU AND KASHMIR (UT)": "JAMMU AND KASHMIR",
+    "UP": "UTTAR PRADESH",
+    "UK": "UTTARAKHAND", "UTTRAKHAND": "UTTARAKHAND", "UTTARANCHAL": "UTTARAKHAND",
+    "WB": "WEST BENGAL",
+    "HP": "HIMACHAL PRADESH", "PB": "PUNJAB", "RJ": "RAJASTHAN",
+    "MP": "MADHYA PRADESH",
+    "CG": "CHHATTISGARH", "CHATTISGARH": "CHHATTISGARH", "CHHATISGARH": "CHHATTISGARH",
+    "OD": "ODISHA", "ORISSA": "ODISHA",
+    "JH": "JHARKHAND", "JHARKAND": "JHARKHAND",
+    "BR": "BIHAR", "AS": "ASSAM", "MN": "MANIPUR", "ML": "MEGHALAYA", "MZ": "MIZORAM",
+    "NL": "NAGALAND", "TR": "TRIPURA",
+    "AR": "ARUNACHAL PRADESH", "SK": "SIKKIM", "GA": "GOA", "GJ": "GUJARAT",
+    "KL": "KERALA",
+    "TS": "TELANGANA", "TELENGANA": "TELANGANA",
+    "HR": "HARYANA", "CH": "CHANDIGARH",
+    "PY": "PUDUCHERRY", "PONDICHERRY": "PUDUCHERRY", "PONDICHERY": "PUDUCHERRY",
+    "AN": "ANDAMAN AND NICOBAR ISLANDS", "ANDAMAN & NICOBAR": "ANDAMAN AND NICOBAR ISLANDS",
+    "ANDAMAN & NICOBAR ISLANDS": "ANDAMAN AND NICOBAR ISLANDS",
+    "ANDAMAN AND NICOBAR": "ANDAMAN AND NICOBAR ISLANDS",
+    "DN": "DADRA AND NAGAR HAVELI AND DAMAN AND DIU",
+    "DADRA & NAGAR HAVELI": "DADRA AND NAGAR HAVELI AND DAMAN AND DIU",
+    "DAMAN & DIU": "DADRA AND NAGAR HAVELI AND DAMAN AND DIU",
+    "DADRA AND NAGAR HAVELI": "DADRA AND NAGAR HAVELI AND DAMAN AND DIU",
+    "LD": "LAKSHADWEEP", "LA": "LADAKH",
+    # Variants actually present in the bundled IFSC dataset's STATE field (dirty data:
+    # run-together names, typos, and district/city names dumped into the state column).
+    "ANDAMAN AND NICOBAR ISLAND": "ANDAMAN AND NICOBAR ISLANDS",
+    "ANDAMANANDNICOBAR": "ANDAMAN AND NICOBAR ISLANDS",
+    "CHANDIGARH UT": "CHANDIGARH",
+    "CHHATISHGARH": "CHHATTISGARH",
+    "DADAR AND NAGAR HAVELI": "DADRA AND NAGAR HAVELI AND DAMAN AND DIU",
+    "DADARA AND NAGAR HAVELI AND DAMAN AND DIU": "DADRA AND NAGAR HAVELI AND DAMAN AND DIU",
+    "DADRA": "DADRA AND NAGAR HAVELI AND DAMAN AND DIU",
+    "DAMAN": "DADRA AND NAGAR HAVELI AND DAMAN AND DIU",
+    "DAMAN AND DIU": "DADRA AND NAGAR HAVELI AND DAMAN AND DIU",
+    "UT OF DAMAN AND DIU": "DADRA AND NAGAR HAVELI AND DAMAN AND DIU",
+    "GUJRAT": "GUJARAT",
+    "HARKHAND": "JHARKHAND",
+    "HIMACHALPRADESH": "HIMACHAL PRADESH",
+    "HIMANCHAL PRADESH": "HIMACHAL PRADESH",
+    "JAMMUANDKASHMIR": "JAMMU AND KASHMIR",
+    "KARANATAKA": "KARNATAKA",
+    "MADHY PRADESH": "MADHYA PRADESH",
+    "MADHYAPRADESH": "MADHYA PRADESH",
+    "ODHISA": "ODISHA",
+    "RAJASTAN": "RAJASTHAN",
+    "UTTARKHAND": "UTTARAKHAND",
+    "UTTARPRADESH": "UTTAR PRADESH",
+    "WESTBENGAL": "WEST BENGAL",
+    # District/city names found in the STATE column -> their actual state/UT.
+    "BANGALORE URBAN": "KARNATAKA",
+    "DAKSHIN KANNAD": "KARNATAKA",
+    "LUDHIANA": "PUNJAB",
+    "PUNE": "MAHARASHTRA",
+    "JHAGRAKHAND COLLIERY": "CHHATTISGARH",
+    "VPO KHANDWA PATTA CHURU DIST CHURU": "RAJASTHAN",
+}
+
+# States seen that matched neither STATE_NORMALISE nor CANONICAL_STATES (for one-time
+# warn-logging so new variants can be added to the map).
+_UNRECOGNISED_STATES = set()
+
+
+def normalise_state(raw):
+    """Canonical UPPERCASE state name. NULL/blank/'UNKNOWN' -> 'UNKNOWN'."""
+    if raw is None:
+        return "UNKNOWN"
+    s = str(raw).upper().strip()
+    if not s or s == "UNKNOWN":
+        return "UNKNOWN"
+    if s in STATE_NORMALISE:
+        return STATE_NORMALISE[s]
+    if s in CANONICAL_STATES:
+        return s
+    _UNRECOGNISED_STATES.add(s)
+    return s
+
+
+def normalise_city(raw):
+    """Upper/stripped city (district proxy). NULL/blank -> 'UNKNOWN'."""
+    if raw is None:
+        return "UNKNOWN"
+    s = str(raw).upper().strip()
+    return s or "UNKNOWN"
 
 
 def get_state(ifsc):
@@ -1238,6 +1356,7 @@ def ensure_transaction_columns():
         "action_taken": "VARCHAR(255)",
         "account_number": DDL_VARCHAR_50,
         "state": DDL_VARCHAR_50,
+        "city": DDL_VARCHAR_100,
         "atm_id": DDL_VARCHAR_100,
         "atm_withdraw_amount": "FLOAT",
         "atm_withdraw_date": DDL_VARCHAR_100,
@@ -1492,6 +1611,50 @@ def backfill_complaints():
         logger.exception(f"backfill_complaints failed: {e}")
 
 
+def backfill_state_city():
+    """One-time, idempotent backfill of state/city for transactions that still lack them
+    (uploaded before ingest-time resolution). Resolves from the in-memory IFSC dict;
+    unresolved -> 'UNKNOWN'. Applies STATE_NORMALISE. Single bulk_update_mappings commit.
+    Safe to run every startup — only does work when rows are unfilled."""
+    from ifsc_utils import get_state_city as _gsc
+
+    # Process ALL rows: fill missing state/city from IFSC AND re-normalise any existing
+    # values to canonical (so rows filled before a STATE_NORMALISE update get corrected).
+    # Idempotent: only rows whose (state, city) actually change are written.
+    rows = Transaction.query.with_entities(
+        Transaction.id, Transaction.ifsc_code, Transaction.state, Transaction.city
+    ).all()
+    updates = []
+    for rid, ifsc, cur_state, cur_city in rows:
+        blank = (not cur_state) or str(cur_state).strip().upper() in ("", "UNKNOWN")
+        if blank or not cur_city:
+            st, ct = _gsc(ifsc)
+            new_state = normalise_state(st if blank else cur_state)
+            new_city = normalise_city(cur_city if cur_city else ct)
+        else:
+            new_state = normalise_state(cur_state)
+            new_city = normalise_city(cur_city)
+        if new_state != cur_state or new_city != cur_city:
+            updates.append({"id": rid, "state": new_state, "city": new_city})
+    if not updates:
+        return
+    db.session.bulk_update_mappings(Transaction, updates)
+    db.session.commit()
+    logger.info("Backfilled/normalised state+city for %d transactions.", len(updates))
+
+    names = sorted(
+        r[0]
+        for r in db.session.query(Transaction.state)
+        .filter(Transaction.state.isnot(None), Transaction.state != "", Transaction.state != "UNKNOWN")
+        .distinct()
+        .all()
+    )
+    logger.info("Distinct states after normalisation: %d (expected <= 36)", len(names))
+    if len(names) > 36:
+        logger.warning("More than 36 distinct states — unrecognised variants: %s",
+                       sorted(_UNRECOGNISED_STATES))
+
+
 with app.app_context():
     ensure_transaction_columns()
     ensure_user_columns()
@@ -1500,6 +1663,7 @@ with app.app_context():
     ensure_usage_log_table()
     if not app.config.get("TESTING") and os.environ.get("RUN_BACKFILL", "1") == "1":
         ensure_mrm_backfill()
+        backfill_state_city()
 
 
 VIEW_ONLY_ROLES = set()  # Viewer (read-only) role removed — only Admin & Investigative Officer
@@ -2345,6 +2509,9 @@ def upload_excel():
                              f"different admin group, so you cannot replace it.",
                     "replaceable": False,
                 }), 403
+            # Audit the destructive replace (user, ACK, timestamp via log_usage).
+            for _ack in acknos_in_excel:
+                log_usage("replace_upload", filename=filename, ack_no=_ack)
         elif dup_tx:
             return jsonify({
                 "error": f"ACK {dup_tx.ack_no} already has data. Click \"Replace existing\" to "
@@ -2675,6 +2842,18 @@ def upload_excel():
         _EMPTY_DF = pd.DataFrame()
         transactions = []
 
+        # Resolve STATE + CITY (district proxy) for every UNIQUE IFSC in ONE pass, then
+        # apply the mapping to all rows below. This replaces the lazy per-graph-view
+        # ThreadPoolExecutor as the primary path, so analytics never sees NULL state.
+        from ifsc_utils import get_state_city as _get_state_city
+
+        _uniq_ifscs = {clean_str(v) for v in tx_df[col_ifsc].dropna().unique()} if col_ifsc else set()
+        _ifsc_state_city = {}
+        for _if in _uniq_ifscs:
+            if _if:
+                _st, _ct = _get_state_city(_if)
+                _ifsc_state_city[_if] = (normalise_state(_st), normalise_city(_ct))
+
         txn_id_counts = {"found": 0, "missing": 0}
         skipped_rows = []
         for idx, (_, row) in enumerate(tx_df.iterrows()):
@@ -2727,6 +2906,8 @@ def upload_excel():
                     ack_no=ack_no,
                     bank_name=clean_bank_name(row.get(col_bank)),
                     ifsc_code=clean_str(row.get(col_ifsc)),
+                    state=_ifsc_state_city.get(clean_str(row.get(col_ifsc)), ("UNKNOWN", "UNKNOWN"))[0],
+                    city=_ifsc_state_city.get(clean_str(row.get(col_ifsc)), ("UNKNOWN", "UNKNOWN"))[1],
                     txn_date=clean_str(row.get(col_date)),
                     txn_id=extracted_txn_id,
                     amount=cleaned_amount,
@@ -3472,10 +3653,12 @@ STATE_REGIONS = {
 
 
 def _resolve_unknown_states(ack_no):
-    """Fetch + persist state for this case's txns whose state is still unknown."""
+    """Safety net only — state/city are populated at ingest now (see upload_excel).
+    This handles any edge cases: rows from pre-fix uploads or failed IFSC lookups whose
+    state is still unknown. It normalises state via STATE_NORMALISE and also fills city."""
     transactions_unknown = Transaction.query.filter(
         Transaction.ack_no == ack_no,
-        (Transaction.state.is_(None) | (Transaction.state == "Unknown")),
+        (Transaction.state.is_(None) | (Transaction.state == "Unknown") | (Transaction.city.is_(None))),
         Transaction.ifsc_code.isnot(None),
     ).all()
     if not transactions_unknown:
@@ -3493,9 +3676,12 @@ def _resolve_unknown_states(ack_no):
                 state = "Unknown"
             ifsc_to_state[ifsc] = state
     save_ifsc_cache()
+    from ifsc_utils import get_state_city as _gsc
     for t in transactions_unknown:
-        if t.ifsc_code in ifsc_to_state:
-            t.state = ifsc_to_state[t.ifsc_code].title()
+        raw_state = ifsc_to_state.get(t.ifsc_code)
+        _st, _ct = _gsc(t.ifsc_code)
+        t.state = normalise_state(raw_state if raw_state else _st)
+        t.city = normalise_city(_ct)
     db.session.commit()
 
 
@@ -5178,6 +5364,145 @@ def download_case_excel(ack_no):
     )
 
 
+def _analytics_scope_acks(officer_id=None):
+    """Subquery of ack_no values in scope for analytics.
+    Admin/SuperAdmin -> their team via _cases_q(); optional officer_id narrows to a
+    single officer's cases (validated against _officers_q()). Officer -> own cases."""
+    q = _cases_q()
+    if officer_id and (is_admin() or is_superadmin()):
+        off = _officers_q().filter_by(id=officer_id).first()
+        if off:
+            q = q.filter(
+                or_(Complaint.uploaded_by == off.id, Complaint.assigned_to == off.id)
+            )
+    return db.session.query(q.with_entities(Complaint.ack_no).subquery().c.ack_no)
+
+
+_STATE_OK = lambda col=Transaction.state: and_(  # noqa: E731
+    col.isnot(None), col != "", func.upper(func.trim(col)) != "UNKNOWN"
+)
+
+
+def analytics_geo_breakdowns(ack_subq, all_cases=False):
+    """All state/district(city)/bank breakdowns for the analytics page, ORM-only.
+    When all_cases=True the repeated-accounts section ignores team scope (system-wide).
+    Returns a dict of lists of plain dicts ready for the template / export."""
+    base = Transaction.query if all_cases else Transaction.query.filter(Transaction.ack_no.in_(ack_subq))
+    scoped = Transaction.query.filter(Transaction.ack_no.in_(ack_subq))
+
+    def _rows(q):
+        return q.all()
+
+    # 2. State-wise + District(city)-wise unique-account summary --------------
+    state_summary = [
+        {"state": s, "txn_count": c, "total_amount": float(a or 0), "unique_accounts": ua}
+        for s, c, a, ua in _rows(
+            scoped.with_entities(
+                Transaction.state, func.count(Transaction.id), func.sum(Transaction.amount),
+                func.count(func.distinct(Transaction.account_number)),
+            ).filter(_STATE_OK()).group_by(Transaction.state).order_by(desc(func.count(Transaction.id)))
+        )
+    ]
+    district_summary = [
+        {"state": s, "district": ci, "txn_count": c, "total_amount": float(a or 0), "unique_accounts": ua}
+        for s, ci, c, a, ua in _rows(
+            scoped.with_entities(
+                Transaction.state, Transaction.city, func.count(Transaction.id),
+                func.sum(Transaction.amount), func.count(func.distinct(Transaction.account_number)),
+            ).filter(_STATE_OK()).group_by(Transaction.state, Transaction.city)
+            .order_by(desc(func.count(Transaction.id)))
+        )
+    ]
+
+    # 3 / 6. Repeated accounts (appear in >1 distinct ACK) --------------------
+    rep_src = base
+    repeated = [
+        {"account": acc, "bank": bk, "branch": (br or ""), "state": st, "district": ci,
+         "num_cases": ncases, "total_amount": float(a or 0)}
+        for acc, bk, br, st, ci, ncases, a in _rows(
+            rep_src.with_entities(
+                Transaction.account_number, func.max(Transaction.bank_name), func.max(Transaction.ifsc_code),
+                func.max(Transaction.state), func.max(Transaction.city),
+                func.count(func.distinct(Transaction.ack_no)).label("ncases"),
+                func.sum(Transaction.amount),
+            ).filter(Transaction.account_number.isnot(None), Transaction.account_number != "")
+            .group_by(Transaction.account_number)
+            .having(func.count(func.distinct(Transaction.ack_no)) > 1)
+            .order_by(desc("ncases"))
+        )
+    ]
+    # For "All Cases": include the actual ACK list per repeated account (full detail).
+    if all_cases and repeated:
+        accs = [r["account"] for r in repeated]
+        ack_map = {}
+        for acc, ack in _rows(
+            Transaction.query.with_entities(Transaction.account_number, Transaction.ack_no)
+            .filter(Transaction.account_number.in_(accs)).distinct()
+        ):
+            ack_map.setdefault(acc, []).append(ack)
+        for r in repeated:
+            r["acks"] = sorted(a for a in ack_map.get(r["account"], []) if a)
+    # State/city concentration of repeated (mule) accounts
+    rep_by_state = {}
+    for r in repeated:
+        rep_by_state[r["state"]] = rep_by_state.get(r["state"], 0) + 1
+    repeated_by_state = sorted(
+        ({"state": k, "mule_accounts": v} for k, v in rep_by_state.items()),
+        key=lambda x: -x["mule_accounts"],
+    )
+
+    # 4. ATM withdrawals by state/district ------------------------------------
+    atm_summary = [
+        {"state": s, "district": ci, "txn_count": c, "total_amount": float(a or 0),
+         "atm_ids": (ids or "")}
+        for s, ci, c, a, ids in _rows(
+            scoped.with_entities(
+                Transaction.state, Transaction.city, func.count(Transaction.id),
+                func.sum(Transaction.atm_withdraw_amount),
+                func.group_concat(func.distinct(Transaction.atm_id)),
+            ).filter(Transaction.atm_id.isnot(None), Transaction.atm_id != "")
+            .group_by(Transaction.state, Transaction.city)
+            .order_by(desc(func.count(Transaction.id)))
+        )
+    ]
+    # 4. Cheque transactions by state/district/bank ---------------------------
+    cheque_summary = [
+        {"state": s, "district": ci, "bank": bk, "txn_count": c, "total_amount": float(a or 0)}
+        for s, ci, bk, c, a in _rows(
+            scoped.with_entities(
+                Transaction.state, Transaction.city, Transaction.bank_name,
+                func.count(Transaction.id), func.sum(Transaction.cheque_withdraw_amount),
+            ).filter(or_(Transaction.cheque_no.isnot(None), Transaction.cheque_withdraw_amount.isnot(None)))
+            .group_by(Transaction.state, Transaction.city, Transaction.bank_name)
+            .order_by(desc(func.count(Transaction.id)))
+        )
+    ]
+
+    # 7. Bank-wise (Bank -> Branch/IFSC -> State/District) --------------------
+    bank_wise = [
+        {"bank": bk, "ifsc": (ic or ""), "state": st, "district": ci,
+         "accounts": ua, "total_amount": float(a or 0)}
+        for bk, ic, st, ci, ua, a in _rows(
+            scoped.with_entities(
+                Transaction.bank_name, Transaction.ifsc_code, Transaction.state, Transaction.city,
+                func.count(func.distinct(Transaction.account_number)), func.sum(Transaction.amount),
+            ).filter(Transaction.bank_name.isnot(None))
+            .group_by(Transaction.bank_name, Transaction.ifsc_code, Transaction.state, Transaction.city)
+            .order_by(Transaction.bank_name, desc(func.sum(Transaction.amount)))
+        )
+    ]
+
+    return {
+        "state_summary": state_summary,
+        "district_summary": district_summary,
+        "repeated": repeated,
+        "repeated_by_state": repeated_by_state,
+        "atm_summary": atm_summary,
+        "cheque_summary": cheque_summary,
+        "bank_wise": bank_wise,
+    }
+
+
 @app.route("/view_analytics", methods=["GET"])
 @login_required
 @admin_required
@@ -5196,8 +5521,18 @@ def view_analytics():
     hold_count = held_count_scalar()
     unique_accts = db.session.query(func.count(func.distinct(Transaction.to_account))).scalar() or 0
     unique_banks = db.session.query(func.count(func.distinct(Transaction.bank_name))).scalar() or 0
+    # States Involved: distinct, team-scoped (via _cases_q ack_nos), excluding
+    # NULL / '' / 'Unknown' / 'UNKNOWN'. (Was showing 0: not scoped + counted blanks.)
+    _scoped_acks = db.session.query(_cases_q().with_entities(Complaint.ack_no).subquery().c.ack_no)
     unique_states = (
-        db.session.query(func.count(func.distinct(Transaction.state))).filter(Transaction.state.isnot(None)).scalar()
+        db.session.query(func.count(func.distinct(Transaction.state)))
+        .filter(Transaction.ack_no.in_(_scoped_acks))
+        .filter(
+            Transaction.state.isnot(None),
+            Transaction.state != "",
+            func.upper(func.trim(Transaction.state)) != "UNKNOWN",
+        )
+        .scalar()
         or 0
     )
     max_layer = db.session.query(func.max(Transaction.layer)).scalar() or 0
@@ -5299,8 +5634,28 @@ def view_analytics():
     atm_count = db.session.query(func.count(Transaction.id)).filter(Transaction.atm_id.isnot(None)).scalar() or 0
     cheque_count = db.session.query(func.count(Transaction.id)).filter(Transaction.cheque_no.isnot(None)).scalar() or 0
 
+    # ── State/District/Bank breakdowns (items 2-7), officer scope, repeated toggle ──
+    _sel_officer = request.args.get("officer", type=int)
+    _all_cases = request.args.get("repeated_scope", "my").lower() == "all"
+    _scope_subq = _analytics_scope_acks(_sel_officer)
+    breakdowns = analytics_geo_breakdowns(_scope_subq, all_cases=False)
+    # "All Cases" repeated accounts: system-wide (isolation intentionally removed for
+    # this section only, full detail incl. other teams' ACKs — user-approved). Logged.
+    repeated_all = analytics_geo_breakdowns(_scope_subq, all_cases=True) if _all_cases else None
+    if _all_cases:
+        try:
+            log_usage("analytics_repeated_all_cases")
+        except Exception:
+            pass
+    officer_list = [{"id": o.id, "username": o.username} for o in _officers_q().all()]
+
     return render_template(
         "view_analytics.html",
+        breakdowns=breakdowns,
+        repeated_all=repeated_all,
+        all_cases=_all_cases,
+        officer_list=officer_list,
+        sel_officer=_sel_officer,
         # KPIs
         total_files=total_files,
         total_txns=total_txns,

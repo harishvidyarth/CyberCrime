@@ -52,7 +52,8 @@ class Transaction(db.Model):
     disputed_amount = db.Column(db.Float)
     action_taken = db.Column(db.String(255))
     account_number = db.Column(db.String(50))
-    state = db.Column(db.String(50))  # Cache state from IFSC
+    state = db.Column(db.String(50))  # Cache state from IFSC (normalised at ingest)
+    city = db.Column(db.String(100), nullable=True)  # IFSC CITY1/CITY2 — district proxy
 
     # ATM withdrawal details
     atm_id = db.Column(db.String(100))

@@ -136,3 +136,22 @@ def get_state(ifsc):
         if info.get(key):
             return str(info[key]).strip()
     return "Unknown"
+
+
+def get_state_city(ifsc):
+    """(state, city) for an IFSC. City proxies for district (the dataset has no DISTRICT):
+    CITY1 preferred, CITY2 fallback. Returns ('Unknown', 'Unknown') when unresolved."""
+    info = get_ifsc_info(ifsc)
+    if not info:
+        return "Unknown", "Unknown"
+    state = "Unknown"
+    for key in ("STATE", "State", "STATE_NAME", "state"):
+        if info.get(key):
+            state = str(info[key]).strip()
+            break
+    city = ""
+    for key in ("CITY1", "City1", "CITY2", "City2", "CITY", "City", "DISTRICT", "District"):
+        if info.get(key):
+            city = str(info[key]).strip()
+            break
+    return state, (city or "Unknown")

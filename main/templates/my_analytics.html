@@ -14,7 +14,7 @@
     <h1>My Analytics</h1>
     <div class="sub">Showing only your uploads — Investigative Officer: <b>{{ me }}</b></div>
   </div>
-  <a href="{{ url_for('export_my_analytics_xlsx') }}" class="btn btn-secondary">
+  <a href="{{ url_for('export_my_analytics_xlsx') }}" data-export="my_analytics.xlsx" class="btn btn-secondary">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true" style="width:15px;height:15px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
     Export to Excel
   </a>
