@@ -40,15 +40,19 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}
 OutputDir=dist
 OutputBaseFilename=FundTrail_Setup
-Compression=lzma2/max
+; Fix: build optimisation — ultra64 gives a smaller installer than lzma2/max
+Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
+; Fix: build optimisation — WebView2 + bundled Python need Windows 10+
+MinVersion=10.0
+; NOTE: no Python-presence [Code] check is needed — the PyInstaller bundle
+; ships its own Python runtime inside dist\FundTrail\_internal.
 ; Install for all users into Program Files (data still per-user, see note above).
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64compatible
-; Optional branded installer icon. Generate installer_icon.ico from
-; main\static\logo.png (see docs\INSTALLERS.md) then uncomment:
-; SetupIconFile=installer_icon.ico
+; Fix: Issue 5 — branded installer icon (same multi-size .ico the exe embeds)
+SetupIconFile=main\static\img\fundtrail.ico
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

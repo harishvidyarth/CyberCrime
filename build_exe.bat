@@ -13,10 +13,11 @@ REM RECOMMENDED Python: 3.11 or 3.12 (the app is tested on 3.11). Python 3.13/3.
 REM are very new and some wheels (pandas/pywebview) may lag. If a wheel below fails
 REM to install, install Python 3.12 from python.org and re-run this script with it.
 REM ─────────────────────────────────────────────────────────────────────────
+echo [%date% %time%] Build started
 echo Detected Python:
 python --version
 
-echo Installing build dependencies (PyInstaller + app requirements)...
+echo [%date% %time%] Installing build dependencies (PyInstaller + app requirements)...
 python -m pip install --upgrade pip
 if %errorlevel% neq 0 exit /b %errorlevel%
 REM No version pins on the build tools: always pull the LATEST PyInstaller / pywebview
@@ -33,13 +34,18 @@ echo.
 REM Close any running FundTrail.exe and clear old build output FIRST. A still-running
 REM app keeps dist\FundTrail\_internal\*.pyd locked, which makes PyInstaller fail with
 REM "PermissionError: [WinError 5] Access is denied: ...\_internal\...pyd".
-echo Closing any running FundTrail.exe and clearing old build output...
+echo [%date% %time%] Closing any running FundTrail.exe and clearing old build output...
 taskkill /f /im FundTrail.exe >nul 2>&1
 rmdir /s /q build >nul 2>&1
 rmdir /s /q dist  >nul 2>&1
 
 echo.
-echo Building FundTrail.exe (this can take a few minutes)...
+REM Fix: build optimisation — abort BEFORE the slow PyInstaller step if app.py
+REM does not even parse (catches syntax errors in seconds instead of minutes).
+echo [%date% %time%] Pre-build syntax gate on main\app.py...
+python -c "import ast; ast.parse(open('main/app.py',encoding='utf-8').read())" || (echo ABORT: app.py syntax error && exit /b 1)
+
+echo [%date% %time%] Building FundTrail.exe (this can take a few minutes)...
 python -m PyInstaller --noconfirm --clean FundTrail.spec
 
 echo.
@@ -84,7 +90,10 @@ if exist "dist\FundTrail\FundTrail.exe" (
         echo Install Inno Setup manually, then compile FundTrail.iss.
     )
 ) else (
-    echo Build did NOT produce dist\FundTrail\FundTrail.exe -- scroll up for the error.
+    echo [%date% %time%] Build did NOT produce dist\FundTrail\FundTrail.exe -- scroll up for the error.
     echo Tip: if a module is missing, add it to hiddenimports in FundTrail.spec.
+    pause
+    exit /b 1
 )
+echo [%date% %time%] Build finished
 pause

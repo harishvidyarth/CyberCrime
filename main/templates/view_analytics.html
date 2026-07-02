@@ -49,6 +49,14 @@
     </div>
   </div>
   {% endfor %}
+  {# Fix: Issue 7a — Repeated Accounts stat box; scrolls to the section below #}
+  <a class="stat-card stat-card-click" href="#repeated-accounts" style="text-decoration:none;color:inherit">
+    <span class="stat-icon danger" aria-hidden="true">🔁</span>
+    <div>
+      <div class="stat-value">{{ (repeated_all.repeated if all_cases and repeated_all else breakdowns.repeated)|length }}</div>
+      <div class="stat-label">Repeated Accounts <span aria-hidden="true" style="opacity:.45">›</span></div>
+    </div>
+  </a>
 </div>
 
 <section class="ds-card mb-6">
@@ -189,6 +197,219 @@
     </table>
   </div>
 </details>
+
+
+{# ── Fix: Issue 7 — geo / repeated breakdowns (backend was already computing these) ── #}
+<h2 class="card-title mb-4">🌐 Geographic &amp; Repeated-Account Breakdowns</h2>
+
+<form method="GET" class="ds-card mb-4" style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;padding:14px 18px">
+  <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--color-text-muted)">
+    <span style="font-weight:600">Repeated-accounts scope</span>
+    <select name="repeated_scope" class="form-input" style="padding:6px 10px">
+      <option value="my" {% if not all_cases %}selected{% endif %}>My team's cases</option>
+      <option value="all" {% if all_cases %}selected{% endif %}>All cases (system-wide)</option>
+    </select>
+  </label>
+  <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--color-text-muted)">
+    <span style="font-weight:600">Officer</span>
+    <select name="officer" class="form-input" style="padding:6px 10px">
+      <option value="">All officers (combined)</option>
+      {% for o in officer_list %}
+      <option value="{{ o.id }}" {% if sel_officer == o.id %}selected{% endif %}>{{ o.username }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="btn btn-secondary btn-sm">Apply</button>
+</form>
+
+{% set rep_rows = repeated_all.repeated if all_cases and repeated_all else breakdowns.repeated %}
+<details class="ds-card mb-4" id="repeated-accounts" open>
+  <summary class="card-header" style="cursor:pointer">
+    <h2 class="card-title" style="margin:0">🔁 Repeated Accounts</h2>
+    <span class="badge badge-flagged">{{ rep_rows|length }}</span>
+    <span class="text-xs text-muted" style="margin-left:8px">{{ 'All cases (system-wide, read-only)' if all_cases else "Team scope" }}</span>
+  </summary>
+  <div class="table-wrap">
+    <table class="ds-table" id="analytics-repeated-table">
+      <thead><tr>
+        <th data-key="sno">#</th>
+        <th data-key="account">Account</th>
+        <th data-key="bank">Bank</th>
+        <th data-key="ifsc">IFSC</th>
+        <th data-key="state">State</th>
+        <th data-key="district">District/City</th>
+        <th class="num" data-key="num_cases">Times seen (cases)</th>
+        <th class="num" data-key="total_amount">Total Amount</th>
+        {% if all_cases %}<th>ACK Numbers</th>{% endif %}
+      </tr></thead>
+      <tbody>
+        {% for r in rep_rows %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td class="mono font-semibold">{{ r.account }}</td>
+          <td>{{ r.bank or '—' }}</td>
+          <td class="mono">{{ r.branch or '—' }}</td>
+          <td>{{ r.state or 'Unknown' }}</td>
+          <td>{{ r.district or '—' }}</td>
+          <td class="num">{{ r.num_cases }}</td>
+          <td class="num">₹{{ '{:,.0f}'.format(r.total_amount or 0) }}</td>
+          {% if all_cases %}<td class="mono text-xs">{{ r.acks|join(', ') if r.acks else '—' }}</td>{% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ 9 if all_cases else 8 }}" class="text-muted" style="padding:24px;text-align:center">No repeated accounts in scope</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details class="ds-card mb-4">
+  <summary class="card-header" style="cursor:pointer"><h2 class="card-title" style="margin:0">🗺️ Repeated Accounts by State → District</h2></summary>
+  <div class="table-wrap">
+    <table class="ds-table">
+      <thead><tr><th>State</th><th>District/City</th><th class="num">Repeated Accounts</th></tr></thead>
+      <tbody>
+        {% for r in breakdowns.repeated_by_district %}
+        <tr><td>{{ r.state or 'Unknown' }}</td><td>{{ r.district or '—' }}</td><td class="num">{{ r.mule_accounts }}</td></tr>
+        {% else %}
+        <tr><td colspan="3" class="text-muted" style="padding:24px;text-align:center">No repeated accounts in scope</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details class="ds-card mb-4">
+  <summary class="card-header" style="cursor:pointer"><h2 class="card-title" style="margin:0">🗺️ State-wise Unique Accounts</h2></summary>
+  <div class="table-wrap">
+    <table class="ds-table">
+      <thead><tr><th>State</th><th class="num">Unique Accounts</th><th class="num">Transactions</th><th class="num">Total Amount</th></tr></thead>
+      <tbody>
+        {% for r in breakdowns.state_summary %}
+        <tr>
+          <td>{{ r.state or 'Unknown' }}</td>
+          <td class="num">{{ r.unique_accounts }}</td>
+          <td class="num">{{ r.txn_count }}</td>
+          <td class="num">₹{{ '{:,.0f}'.format(r.total_amount or 0) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-muted" style="padding:24px;text-align:center">No state data (states resolve after case state-wise summaries are opened)</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details class="ds-card mb-4">
+  <summary class="card-header" style="cursor:pointer"><h2 class="card-title" style="margin:0">📍 District-wise Unique Accounts</h2></summary>
+  <div class="table-wrap">
+    <table class="ds-table">
+      <thead><tr><th>District/City</th><th>State</th><th class="num">Unique Accounts</th><th class="num">Transactions</th></tr></thead>
+      <tbody>
+        {% for r in breakdowns.district_summary %}
+        <tr>
+          <td>{{ r.district or '—' }}</td>
+          <td>{{ r.state or 'Unknown' }}</td>
+          <td class="num">{{ r.unique_accounts }}</td>
+          <td class="num">{{ r.txn_count }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-muted" style="padding:24px;text-align:center">No district data in scope</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details class="ds-card mb-4">
+  <summary class="card-header" style="cursor:pointer"><h2 class="card-title" style="margin:0">🏧 ATM Withdrawals by State / District</h2></summary>
+  <div class="table-wrap">
+    <table class="ds-table">
+      <thead><tr><th>State</th><th>District/City</th><th class="num">Withdrawals</th><th class="num">Total Amount</th><th>ATM IDs</th></tr></thead>
+      <tbody>
+        {% for r in breakdowns.atm_summary %}
+        <tr>
+          <td>{{ r.state or 'Unknown' }}</td>
+          <td>{{ r.district or '—' }}</td>
+          <td class="num">{{ r.txn_count }}</td>
+          <td class="num">₹{{ '{:,.0f}'.format(r.total_amount or 0) }}</td>
+          <td class="text-xs" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ r.atm_ids }}">{{ r.atm_ids or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-muted" style="padding:24px;text-align:center">No ATM withdrawals in scope</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details class="ds-card mb-4">
+  <summary class="card-header" style="cursor:pointer"><h2 class="card-title" style="margin:0">🎫 Cheque Transactions by State / District / Bank</h2></summary>
+  <div class="table-wrap">
+    <table class="ds-table">
+      <thead><tr><th>State</th><th>District/City</th><th>Bank</th><th class="num">Txns</th><th class="num">Total Amount</th></tr></thead>
+      <tbody>
+        {% for r in breakdowns.cheque_summary %}
+        <tr>
+          <td>{{ r.state or 'Unknown' }}</td>
+          <td>{{ r.district or '—' }}</td>
+          <td>{{ r.bank or '—' }}</td>
+          <td class="num">{{ r.txn_count }}</td>
+          <td class="num">₹{{ '{:,.0f}'.format(r.total_amount or 0) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-muted" style="padding:24px;text-align:center">No cheque transactions in scope</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+<details class="ds-card mb-6">
+  <summary class="card-header" style="cursor:pointer"><h2 class="card-title" style="margin:0">🏛️ Bank-wise Breakdown (Bank → Branch → Location)</h2></summary>
+  <div style="padding:0 16px 16px">
+    {% for bank, rows in breakdowns.bank_wise|groupby('bank') %}
+    <details class="mb-2" style="border:1px solid var(--color-border);border-radius:8px;padding:6px 12px">
+      <summary style="cursor:pointer;font-weight:600">
+        {{ bank or '—' }}
+        <span class="text-xs text-muted">— {{ rows|length }} branch(es), ₹{{ '{:,.0f}'.format(rows|sum(attribute='total_amount')) }} across officers in scope</span>
+      </summary>
+      <div class="table-wrap">
+        <table class="ds-table">
+          <thead><tr><th>Branch (IFSC)</th><th>State</th><th>District/City</th><th class="num">Accounts</th><th class="num">Total Amount</th></tr></thead>
+          <tbody>
+            {% for r in rows %}
+            <tr>
+              <td class="mono">{{ r.ifsc or '—' }}</td>
+              <td>{{ r.state or 'Unknown' }}</td>
+              <td>{{ r.district or '—' }}</td>
+              <td class="num">{{ r.accounts }}</td>
+              <td class="num">₹{{ '{:,.0f}'.format(r.total_amount or 0) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% else %}
+    <p class="text-muted" style="padding:12px">No bank data in scope</p>
+    {% endfor %}
+  </div>
+</details>
+
+<script src="{{ url_for('static', filename='js/filter-bar.js') }}?v=1.0"></script>
+<script nonce="{{ csp_nonce }}">
+  // Fix: Issue 4d — reusable filter bar on the analytics repeated-accounts table
+  if (typeof initFilterBar === 'function') {
+    initFilterBar('analytics-repeated-table', {
+      search: ['account', 'bank'],
+      dropdowns: ['state', 'district'],
+      customRange: { key: 'num_cases', label: 'Cases (min/max)' },
+      sortable: true,
+      countLabel: 'Showing {x} of {y} accounts'
+    });
+  }
+</script>
 
 {% include "_kpi_modal.html" %}
 {% endblock %}

@@ -111,14 +111,26 @@ const holdModalOverlay = document.getElementById('holdModalOverlay');
 const holdTableBody = document.getElementById('holdTableBody');
 const holdStatusText = document.getElementById('holdStatusText');
 const closeHoldModalBtn = document.getElementById('closeHoldModal');
-const holdFilterMenu = document.getElementById('holdFilterMenu');
 
-// Hold table filter state
+// Fix: Issue 4 — funnel popover machinery replaced by initFilterBar (filter-bar.js)
 let holdRowsData = [];
-let holdFilters = {};
-let holdSort = { column: null, direction: null };
-let currentHoldFilterColumn = null;
-let holdFilterDocHandler = null;
+
+// Fix: Issue 6 — graph page loads no app.js, so intercept the Case-Excel anchor
+// here: inside the exe, fetch the bytes and open the native Save-As dialog.
+(function () {
+  const dlBtn = document.getElementById('downloadExcelBtn');
+  if (!dlBtn) return;
+  dlBtn.addEventListener('click', (e) => {
+    const api = globalThis.pywebview && globalThis.pywebview.api;
+    if (!api || !api.save_file) return; // browser: normal download
+    e.preventDefault();
+    const href = dlBtn.getAttribute('href');
+    fetch(href, { credentials: 'same-origin' })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
+      .then(blob => saveBlobCompat(blob, `Case_${typeof ackNo !== 'undefined' ? ackNo : 'export'}.xlsx`))
+      .catch(err => showToast('Download failed: ' + (err && err.message ? err.message : err), 'error'));
+  });
+})();
 
 if (closeHoldModalBtn) {
   closeHoldModalBtn.onclick = closeHoldModal;
@@ -146,10 +158,6 @@ async function openHoldPopup() {
   holdModalOverlay.style.display = 'flex';
   if (holdStatusText) holdStatusText.textContent = 'Loading...';
   if (holdTableBody) holdTableBody.textContent = '';
-  holdFilters = {};
-  holdSort = { column: null, direction: null };
-  currentHoldFilterColumn = null;
-  if (holdFilterMenu) holdFilterMenu.style.display = 'none';
 
   try {
     const res = await fetch(`/put_on_hold_transactions/${ackNo}`);
@@ -186,25 +194,18 @@ function renderHoldTable(rows) {
   }
 
   if (holdStatusText) holdStatusText.textContent = '';
-  applyHoldFilters();
+  renderHoldRows();
 
-  // Attach filter button listeners
-  if (holdModalOverlay) {
-    holdModalOverlay.querySelectorAll('.hold-filter-btn').forEach(btn => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        showHoldFilterMenu(btn);
-      };
+  // Fix: Issue 4 — reusable filter bar (search + dropdowns + amount range + sort)
+  if (typeof initFilterBar === 'function') {
+    initFilterBar('hold-table', {
+      search: ['account', 'bank', 'branch'],
+      dropdowns: ['bank', 'state', 'mrm_status'],
+      amountRange: true,
+      sortable: true,
+      countLabel: 'Showing {x} of {y} entries'
     });
   }
-
-  holdTableBody.querySelectorAll('.hold-account-link').forEach(link => {
-    link.addEventListener('click', (e) => {
-      e.preventDefault();
-      const acc = link.dataset.accountNumber;
-      expandHoldAccount(acc);
-    });
-  });
 }
 
 function formatHoldValue(row, column) {
@@ -238,23 +239,14 @@ function formatHoldValue(row, column) {
 
 // normalizeFilterValue, getHoldSortValue, and sortHoldRows are loaded from graph-helpers.js
 
-function applyHoldFilters() {
+// Fix: Issue 4 — render ALL rows once; filtering/sorting is done in the DOM by initFilterBar
+function renderHoldRows() {
   if (!holdTableBody) return;
-  const filtered = holdRowsData.filter(row => {
-    return Object.entries(holdFilters).every(([col, selected]) => {
-      if (!selected || selected.size === 0) return true;
-      const value = normalizeFilterValue(col, formatHoldValue(row, col));
-      return selected.has(value);
-    });
-  });
-
-  const sortedRows = sortHoldRows(filtered, holdSort.column, holdSort.direction);
-
   holdTableBody.textContent = '';
 
   const fragment = document.createDocumentFragment();
 
-  sortedRows.forEach((row, idx) => {
+  holdRowsData.forEach((row, idx) => {
     const tr = document.createElement('tr');
 
     // Checkbox
@@ -281,10 +273,11 @@ function applyHoldFilters() {
     tdAccount.appendChild(link);
     tr.appendChild(tdAccount);
 
-    // Other Columns
+    // Other Columns (state added for the filter bar State dropdown)
     const columns = [
       row.bank_name || 'N/A',
       row.branch_name || 'N/A',
+      row.state || 'N/A',
       row.ifsc_code || 'N/A',
       formatHoldValue(row, 'amount'),
       formatHoldValue(row, 'mrm_status'),
@@ -313,193 +306,6 @@ function applyHoldFilters() {
   });
 
   // No per-row letter buttons; header edit (pencil) opens the letter popup for selected rows
-}
-
-function showHoldFilterMenu(button) {
-  if (!holdFilterMenu) return;
-  const column = button.dataset.column;
-  currentHoldFilterColumn = column;
-
-  const allValues = [...new Set(
-    holdRowsData.map(row => normalizeFilterValue(column, formatHoldValue(row, column)))
-  )].sort((a, b) => {
-    const aNum = typeof a === 'number';
-    const bNum = typeof b === 'number';
-    if (aNum && bNum) return a - b;
-    if (aNum) return -1;
-    if (bNum) return 1;
-    return String(a).localeCompare(String(b), undefined, { numeric: true });
-  });
-
-  const selected = holdFilters[column]
-    ? new Set([...holdFilters[column]].map(v => normalizeFilterValue(column, v)))
-    : new Set(allValues);
-
-  holdFilterMenu.textContent = '';
-
-  // Header
-  const headerDiv = document.createElement('div');
-  headerDiv.className = 'menu-header';
-  const headerSpan = document.createElement('span');
-  headerSpan.textContent = `Filter by ${button.parentElement?.textContent?.trim() || column}`;
-  headerDiv.appendChild(headerSpan);
-  const closeBtn = document.createElement('button');
-  closeBtn.setAttribute('aria-label', 'Close filter');
-  closeBtn.style.cssText = 'border:none;background:none;cursor:pointer;font-size:16px;';
-  closeBtn.textContent = '×';
-  headerDiv.appendChild(closeBtn);
-  holdFilterMenu.appendChild(headerDiv);
-
-  // Search
-  const searchDiv = document.createElement('div');
-  searchDiv.className = 'menu-search';
-  searchDiv.style.cssText = 'padding: 8px 12px; border-bottom: 1px solid #e5e7eb;';
-  const searchInput = document.createElement('input');
-  searchInput.type = 'text';
-  searchInput.placeholder = 'Search...';
-  searchInput.style.cssText = 'width: 100%; padding: 6px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px;';
-  searchDiv.appendChild(searchInput);
-  holdFilterMenu.appendChild(searchDiv);
-
-  // Sort
-  const sortDiv = document.createElement('div');
-  sortDiv.className = 'menu-sort';
-  const ascBtn = document.createElement('button');
-  ascBtn.type = 'button';
-  ascBtn.dataset.sort = 'asc';
-  ascBtn.textContent = 'Ascending ↑';
-  sortDiv.appendChild(ascBtn);
-  const descBtn = document.createElement('button');
-  descBtn.type = 'button';
-  descBtn.dataset.sort = 'desc';
-  descBtn.textContent = 'Descending ↓';
-  sortDiv.appendChild(descBtn);
-  holdFilterMenu.appendChild(sortDiv);
-
-  // Actions
-  const actionsDiv = document.createElement('div');
-  actionsDiv.className = 'menu-actions';
-  const selectAllBtn = document.createElement('button');
-  selectAllBtn.type = 'button';
-  selectAllBtn.dataset.action = 'select-all';
-  selectAllBtn.textContent = 'Select All';
-  actionsDiv.appendChild(selectAllBtn);
-  const clearAllBtn = document.createElement('button');
-  clearAllBtn.type = 'button';
-  clearAllBtn.dataset.action = 'clear-all';
-  clearAllBtn.textContent = 'Clear';
-  actionsDiv.appendChild(clearAllBtn);
-  holdFilterMenu.appendChild(actionsDiv);
-
-  // Body
-  const bodyDiv = document.createElement('div');
-  bodyDiv.className = 'menu-body';
-  allValues.forEach(val => {
-    const label = document.createElement('label');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = val;
-    if (selected.has(val)) cb.checked = true;
-    label.appendChild(cb);
-    const span = document.createElement('span');
-    span.textContent = val;
-    label.appendChild(span);
-    bodyDiv.appendChild(label);
-  });
-  holdFilterMenu.appendChild(bodyDiv);
-
-  // Footer
-  const footerDiv = document.createElement('div');
-  footerDiv.className = 'menu-footer';
-  const resetBtn = document.createElement('button');
-  resetBtn.className = 'clear-btn';
-  resetBtn.type = 'button';
-  resetBtn.dataset.action = 'reset';
-  resetBtn.textContent = 'Reset';
-  footerDiv.appendChild(resetBtn);
-  const applyBtn = document.createElement('button');
-  applyBtn.className = 'apply-btn';
-  applyBtn.type = 'button';
-  applyBtn.dataset.action = 'apply';
-  applyBtn.textContent = 'Apply';
-  footerDiv.appendChild(applyBtn);
-  holdFilterMenu.appendChild(footerDiv);
-
-  const rect = button.getBoundingClientRect();
-  holdFilterMenu.style.top = `${rect.bottom + globalThis.scrollY + 4}px`;
-  holdFilterMenu.style.left = `${rect.left + globalThis.scrollX}px`;
-  holdFilterMenu.style.display = 'block';
-  holdFilterMenu.setAttribute('aria-hidden', 'false');
-
-  // Search functionality
-  // searchInput is already defined above
-  searchInput.focus();
-  searchInput.onclick = (e) => e.stopPropagation();
-  searchInput.oninput = (e) => {
-    const term = e.target.value.toLowerCase();
-    holdFilterMenu.querySelectorAll('.menu-body label').forEach(label => {
-      const text = label.textContent.toLowerCase();
-      label.style.display = text.includes(term) ? '' : 'none';
-    });
-  };
-
-  const closeMenu = () => {
-    holdFilterMenu.style.display = 'none';
-    holdFilterMenu.setAttribute('aria-hidden', 'true');
-    if (holdFilterDocHandler) {
-      document.removeEventListener('click', holdFilterDocHandler);
-      holdFilterDocHandler = null;
-    }
-  };
-
-  holdFilterMenu.querySelector('.menu-header button').onclick = (e) => {
-    e.stopPropagation();
-    closeMenu();
-  };
-
-  holdFilterMenu.querySelectorAll('.menu-sort button').forEach(btn => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      holdSort = { column, direction: btn.dataset.sort };
-      applyHoldFilters();
-      closeMenu();
-    };
-  });
-
-  holdFilterMenu.querySelectorAll('.menu-actions button').forEach(btn => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      const action = btn.dataset.action;
-      holdFilterMenu.querySelectorAll('.menu-body input[type="checkbox"]').forEach(cb => {
-        cb.checked = action === 'select-all';
-      });
-    };
-  });
-
-  holdFilterMenu.querySelector('.menu-footer .clear-btn').onclick = (e) => {
-    e.stopPropagation();
-    holdFilters[column] = new Set();
-    applyHoldFilters();
-    closeMenu();
-  };
-
-  holdFilterMenu.querySelector('.menu-footer .apply-btn').onclick = (e) => {
-    e.stopPropagation();
-    const selectedValues = new Set();
-    holdFilterMenu.querySelectorAll('.menu-body input[type="checkbox"]').forEach(cb => {
-      if (cb.checked) selectedValues.add(normalizeFilterValue(column, cb.value));
-    });
-    holdFilters[column] = selectedValues;
-    applyHoldFilters();
-    closeMenu();
-  };
-
-  holdFilterDocHandler = function onDocClick(evt) {
-    if (holdFilterMenu && !holdFilterMenu.contains(evt.target) && evt.target !== button) {
-      closeMenu();
-    }
-  };
-  document.addEventListener('click', holdFilterDocHandler);
 }
 
 // ── Repeated accounts ──────────────────────────────────────────────────────
@@ -547,6 +353,16 @@ function findRepeatedAccounts() {
   }
   if (empty) empty.style.display = rows.length ? 'none' : 'block';
   if (overlay) overlay.style.display = 'flex';
+  // Fix: Issue 4 — reusable filter bar on the repeated-accounts list
+  if (typeof initFilterBar === 'function') {
+    initFilterBar('repeated-table', {
+      search: ['account', 'bank'],
+      dropdowns: ['bank'],
+      customRange: { key: 'count', label: 'Times seen (min/max)' },
+      sortable: true,
+      countLabel: 'Showing {x} of {y} accounts'
+    });
+  }
   return rows.length;
 }
 
@@ -572,12 +388,22 @@ function expandNodesInPath(path) {
 
 function highlightHoldNode(accountNumber) {
   if (!g || !accountNumber) return;
-  g.selectAll('.node rect').classed('hold-highlight', false);
+  // Fix: Locate pulse — stop any node currently pulsing so only one pulses at a time
+  g.selectAll('.node rect.hold-highlight')
+    .on('animationend.holdPulse', null)
+    .classed('hold-highlight', false);
   let matchedNodes = [];
   g.selectAll('.node').each(function (d) {
     const name = d?.data?.name ? String(d.data.name).trim() : '';
     if (name === String(accountNumber).trim()) {
-      d3.select(this).select('rect').classed('hold-highlight', true);
+      const rect = d3.select(this).select('rect');
+      const rectNode = rect.node();
+      // Fix: force reflow so a repeat Locate on the same node restarts the animation
+      if (rectNode) void rectNode.getBoundingClientRect();
+      rect.classed('hold-highlight', true)
+        .on('animationend.holdPulse', function () {
+          d3.select(this).classed('hold-highlight', false).on('animationend.holdPulse', null);
+        });
       matchedNodes.push(d);
     }
   });
@@ -1158,6 +984,16 @@ function toggleExpandAllNodes() {
 
   const revealNextLayer = () => {
     if (!expandAllActive) { expandAllAnimating = false; return; }  // user collapsed mid-run
+
+    // Fix: Issue 9e — cap visible nodes; rendering thousands of SVG nodes at
+    // once freezes WebView2 on low-end hardware. Deeper branches still open
+    // individually on click.
+    const MAX_VISIBLE_NODES = 500;
+    if (currentRoot.descendants().length >= MAX_VISIBLE_NODES) {
+      expandAllAnimating = false;
+      showToast(`Showing the first ${MAX_VISIBLE_NODES} nodes — click a branch to expand it further.`, 'info');
+      return;
+    }
 
     let openedAny = false;
     const queue = [currentRoot];
@@ -2134,16 +1970,7 @@ function downloadHoldGraphPdf(path, ackNo) {
       }
       return response.blob();
     })
-    .then(blob => {
-      const url = globalThis.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `FundTrail_${ackNo}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      globalThis.URL.revokeObjectURL(url);
-    })
+    .then(blob => saveBlobCompat(blob, `FundTrail_${ackNo}.pdf`)) // Fix: Issue 6 — native Save-As in exe
     .catch(error => {
       console.error('Error generating PDF via backend:', error);
       showToast('Failed to generate PDF. Please try again.', 'error');

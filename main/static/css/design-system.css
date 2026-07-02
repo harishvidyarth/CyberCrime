@@ -110,8 +110,10 @@ body, p, span, td, th, li, a, label, input, textarea, code, pre,
    Suppress the native chrome so only the app's toggle shows. */
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear,
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-strong-password-auto-fill-button,
 input[type="search"]::-webkit-search-decoration,
-input[type="search"]::-webkit-search-cancel-button { display: none; }
+input[type="search"]::-webkit-search-cancel-button { display: none !important; }
 
 body {
   margin: 0;
@@ -552,6 +554,38 @@ button.dropzone {
 }
 .pw-toggle:hover { color: var(--color-text-primary); }
 .pw-toggle svg { width: 18px; height: 18px; display: block; }
+
+/* ─── FILTER BAR (Issue 4 — reusable initFilterBar component) ── */
+.filter-bar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface); border: 1px solid var(--color-border);
+  border-radius: var(--radius-md); margin-bottom: var(--space-2);
+}
+.filter-bar-field { display: flex; flex-direction: column; gap: 2px; font-size: var(--text-xs); color: var(--color-text-muted); }
+.filter-bar-field > span { font-weight: var(--font-semibold); }
+.filter-bar input[type="search"],
+.filter-bar select,
+.filter-bar .filter-bar-num {
+  padding: 5px 8px; font-size: var(--text-sm);
+  border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm);
+  background: var(--color-surface); color: var(--color-text-primary);
+}
+.filter-bar input[type="search"] { min-width: 180px; }
+.filter-bar .filter-bar-range { display: flex; gap: 4px; }
+.filter-bar .filter-bar-num { width: 90px; }
+.filter-bar-reset {
+  padding: 6px 14px; font-size: var(--text-sm); cursor: pointer;
+  border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm);
+  background: var(--color-surface-alt); color: var(--color-text-primary);
+}
+.filter-bar-reset:hover { background: var(--color-border); }
+.filter-bar-count { margin-left: auto; font-size: var(--text-xs); color: var(--color-text-muted); white-space: nowrap; }
+th.fb-sortable { cursor: pointer; user-select: none; }
+th.fb-sortable::after { content: ' ↕'; opacity: .45; font-size: 11px; }
+th.fb-sort-asc::after { content: ' ▲'; opacity: 1; font-size: 11px; }
+th.fb-sort-desc::after { content: ' ▼'; opacity: 1; font-size: 11px; }
 
 /* ─── ERROR PAGES ───────────────────────────────────────────── */
 .error-page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: var(--space-6); }

@@ -1058,7 +1058,15 @@ def _safe_print(msg):
 
 
 _safe_print(f"[STARTUP] Database: {db_url} (data_dir={secure_base})")
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True, "pool_recycle": 1800}
+# Fix: Issue 9d — bounded connection pool; with the exe's threaded server the
+# default pool could exhaust/keep stale handles on low-end machines. For SQLite,
+# check_same_thread=False lets pooled connections hop worker threads (safe: the
+# WAL + busy_timeout pragmas below serialize writes) and timeout=30 rides out
+# multi-second writes instead of raising "database is locked".
+_engine_options = {"pool_pre_ping": True, "pool_recycle": 1800, "pool_size": 5, "pool_timeout": 30}
+if db_url.startswith("sqlite"):
+    _engine_options["connect_args"] = {"check_same_thread": False, "timeout": 30}
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = _engine_options
 
 # Concurrency: enable SQLite WAL + a per-connection busy timeout so several officers
 # can read/write at once without "database is locked". (No-op for a MySQL DATABASE_URL.)
@@ -3798,6 +3806,8 @@ def put_on_hold_transactions(ack_no):
             # Fetch branch info on backend to avoid N+1 frontend calls
             ifsc_data = get_ifsc_info(t.ifsc_code) or {}
             branch_name = ifsc_data.get("BRANCH") or ifsc_data.get("Branch") or "Unknown"
+            # Fix: Issue 4 — state per row feeds the POH filter bar State dropdown
+            state_name = ifsc_data.get("STATE") or ifsc_data.get("State") or ""
 
             # Get persistent details if available
             pdata = poh_map.get(t.put_on_hold_txn_id)
@@ -3810,6 +3820,7 @@ def put_on_hold_transactions(ack_no):
                     "account_number": t.account_number or t.to_account,
                     "bank_name": t.bank_name,
                     "branch_name": branch_name,
+                    "state": state_name,
                     "ifsc_code": t.ifsc_code,
                     "amount": t.put_on_hold_amount,
                     "layer": t.layer,
@@ -5450,6 +5461,15 @@ def analytics_geo_breakdowns(ack_subq, all_cases=False):
         ({"state": k, "mule_accounts": v} for k, v in rep_by_state.items()),
         key=lambda x: -x["mule_accounts"],
     )
+    # Fix: Issue 7d — district-level repeated grouping (same style as repeated_by_state)
+    rep_by_district = {}
+    for r in repeated:
+        _key = (r["state"], r["district"])
+        rep_by_district[_key] = rep_by_district.get(_key, 0) + 1
+    repeated_by_district = sorted(
+        ({"state": k[0], "district": k[1], "mule_accounts": v} for k, v in rep_by_district.items()),
+        key=lambda x: -x["mule_accounts"],
+    )
 
     # 4. ATM withdrawals by state/district ------------------------------------
     atm_summary = [
@@ -5497,6 +5517,7 @@ def analytics_geo_breakdowns(ack_subq, all_cases=False):
         "district_summary": district_summary,
         "repeated": repeated,
         "repeated_by_state": repeated_by_state,
+        "repeated_by_district": repeated_by_district,
         "atm_summary": atm_summary,
         "cheque_summary": cheque_summary,
         "bank_wise": bank_wise,
@@ -6450,6 +6471,19 @@ def my_analytics():
     state_map = _group_cnt_amt(my_txns, "state")
     state_dist = [(s, v["cnt"], v["amt"]) for s, v in sorted(state_map.items(), key=lambda x: -x[1]["cnt"])[:15]]
 
+    # Fix: Issue 7d — same geo/repeated breakdowns as admin analytics, scoped to
+    # the officer's OWN uploads only (no officer dropdown, no all-cases toggle).
+    _my_ack_subq = (
+        db.session.query(Transaction.ack_no)
+        .filter(Transaction.upload_id.in_(my_file_ids or [-1]))
+        .distinct()
+    )
+    breakdowns = analytics_geo_breakdowns(_my_ack_subq)
+    try:
+        log_usage("my_analytics_breakdowns")
+    except Exception:
+        pass
+
     return render_template(
         "my_analytics.html",
         me=me,
@@ -6459,6 +6493,7 @@ def my_analytics():
         top_banks=top_banks,
         top_ifsc=_top_ifsc(my_txns),
         state_dist=state_dist,
+        breakdowns=breakdowns,
         **_my_kpis(my_txns),
     )
 
@@ -6741,6 +6776,30 @@ def _analytics_export_frames(uploader=None):
 
 def _send_analytics_xlsx(uploader=None, label="analytics"):
     summary, txns = _analytics_export_frames(uploader)
+
+    # Fix: Issue 7e — export the geo/repeated breakdown sections as extra sheets,
+    # scoped exactly like the page: officer -> own uploads, admin -> team via
+    # _analytics_scope_acks()/_cases_q().
+    if uploader:
+        _ids = [f.id for f in UploadedFile.query.with_entities(UploadedFile.id).filter_by(uploader=uploader)]
+        _ack_subq = (
+            db.session.query(Transaction.ack_no)
+            .filter(Transaction.upload_id.in_(_ids or [-1]))
+            .distinct()
+        )
+    else:
+        _ack_subq = _analytics_scope_acks()
+    _bd = analytics_geo_breakdowns(_ack_subq)
+    _extra_sheets = [
+        ("Repeated Accounts", _bd["repeated"]),
+        ("Repeated by State-District", _bd["repeated_by_district"]),
+        ("State-wise Accounts", _bd["state_summary"]),
+        ("District-wise Accounts", _bd["district_summary"]),
+        ("ATM by Location", _bd["atm_summary"]),
+        ("Cheque by Location-Bank", _bd["cheque_summary"]),
+        ("Bank-wise Summary", _bd["bank_wise"]),
+    ]
+
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as xw:
         (summary if not summary.empty else pd.DataFrame({"info": ["no data"]})).to_excel(
@@ -6749,6 +6808,10 @@ def _send_analytics_xlsx(uploader=None, label="analytics"):
         (txns if not txns.empty else pd.DataFrame({"info": ["no data"]})).to_excel(
             xw, sheet_name="Transactions", index=False
         )
+        for _name, _rows in _extra_sheets:
+            (pd.DataFrame(_rows) if _rows else pd.DataFrame({"info": ["no data"]})).to_excel(
+                xw, sheet_name=_name, index=False
+            )
     buf.seek(0)
     log_usage("export_analytics_xlsx", filename=label)
     stamp = datetime.now().strftime("%Y%m%d_%H%M")

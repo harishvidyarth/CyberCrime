@@ -826,6 +826,14 @@
       }
     }
 
+    /* Fix: Locate blue pulse — finite (~3s), applied by highlightHoldNode, removed on animationend */
+    .node rect.hold-highlight {
+      stroke: #2563eb !important;
+      stroke-width: 4px !important;
+      filter: drop-shadow(0 0 6px #2563eb);
+      animation: blink-blue-node 1s ease-in-out 3;
+    }
+
     .nav-button {
       transition: all 0.2s ease !important;
     }
@@ -1003,14 +1011,14 @@
             Accounts appearing in <b>more than one place</b> of the trail (possible mule reuse).
             Click <b>Locate</b> to expand to an account and highlight it.
           </p>
-          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <table id="repeated-table" style="width:100%;border-collapse:collapse;font-size:13px;">
             <thead>
               <tr style="background:#0a2e63;color:#fff;text-align:left;">
-                <th style="padding:8px 10px;">#</th>
-                <th style="padding:8px 10px;">Account</th>
-                <th style="padding:8px 10px;">Bank</th>
-                <th style="padding:8px 10px;text-align:center;">Times seen</th>
-                <th style="padding:8px 10px;">Layers</th>
+                <th style="padding:8px 10px;" data-key="sno">#</th>
+                <th style="padding:8px 10px;" data-key="account">Account</th>
+                <th style="padding:8px 10px;" data-key="bank">Bank</th>
+                <th style="padding:8px 10px;text-align:center;" data-key="count">Times seen</th>
+                <th style="padding:8px 10px;" data-key="layers">Layers</th>
                 <th style="padding:8px 10px;"></th>
               </tr>
             </thead>
@@ -1041,92 +1049,21 @@
         <div class="hold-modal-body">
           <p id="holdStatusText" style="margin-top:0; color:#050505;">Loading...</p>
           <div style="overflow:auto;">
-            <table class="hold-table">
+            <table id="hold-table" class="hold-table">
               <thead>
                 <tr>
                   <th>Select</th>
-                  <th>S. No</th>
-                  <th>
-                    P-O-H Account Number
-                    <button class="hold-filter-btn" data-column="account_number" title="Filter Account Number"
-                      aria-label="Filter Account Number">
-                      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                        <path d="M4 6h12l-4.5 5.25v3.5L8.5 16v-4.75z" />
-                      </svg>
-                    </button>
-                  </th>
-                  <th>
-                    Bank Name
-                    <button class="hold-filter-btn" data-column="bank_name" title="Filter Bank Name"
-                      aria-label="Filter Bank Name">
-                      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                        <path d="M4 6h12l-4.5 5.25v3.5L8.5 16v-4.75z" />
-                      </svg>
-                    </button>
-                  </th>
-                  <th>
-                    Branch Name
-                    <button class="hold-filter-btn" data-column="branch_name" title="Filter Branch Name"
-                      aria-label="Filter Branch Name">
-                      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                        <path d="M4 6h12l-4.5 5.25v3.5L8.5 16v-4.75z" />
-                      </svg>
-                    </button>
-                  </th>
-                  <th>
-                    IFSC Code
-                    <button class="hold-filter-btn" data-column="ifsc_code" title="Filter IFSC Code"
-                      aria-label="Filter IFSC Code">
-                      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                        <path d="M4 6h12l-4.5 5.25v3.5L8.5 16v-4.75z" />
-                      </svg>
-                    </button>
-                  </th>
-                  <th>
-                    P-O-H Amount
-                    <button class="hold-filter-btn" data-column="amount" title="Filter P-O-H Amount"
-                      aria-label="Filter P-O-H Amount">
-                      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                        <path d="M4 6h12l-4.5 5.25v3.5L8.5 16v-4.75z" />
-                      </svg>
-                    </button>
-                                <th>
-                    MRM Status
-                    <button class="hold-filter-btn" data-column="mrm_status" title="Filter MRM Status"
-                      aria-label="Filter MRM Status">
-                      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                        <path d="M4 6h12l-4.5 5.25v3.5L8.5 16v-4.75z" />
-                      </svg>
-                    </button>
-                  </th>
-                  <th>
-                    Refund Type
-                    <button class="hold-filter-btn" data-column="refund_type" title="Filter Refund Type"
-                      aria-label="Filter Refund Type">
-                      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                        <path d="M4 6h12l-4.5 5.25v3.5L8.5 16v-4.75z" />
-                      </svg>
-                    </button>
-                  </th>
-                  <th>
-                    Refunded Amount
-                    <button class="hold-filter-btn" data-column="refund_amount" title="Filter Refunded Amount"
-                      aria-label="Filter Refunded Amount">
-                      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                        <path d="M4 6h12l-4.5 5.25v3.5L8.5 16v-4.75z" />
-                      </svg>
-                    </button>
-                  </th>
-                   <th>
-                    Transaction Layer
-                    <button class="hold-filter-btn" data-column="layer" title="Filter Transaction Layer"
-                      aria-label="Filter Transaction Layer">
-                      <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-                        <path d="M4 6h12l-4.5 5.25v3.5L8.5 16v-4.75z" />
-                      </svg>
-                    </button>
-                  </th>
-                 
+                  <th data-key="sno">S. No</th>
+                  <th data-key="account">P-O-H Account Number</th>
+                  <th data-key="bank">Bank Name</th>
+                  <th data-key="branch">Branch Name</th>
+                  <th data-key="state">State</th>
+                  <th data-key="ifsc">IFSC Code</th>
+                  <th data-key="amount">P-O-H Amount</th>
+                  <th data-key="mrm_status">MRM Status</th>
+                  <th data-key="refund_type">Refund Type</th>
+                  <th data-key="refund_amount">Refunded Amount</th>
+                  <th data-key="layer">Transaction Layer</th>
                 </tr>
               </thead>
               <tbody id="holdTableBody"></tbody>
@@ -1135,8 +1072,6 @@
         </div>
       </div>
     </div>
-    <div id="holdFilterMenu" class="hold-filter-menu" aria-hidden="true"></div>
-    <div id="atmFilterMenu" class="hold-filter-menu" aria-hidden="true"></div>
 
     <!-- ATM Modal -->
     <div id="atmModalOverlay" class="hold-modal-overlay" aria-hidden="true" style="display:none;">
@@ -1269,34 +1204,14 @@
     const atmTableHead = document.getElementById('atmTableHead');
     const atmTableBody = document.getElementById('atmTableBody');
 
+    // Fix: Issue 4 — funnel machinery replaced by initFilterBar (filter-bar.js)
     let atmRowsData = [];
-    let atmFilters = {};
-    let atmSort = { column: null, direction: null };
-    let atmFilterDocHandler = null;
 
-    function applyAtmFilters() {
+    // Fix: Issue 4 — render ALL rows once; filtering/sorting is done in the DOM by initFilterBar
+    function renderAtmRows() {
       if (!atmTableBody) return;
-      const filtered = atmRowsData.filter(row => {
-        return Object.entries(atmFilters).every(([col, selected]) => {
-          if (!selected || selected.size === 0) return true;
-          const val = String(row[col] ?? '').trim();
-          return selected.has(val);
-        });
-      });
-
-      // Sorting
-      if (atmSort.column && atmSort.direction) {
-        filtered.sort((a, b) => {
-          const A = String(a[atmSort.column] ?? '').toLowerCase();
-          const B = String(b[atmSort.column] ?? '').toLowerCase();
-          if (A < B) return atmSort.direction === 'asc' ? -1 : 1;
-          if (A > B) return atmSort.direction === 'asc' ? 1 : -1;
-          return 0;
-        });
-      }
-
       atmTableBody.innerHTML = '';
-      filtered.forEach((r, idx) => {
+      atmRowsData.forEach((r, idx) => {
         const tr = document.createElement('tr');
         const snTd = document.createElement('td'); snTd.textContent = String(idx + 1); tr.appendChild(snTd);
         const cols = ['layer', 'account_no', 'txn_id', 'withdrawal_date', 'withdrawal_amount', 'disputed_amount', 'atm_id', 'atm_location'];
@@ -1324,64 +1239,6 @@
         });
         atmTableBody.appendChild(tr);
       });
-    }
-
-    function showAtmFilterMenu(button) {
-      const atmFilterMenu = document.getElementById('atmFilterMenu');
-      if (!atmFilterMenu) return;
-      const column = button.dataset.column;
-
-      const allValues = [...new Set(atmRowsData.map(row => String(row[column] ?? '').trim()))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-      const selected = atmFilters[column] ? new Set(atmFilters[column]) : new Set(allValues);
-
-      const bodyHtml = allValues.map(val => `
-        <label>
-          <input type="checkbox" value="${escHtml(val)}" ${selected.has(val) ? 'checked' : ''}>
-          <span>${escHtml(val)}</span>
-        </label>
-      `).join('');
-
-      atmFilterMenu.innerHTML = `
-        <div class="menu-header">
-          <span>Filter by ${button.parentElement?.textContent?.trim() || column}</span>
-          <button aria-label="Close filter" style="border:none;background:none;cursor:pointer;font-size:16px;">×</button>
-        </div>
-        <div class="menu-sort">
-          <button type="button" data-sort="asc">Ascending ↑</button>
-          <button type="button" data-sort="desc">Descending ↓</button>
-        </div>
-        <div class="menu-actions">
-          <button type="button" data-action="select-all">Select All</button>
-          <button type="button" data-action="clear-all">Clear</button>
-        </div>
-        <div class="menu-body">${bodyHtml}</div>
-        <div class="menu-footer">
-          <button class="clear-btn" type="button" data-action="reset">Reset</button>
-          <button class="apply-btn" type="button" data-action="apply">Apply</button>
-        </div>
-      `;
-
-      const rect = button.getBoundingClientRect();
-      atmFilterMenu.style.top = `${rect.bottom + globalThis.scrollY + 4}px`;
-      atmFilterMenu.style.left = `${rect.left + globalThis.scrollX}px`;
-      atmFilterMenu.style.display = 'block';
-      atmFilterMenu.setAttribute('aria-hidden', 'false');
-
-      atmFilterMenu.querySelector('.menu-header button').onclick = (e) => { atmFilterMenu.style.display = 'none'; atmFilterMenu.setAttribute('aria-hidden', 'true'); };
-      atmFilterMenu.querySelectorAll('.menu-sort button').forEach(btn => {
-        btn.onclick = (e) => { atmSort = { column, direction: btn.dataset.sort }; applyAtmFilters(); atmFilterMenu.style.display = 'none'; };
-      });
-      atmFilterMenu.querySelectorAll('.menu-actions button').forEach(btn => { btn.onclick = (e) => { const action = btn.dataset.action; atmFilterMenu.querySelectorAll('.menu-body input[type="checkbox"]').forEach(cb => cb.checked = action === 'select-all'); }; });
-      atmFilterMenu.querySelector('.menu-footer .clear-btn').onclick = (e) => { atmFilters[column] = new Set(); applyAtmFilters(); atmFilterMenu.style.display = 'none'; };
-      atmFilterMenu.querySelector('.menu-footer .apply-btn').onclick = (e) => {
-        const selectedValues = new Set();
-        atmFilterMenu.querySelectorAll('.menu-body input[type="checkbox"]').forEach(cb => { if (cb.checked) selectedValues.add(cb.value); });
-        atmFilters[column] = selectedValues;
-        applyAtmFilters(); atmFilterMenu.style.display = 'none';
-      };
-
-      atmFilterDocHandler = function onDocClick(evt) { if (!atmFilterMenu.contains(evt.target) && evt.target !== button) { atmFilterMenu.style.display = 'none'; atmFilterMenu.setAttribute('aria-hidden', 'true'); document.removeEventListener('click', atmFilterDocHandler); atmFilterDocHandler = null; } };
-      document.addEventListener('click', atmFilterDocHandler);
     }
 
     function renderAtmTable(columns, rows) {
@@ -1414,7 +1271,7 @@
       atmTableHead.innerHTML = '';
       atmTableBody.innerHTML = '';
       const tr = document.createElement('tr');
-      const snTh = document.createElement('th'); snTh.textContent = 'S. No.'; tr.appendChild(snTh);
+      const snTh = document.createElement('th'); snTh.textContent = 'S. No.'; snTh.dataset.key = 'sno'; tr.appendChild(snTh);
 
       const headers = [
         { key: 'layer', title: 'Layer' },
@@ -1430,19 +1287,23 @@
       headers.forEach(h => {
         const th = document.createElement('th');
         th.textContent = h.title;
-        const btn = document.createElement('button');
-        btn.className = 'hold-filter-btn atm-filter-btn';
-        btn.dataset.column = h.key;
-        btn.title = `Filter ${h.title}`;
-        btn.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M4 6h12l-4.5 5.25v3.5L8.5 16v-4.75z"/></svg>`;
-        btn.onclick = (e) => { e.stopPropagation(); showAtmFilterMenu(btn); };
-        th.appendChild(btn);
+        th.dataset.key = h.key;
         tr.appendChild(th);
       });
       atmTableHead.appendChild(tr);
 
-      // Initially render all rows
-      applyAtmFilters();
+      // Fix: Issue 4 — render all rows, then wire the reusable filter bar
+      renderAtmRows();
+      if (typeof initFilterBar === 'function') {
+        initFilterBar('atmTable', {
+          search: ['account_no', 'atm_id'],
+          dropdowns: ['layer', 'atm_location'],
+          amountRange: true,
+          amountKey: 'withdrawal_amount',
+          sortable: true,
+          countLabel: 'Showing {x} of {y} entries'
+        });
+      }
     }
 
     atmBtn.addEventListener('click', async () => {
@@ -1765,15 +1626,8 @@
             continue;
           }
           const blob = await res.blob();
-          const url = globalThis.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.style.display = 'none';
-          a.href = url;
-          a.download = `${type}_Letter_${acc}.zip`;
-          document.body.appendChild(a);
-          a.click();
-          globalThis.URL.revokeObjectURL(url);
-          a.remove();
+          // Fix: Issue 6 — native Save-As in exe, plain download in browser
+          await saveBlobCompat(blob, `${type}_Letter_${acc}.zip`);
         }
       } catch (err) {
         console.error('Error generating letters', err);
@@ -1934,10 +1788,6 @@
         }
 
         const blob = await res.blob();
-        const url = globalThis.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
 
         // Use filename from Content-Disposition header if available, else default
         let filename = `Letters_${ackNo}.zip`;
@@ -1950,11 +1800,8 @@
           }
         }
 
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        globalThis.URL.revokeObjectURL(url);
-        a.remove();
+        // Fix: Issue 6 — native Save-As in exe, plain download in browser
+        await saveBlobCompat(blob, filename);
 
         closeLetterModal();
 
@@ -2176,8 +2023,9 @@
   </script>
 
   <!-- D3 already loaded once (vendored) in <head>; no second CDN copy needed. -->
-  <script src="{{ url_for('static', filename='js/graph-helpers.js') }}?v=3.6"></script>
-  <script src="{{ url_for('static', filename='graph_v4.js') }}?v=4.6"></script>
+  <script src="{{ url_for('static', filename='js/graph-helpers.js') }}?v=3.7"></script>
+  <script src="{{ url_for('static', filename='js/filter-bar.js') }}?v=1.0"></script>
+  <script src="{{ url_for('static', filename='graph_v4.js') }}?v=4.8"></script>
   <!-- 🌟 Enhanced PROFESSIONAL LEGEND PANEL -->
   <div class="legend-box" style="
     display: none;

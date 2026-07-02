@@ -38,8 +38,14 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
     <div class="form-group">
       <label class="form-label" for="pwConfirm">Confirm with current password</label>
-      <input class="form-input" type="password" id="pwConfirm" name="password"
-             autocomplete="current-password" placeholder="Enter your password" required>
+      {# Fix: eye toggle on password field (design-system .pw-wrap/.pw-toggle) #}
+      <div class="pw-wrap">
+        <input class="form-input" type="password" id="pwConfirm" name="password"
+               autocomplete="current-password" placeholder="Enter your password" required>
+        <button type="button" class="pw-toggle" data-pw-target="pwConfirm" aria-label="Show password" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
     </div>
     <button class="btn btn-danger" type="submit">Disable 2FA</button>
   </form>
@@ -160,6 +166,18 @@
       chev.style.transform = det.open ? 'rotate(180deg)' : '';
     });
   }
+
+  // Fix: eye toggle wiring for .pw-toggle buttons
+  document.querySelectorAll('.pw-toggle[data-pw-target]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var input = document.getElementById(btn.dataset.pwTarget);
+      if (!input) return;
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    });
+  });
 
   // Copy the TOTP secret key to clipboard.
   // navigator.clipboard requires a secure context (HTTPS); on plain HTTP LAN

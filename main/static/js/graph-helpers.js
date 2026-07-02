@@ -194,6 +194,31 @@ function sortHoldRows(rows, column, direction) {
   return sorted;
 }
 
+// Fix: Issue 6 — save a fetched blob. Inside the pywebview exe a normal
+// blob-URL click goes nowhere (no Downloads folder), so route the bytes to the
+// native Save-As dialog (window.pywebview.api.save_file). Browser: plain download.
+function saveBlobCompat(blob, name) {
+  const api = (typeof window !== 'undefined') && window.pywebview && window.pywebview.api;
+  if (api && api.save_file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = reject;
+      r.readAsDataURL(blob);
+    }).then(dataUrl => api.save_file(dataUrl, name));
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.style.display = 'none';
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(url);
+  a.remove();
+  return Promise.resolve(name);
+}
+
 const helpers = {
   escapeHtml,
   deepCleanData,
@@ -205,7 +230,8 @@ const helpers = {
   findPathToAccount,
   normalizeFilterValue,
   getHoldSortValue,
-  sortHoldRows
+  sortHoldRows,
+  saveBlobCompat
 };
 
 if (typeof window !== 'undefined') {

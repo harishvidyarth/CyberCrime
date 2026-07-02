@@ -53,6 +53,9 @@ for _pkg in (
     except Exception:
         pass
 hiddenimports += ['ifsc_utils', 'models']  # local modules imported by app.py
+# Fix: Issues 8/9 — tkinter powers the copyable first-run credentials dialog
+# and the startup splash; PyInstaller misses it without an explicit listing.
+hiddenimports += ['tkinter', 'tkinter.filedialog', 'tkinter.messagebox']
 
 a = Analysis(
     ['run_exe.py'],
@@ -84,6 +87,8 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,  # standalone windowed app (no console); creds shown via dialog
+    # Fix: Issue 5 — embedded exe icon (taskbar/Start Menu/Desktop/ARP inherit it)
+    icon='main/static/img/fundtrail.ico',
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,

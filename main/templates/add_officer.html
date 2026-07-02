@@ -44,7 +44,13 @@
     <div class="form-group">
       <label class="form-label" for="of-password">Temporary password</label>
       <div style="display:flex;gap:8px;align-items:center">
-        <input class="form-input" type="password" id="of-password" name="password" placeholder="Temporary password" required style="flex:1">
+        {# Fix: eye toggle on password field (design-system .pw-wrap/.pw-toggle) #}
+        <div class="pw-wrap" style="flex:1">
+          <input class="form-input" type="password" id="of-password" name="password" placeholder="Temporary password" required>
+          <button type="button" class="pw-toggle" data-pw-target="of-password" aria-label="Show password" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
         <button type="button" id="of-copy" class="btn" style="white-space:nowrap">📋 Copy</button>
       </div>
       <p class="form-hint">Temporary password — the officer sets their own on first login.
@@ -65,6 +71,19 @@
       var prev = btn.textContent;
       btn.textContent = 'Copied!';
       setTimeout(function () { btn.textContent = prev; }, 2000);
+    });
+  });
+})();
+// Fix: eye toggle wiring for .pw-toggle buttons
+(function () {
+  document.querySelectorAll('.pw-toggle[data-pw-target]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var input = document.getElementById(btn.dataset.pwTarget);
+      if (!input) return;
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
     });
   });
 })();

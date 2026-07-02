@@ -224,10 +224,10 @@
 })();
 
 // Desktop (.exe) export: the embedded pywebview window has no Downloads folder, so a
-// normal file-attachment link goes nowhere. For any [data-export] link/button, when
-// running inside pywebview, fetch the bytes (session cookie included), then hand them to
-// the native Save-As dialog via window.pywebview.api.save_file. In a real browser we do
-// nothing special — the normal download proceeds.
+// normal file-attachment link goes nowhere. Fix: Issue 6 — intercept EVERY download
+// route (not just [data-export] opt-ins): fetch the bytes (session cookie included),
+// then hand them to the native Save-As dialog via window.pywebview.api.save_file.
+// In a real browser we do nothing special — the normal download proceeds.
 (function () {
   function toDataURL(blob) {
     return new Promise(function (resolve, reject) {
@@ -237,21 +237,76 @@
       r.readAsDataURL(blob);
     });
   }
+
+  // All file-producing GET routes in app.py.
+  var DOWNLOAD_RE = new RegExp(
+    '^/(download|download_upload|download_case_excel|download_logs|' +
+    'download_letters_zip|export_analytics_xlsx|export_my_analytics_xlsx|' +
+    'analytics/kpi_download)(/|$|\\?)');
+
+  function filenameFrom(response, fallback) {
+    var cd = response.headers.get('Content-Disposition') || '';
+    var m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+    return (m && decodeURIComponent(m[1])) || fallback;
+  }
+
+  // Shared blob saver: native Save-As inside pywebview, plain download otherwise.
+  function saveBlob(blob, name) {
+    var api = window.pywebview && window.pywebview.api;
+    if (api && api.save_file) {
+      return toDataURL(blob).then(function (dataUrl) { return api.save_file(dataUrl, name); });
+    }
+    var url = window.URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.style.display = 'none';
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    a.remove();
+    return Promise.resolve(name);
+  }
+  window.ftSaveBlob = saveBlob;
+
+  // GET downloads (links). [data-export] stays as an explicit opt-in.
   document.addEventListener('click', function (e) {
-    var a = e.target.closest && e.target.closest('[data-export]');
+    var a = e.target.closest && e.target.closest('a[href], [data-export]');
     if (!a) return;
     var api = window.pywebview && window.pywebview.api;
     if (!api || !api.save_file) return; // browser: let the normal download happen
+    var url = a.getAttribute('href') || a.getAttribute('data-url') || '';
+    var path = url.split('?')[0];
+    if (!a.hasAttribute('data-export') && !DOWNLOAD_RE.test(path)) return;
     e.preventDefault();
-    var url = a.getAttribute('href') || a.getAttribute('data-url');
-    var name = a.getAttribute('data-export') || 'export.xlsx';
+    var fallback = a.getAttribute('data-export') || path.split('/').pop() || 'export.xlsx';
     a.style.pointerEvents = 'none';
     fetch(url, { credentials: 'same-origin' })
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); })
-      .then(toDataURL)
-      .then(function (dataUrl) { return api.save_file(dataUrl, name); })
-      .then(function (path) { if (path) window.alert('Saved to:\n' + path); })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.blob().then(function (b) { return saveBlob(b, filenameFrom(r, fallback)); });
+      })
+      .then(function (savedPath) { if (savedPath) window.alert('Saved to:\n' + savedPath); })
       .catch(function (err) { window.alert('Export failed: ' + (err && err.message ? err.message : err)); })
       .finally(function () { a.style.pointerEvents = ''; });
+  });
+
+  // POST export forms (letters / fund-trail PDF). No-op outside pywebview.
+  var POST_RE = /^\/(generate_letter_pdf|generate_letter_docx|download_fundtrail_pdf)(\/|$|\?)/;
+  document.addEventListener('submit', function (e) {
+    var api = window.pywebview && window.pywebview.api;
+    if (!api || !api.save_file) return;
+    var form = e.target;
+    var action = form.getAttribute('action') || '';
+    var path = action.replace(/^https?:\/\/[^/]+/, '').split('?')[0];
+    if (!POST_RE.test(path)) return;
+    e.preventDefault();
+    fetch(action, { method: 'POST', body: new FormData(form), credentials: 'same-origin' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.blob().then(function (b) { return saveBlob(b, filenameFrom(r, 'export.pdf')); });
+      })
+      .then(function (savedPath) { if (savedPath) window.alert('Saved to:\n' + savedPath); })
+      .catch(function (err) { window.alert('Export failed: ' + (err && err.message ? err.message : err)); });
   });
 })();

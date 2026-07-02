@@ -20,7 +20,12 @@ POSSIBLE_PATHS = [os.path.join(d, "IFSC_CODES.xlsx") for d in _DIRS]
 
 
 def _load_ifsc_from_pickle():
-    """First valid {IFSC: row} pickle, else None."""
+    """First valid {IFSC: row} pickle, else None.
+
+    Dataset: 182,295 records, built 2026-07-02 from razorpay/ifsc v2.0.59
+    (https://github.com/razorpay/ifsc/releases/tag/v2.0.59).
+    CITY1 <- CITY, CITY2 <- DISTRICT (real district data as of this build).
+    """
     for p in PKL_PATHS:
         if os.path.exists(p):
             try:
